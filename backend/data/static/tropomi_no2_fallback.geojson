@@ -1,0 +1,10 @@
+{
+  "type": "FeatureCollection",
+  "fetched_at": "2025-11-04T08:00:00Z",
+  "source": "SENTINEL_5P_TROPOMI_L3_NO2_STATIC_FALLBACK",
+  "features": [
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [76.9, 28.4] }, "properties": { "no2_umol_m2": 182.4, "is_hotspot": true } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [77.3, 28.7] }, "properties": { "no2_umol_m2": 215.1, "is_hotspot": true } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [77.1, 28.5] }, "properties": { "no2_umol_m2": 194.8, "is_hotspot": true } }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "run_id": "FL-20251104-001",
+  "total_rounds": 10,
+  "status": "complete",
+  "rounds": [
+    { "round_number": 1, "punjab_accuracy": 0.58, "delhi_accuracy": 0.55, "global_accuracy": 0.57 },
+    { "round_number": 2, "punjab_accuracy": 0.62, "delhi_accuracy": 0.59, "global_accuracy": 0.63 },
+    { "round_number": 3, "punjab_accuracy": 0.66, "delhi_accuracy": 0.64, "global_accuracy": 0.68 },
+    { "round_number": 4, "punjab_accuracy": 0.70, "delhi_accuracy": 0.67, "global_accuracy": 0.72 },
+    { "round_number": 5, "punjab_accuracy": 0.73, "delhi_accuracy": 0.71, "global_accuracy": 0.76 },
+    { "round_number": 6, "punjab_accuracy": 0.75, "delhi_accuracy": 0.73, "global_accuracy": 0.79 },
+    { "round_number": 7, "punjab_accuracy": 0.78, "delhi_accuracy": 0.76, "global_accuracy": 0.83 },
+    { "round_number": 8, "punjab_accuracy": 0.80, "delhi_accuracy": 0.78, "global_accuracy": 0.86 },
+    { "round_number": 9, "punjab_accuracy": 0.82, "delhi_accuracy": 0.80, "global_accuracy": 0.88 },
+    { "round_number": 10, "punjab_accuracy": 0.83, "delhi_accuracy": 0.81, "global_accuracy": 0.91 }
+  ]
+}

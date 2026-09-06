@@ -1,0 +1,14 @@
+{
+  "type": "FeatureCollection",
+  "computed_at": "2025-11-04T08:15:00Z",
+  "resolution_deg": 0.5,
+  "features": [
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [74.5, 31.5] }, "properties": { "pm25_estimate": 165.4, "aqi_index": 335, "uncertainty_std": 14.2 } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [75.0, 31.5] }, "properties": { "pm25_estimate": 182.1, "aqi_index": 348, "uncertainty_std": 12.8 } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [75.5, 31.0] }, "properties": { "pm25_estimate": 210.8, "aqi_index": 370, "uncertainty_std": 11.5 } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [76.0, 30.5] }, "properties": { "pm25_estimate": 195.3, "aqi_index": 358, "uncertainty_std": 15.1 } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [76.5, 30.0] }, "properties": { "pm25_estimate": 178.6, "aqi_index": 345, "uncertainty_std": 13.9 } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [77.0, 29.5] }, "properties": { "pm25_estimate": 225.4, "aqi_index": 381, "uncertainty_std": 16.4 } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [77.2, 28.6] }, "properties": { "pm25_estimate": 265.0, "aqi_index": 412, "uncertainty_std": 9.8 } }
+  ]
+}

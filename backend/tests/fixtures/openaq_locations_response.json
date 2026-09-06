@@ -1,0 +1,96 @@
+{
+  "meta": {
+    "name": "openaq-api",
+    "license": "CC BY 4.0",
+    "website": "https://openaq.org",
+    "page": 1,
+    "limit": 50,
+    "found": 12
+  },
+  "results": [
+    {
+      "id": 101,
+      "name": "Anand Vihar, Delhi - DPCC",
+      "locality": "Delhi",
+      "coordinates": { "latitude": 28.647, "longitude": 77.316 },
+      "sensors": [{ "id": 501, "name": "pm25", "parameter": { "name": "pm25" }, "latest": { "value": 215.4 } }]
+    },
+    {
+      "id": 102,
+      "name": "RK Puram, Delhi - DPCC",
+      "locality": "Delhi",
+      "coordinates": { "latitude": 28.563, "longitude": 77.186 },
+      "sensors": [{ "id": 502, "name": "pm25", "parameter": { "name": "pm25" }, "latest": { "value": 178.2 } }]
+    },
+    {
+      "id": 103,
+      "name": "Punjabi Bagh, Delhi - DPCC",
+      "locality": "Delhi",
+      "coordinates": { "latitude": 28.674, "longitude": 77.131 },
+      "sensors": [{ "id": 503, "name": "pm25", "parameter": { "name": "pm25" }, "latest": { "value": 192.5 } }]
+    },
+    {
+      "id": 104,
+      "name": "IHBAS, Dilshad Garden - DPCC",
+      "locality": "Delhi",
+      "coordinates": { "latitude": 28.681, "longitude": 77.305 },
+      "sensors": [{ "id": 504, "name": "pm25", "parameter": { "name": "pm25" }, "latest": { "value": 164.0 } }]
+    },
+    {
+      "id": 105,
+      "name": "ITO, Delhi - CPCB",
+      "locality": "Delhi",
+      "coordinates": { "latitude": 28.631, "longitude": 77.249 },
+      "sensors": [{ "id": 505, "name": "pm25", "parameter": { "name": "pm25" }, "latest": { "value": 185.7 } }]
+    },
+    {
+      "id": 106,
+      "name": "Sector 51, Gurugram - HSPCB",
+      "locality": "Gurugram",
+      "coordinates": { "latitude": 28.423, "longitude": 77.071 },
+      "sensors": [{ "id": 506, "name": "pm25", "parameter": { "name": "pm25" }, "latest": { "value": 156.8 } }]
+    },
+    {
+      "id": 107,
+      "name": "Sector 11, Faridabad - HSPCB",
+      "locality": "Faridabad",
+      "coordinates": { "latitude": 28.374, "longitude": 77.315 },
+      "sensors": [{ "id": 507, "name": "pm25", "parameter": { "name": "pm25" }, "latest": { "value": 170.1 } }]
+    },
+    {
+      "id": 108,
+      "name": "Manesar, Haryana - HSPCB",
+      "locality": "Manesar",
+      "coordinates": { "latitude": 28.351, "longitude": 76.938 },
+      "sensors": [{ "id": 508, "name": "pm25", "parameter": { "name": "pm25" }, "latest": { "value": 142.3 } }]
+    },
+    {
+      "id": 109,
+      "name": "Civil Line, Ludhiana - PPCB",
+      "locality": "Ludhiana",
+      "coordinates": { "latitude": 30.901, "longitude": 75.857 },
+      "sensors": [{ "id": 509, "name": "pm25", "parameter": { "name": "pm25" }, "latest": { "value": 138.9 } }]
+    },
+    {
+      "id": 110,
+      "name": "Model Town, Jalandhar - PPCB",
+      "locality": "Jalandhar",
+      "coordinates": { "latitude": 31.326, "longitude": 75.576 },
+      "sensors": [{ "id": 510, "name": "pm25", "parameter": { "name": "pm25" }, "latest": { "value": 125.4 } }]
+    },
+    {
+      "id": 111,
+      "name": "Golden Temple, Amritsar - PPCB",
+      "locality": "Amritsar",
+      "coordinates": { "latitude": 31.620, "longitude": 74.876 },
+      "sensors": [{ "id": 511, "name": "pm25", "parameter": { "name": "pm25" }, "latest": { "value": 145.0 } }]
+    },
+    {
+      "id": 112,
+      "name": "Sector 22, Chandigarh - CPCC",
+      "locality": "Chandigarh",
+      "coordinates": { "latitude": 30.733, "longitude": 76.779 },
+      "sensors": [{ "id": 512, "name": "pm25", "parameter": { "name": "pm25" }, "latest": { "value": 98.6 } }]
+    }
+  ]
+}

@@ -1,0 +1,140 @@
+{
+  "type": "FeatureCollection",
+  "fetched_at": "2025-11-04T08:30:00Z",
+  "source": "NASA_FIRMS_VIIRS_SNPP_NRT_STATIC_FALLBACK",
+  "count": 12,
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [75.32, 30.74] },
+      "properties": {
+        "frp": 42.3,
+        "brightness": 334.5,
+        "confidence": "high",
+        "acq_datetime": "2025-11-04T06:12:00Z",
+        "sensor": "VIIRS_SNPP"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [75.45, 30.91] },
+      "properties": {
+        "frp": 58.1,
+        "brightness": 341.2,
+        "confidence": "high",
+        "acq_datetime": "2025-11-04T06:12:00Z",
+        "sensor": "VIIRS_SNPP"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [75.12, 30.34] },
+      "properties": {
+        "frp": 31.7,
+        "brightness": 328.9,
+        "confidence": "nominal",
+        "acq_datetime": "2025-11-04T06:15:00Z",
+        "sensor": "VIIRS_SNPP"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [75.88, 31.15] },
+      "properties": {
+        "frp": 67.4,
+        "brightness": 349.0,
+        "confidence": "high",
+        "acq_datetime": "2025-11-04T06:15:00Z",
+        "sensor": "VIIRS_SNPP"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [76.12, 30.22] },
+      "properties": {
+        "frp": 25.8,
+        "brightness": 322.4,
+        "confidence": "nominal",
+        "acq_datetime": "2025-11-04T06:18:00Z",
+        "sensor": "VIIRS_SNPP"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [74.95, 30.82] },
+      "properties": {
+        "frp": 89.3,
+        "brightness": 358.1,
+        "confidence": "high",
+        "acq_datetime": "2025-11-04T06:18:00Z",
+        "sensor": "VIIRS_SNPP"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [75.62, 30.55] },
+      "properties": {
+        "frp": 44.0,
+        "brightness": 331.0,
+        "confidence": "high",
+        "acq_datetime": "2025-11-04T06:20:00Z",
+        "sensor": "VIIRS_SNPP"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [76.41, 29.98] },
+      "properties": {
+        "frp": 38.5,
+        "brightness": 330.4,
+        "confidence": "nominal",
+        "acq_datetime": "2025-11-04T06:22:00Z",
+        "sensor": "VIIRS_SNPP"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [76.75, 29.80] },
+      "properties": {
+        "frp": 52.6,
+        "brightness": 339.8,
+        "confidence": "high",
+        "acq_datetime": "2025-11-04T06:22:00Z",
+        "sensor": "VIIRS_SNPP"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [75.25, 31.42] },
+      "properties": {
+        "frp": 29.1,
+        "brightness": 326.5,
+        "confidence": "nominal",
+        "acq_datetime": "2025-11-04T06:25:00Z",
+        "sensor": "VIIRS_SNPP"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [75.78, 30.12] },
+      "properties": {
+        "frp": 73.2,
+        "brightness": 352.0,
+        "confidence": "high",
+        "acq_datetime": "2025-11-04T06:25:00Z",
+        "sensor": "VIIRS_SNPP"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [76.22, 30.65] },
+      "properties": {
+        "frp": 46.8,
+        "brightness": 336.1,
+        "confidence": "high",
+        "acq_datetime": "2025-11-04T06:28:00Z",
+        "sensor": "VIIRS_SNPP"
+      }
+    }
+  ]
+}
