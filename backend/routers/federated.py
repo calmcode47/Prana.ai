@@ -5,11 +5,16 @@ Serves Flower simulation round history and global vs local model accuracy metric
 
 import json
 from pathlib import Path
-from fastapi import APIRouter
+from typing import Optional
+from fastapi import APIRouter, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from backend.models import FLStatusResponse
-from backend.database import get_db_pool
+from backend.database import get_db_pool, get_in_memory_store
+from backend.ml.federated.server import run_federated_simulation
 
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/api/v1/federated", tags=["Federated Learning"])
 
 PRERUN_CACHE_FILE = Path(__file__).resolve().parent.parent / "data" / "cache" / "fl_prerun.json"
@@ -46,6 +51,30 @@ async def get_federated_status():
         except Exception:
             pass
 
+    # Check in-memory store
+    store = get_in_memory_store()
+    fl_store = store.get("fl_rounds", [])
+    if fl_store:
+        # Find latest run_id
+        latest_item = fl_store[-1]
+        latest_run = latest_item["run_id"]
+        run_rounds = [
+            {
+                "round_number": r["round_number"],
+                "punjab_accuracy": r["punjab_accuracy"],
+                "delhi_accuracy": r["delhi_accuracy"],
+                "global_accuracy": r["global_accuracy"]
+            }
+            for r in fl_store if r["run_id"] == latest_run
+        ]
+        run_rounds.sort(key=lambda x: x["round_number"])
+        return {
+            "run_id": latest_run,
+            "total_rounds": len(run_rounds),
+            "status": "complete" if len(run_rounds) >= 10 else "training",
+            "rounds": run_rounds
+        }
+
     # Load from pre-run cached metrics (RISK-005)
     if PRERUN_CACHE_FILE.exists():
         with open(PRERUN_CACHE_FILE, "r", encoding="utf-8") as f:
@@ -61,3 +90,14 @@ async def get_federated_status():
             for i in range(1, 11)
         ]
     }
+
+
+@router.post("/run", response_model=FLStatusResponse)
+@limiter.limit("5/minute")
+async def trigger_federated_run(request: Request, num_rounds: Optional[int] = 10):
+    """
+    Triggers a 10-round Federated Averaging simulation across Punjab and Delhi nodes.
+    Updates fl_rounds in the database and in-memory store.
+    """
+    result = await run_federated_simulation(num_rounds=num_rounds or 10)
+    return result

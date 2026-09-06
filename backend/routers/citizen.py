@@ -57,7 +57,7 @@ async def upload_sky_photo(
         try:
             if int(content_length) > MAX_FILE_SIZE:
                 raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                     detail="File too large. Maximum 5MB."
                 )
         except ValueError:
@@ -87,7 +87,7 @@ async def upload_sky_photo(
     remaining = await photo.read(MAX_FILE_SIZE - len(magic_header) + 1)
     if len(remaining) > (MAX_FILE_SIZE - len(magic_header)):
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="File too large. Maximum 5MB."
         )
 
