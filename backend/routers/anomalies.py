@@ -53,6 +53,17 @@ async def get_anomalies(
         except Exception:
             pass
 
+    if not items:
+        try:
+            from backend.ml.anomaly import run_anomaly_detection
+            items = await run_anomaly_detection(
+                parameter=parameter,
+                nighttime_only=nighttime_only,
+                days_back=days_back
+            )
+        except Exception:
+            pass
+
     return {
         "count": len(items),
         "items": items

@@ -113,17 +113,27 @@ async def upload_sky_photo(
     # Step 5: Compute SHA-256 of sanitized image bytes (no raw image persisted)
     photo_hash = hashlib.sha256(clean_bytes).hexdigest()
 
-    # Step 6: Inference / Stub prediction (SESSION-001)
-    # Returns estimated PM2.5 with computed India AQI index
-    pm25_estimate = 99.0
-    aqi_index = compute_cpcb_aqi(pm25_estimate)
-    aqi_cat, aqi_col = get_aqi_category_and_color(aqi_index)
+    # Step 6: ML Inference via Dark Channel Prior (DCP) Haze Estimator (REQ-009)
+    try:
+        from backend.ml.haze_estimator import estimate_pm25_from_photo
+        result = estimate_pm25_from_photo(clean_bytes)
+        pm25_estimate = result["pm25_estimate"]
+        confidence = result["confidence"]
+        aqi_index = result["aqi_index"]
+        aqi_cat = result["aqi_category"]
+        aqi_col = result["aqi_color"]
+    except Exception as ex:
+        logger.warning(f"Error running DCP haze estimator ({ex}); using fallback estimation.")
+        pm25_estimate = 99.0
+        confidence = "medium"
+        aqi_index = compute_cpcb_aqi(pm25_estimate)
+        aqi_cat, aqi_col = get_aqi_category_and_color(aqi_index)
 
     elapsed_ms = int((time.perf_counter() - start_time) * 1000)
 
     return {
         "pm25_estimate": pm25_estimate,
-        "confidence": "medium",
+        "confidence": confidence,
         "aqi_category": aqi_cat,
         "aqi_index": aqi_index,
         "aqi_color": aqi_col,

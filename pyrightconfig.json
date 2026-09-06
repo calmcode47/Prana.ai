@@ -1,0 +1,16 @@
+{
+  "include": [
+    "backend",
+    "backend/routers",
+    "backend/ml",
+    "backend/tests",
+    "backend/ingesters"
+  ],
+  "extraPaths": [
+    ".",
+    "backend",
+    "backend/.venv/Lib/site-packages"
+  ],
+  "venvPath": "backend",
+  "venv": ".venv"
+}

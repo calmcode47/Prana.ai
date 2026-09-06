@@ -16,9 +16,15 @@ router = APIRouter(prefix="/api/v1/forecast", tags=["Forecast"])
 @router.get("/plume", response_model=PlumeResponse)
 async def get_forecast_plume(cluster_id: Optional[str] = Query(None)):
     """
-    Returns Gaussian-plume trajectory polygons for active fire clusters.
-    Stub returning 3 horizons (24h, 48h, 72h) until SESSION-002.
+    Returns Gaussian-plume trajectory polygons for active fire clusters (REQ-006).
+    Computes 24h, 48h, and 72h forward dispersion polygons based on FIRMS and Open-Meteo.
     """
+    try:
+        from backend.ml.trajectory import compute_plume_trajectories
+        return await compute_plume_trajectories(cluster_id_filter=cluster_id)
+    except Exception:
+        pass
+
     target_cluster = cluster_id or "CLU-20251104-001"
 
     # Plume polygons advecting south-east from Punjab towards Delhi NCR

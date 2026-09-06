@@ -108,30 +108,22 @@ async def get_aqi_stations(
 
 
 @router.get("/surface", response_model=SurfaceGridResponse)
-async def get_aqi_surface():
+async def get_aqi_surface(resolution_deg: float = Query(0.5, ge=0.1, le=1.0)):
     """
-    Returns continuous PM2.5 surface grid.
-    Stub returning static sample grid from GP downscaler until SESSION-002.
+    Returns continuous PM2.5 surface grid produced by Gaussian Process Downscaler (REQ-005).
+    Fuses ground CPCB readings with satellite TROPOMI AAI.
     """
-    if SURFACE_FALLBACK_PATH.exists():
-        with open(SURFACE_FALLBACK_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data
-
-    # Default fallback
-    return {
-        "type": "FeatureCollection",
-        "computed_at": datetime.now(timezone.utc).isoformat(),
-        "resolution_deg": 0.1,
-        "features": [
-            {
-                "type": "Feature",
-                "geometry": { "type": "Point", "coordinates": [75.5, 30.5] },
-                "properties": {
-                    "pm25_estimate": 175.0,
-                    "aqi_index": compute_cpcb_aqi(175.0),
-                    "uncertainty_std": 14.5
-                }
-            }
-        ]
-    }
+    try:
+        from backend.ml.downscaler import run_downscaler
+        return await run_downscaler(resolution_deg=resolution_deg)
+    except Exception as ex:
+        logger.warning(f"Error running GP downscaler ({ex}); falling back to static surface grid.")
+        if SURFACE_FALLBACK_PATH.exists():
+            with open(SURFACE_FALLBACK_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return {
+            "type": "FeatureCollection",
+            "computed_at": datetime.now(timezone.utc).isoformat(),
+            "resolution_deg": resolution_deg,
+            "features": []
+        }
