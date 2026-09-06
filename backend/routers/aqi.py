@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 
 from backend.models import StationsResponse, SurfaceGridResponse
 from backend.ingesters.ingest_openaq import fetch_openaq_stations
@@ -24,7 +24,7 @@ SURFACE_FALLBACK_PATH = Path(__file__).resolve().parent.parent / "data" / "stati
 
 @router.get("/stations", response_model=StationsResponse)
 async def get_aqi_stations(
-    parameter: str = Query("pm25", pattern="^(pm25|pm10|no2|so2)$"),
+    parameter: str = Query("pm25", pattern="^pm25$"),
     state: Optional[str] = Query(None, description="Filter by state (Delhi, Punjab, Haryana)")
 ):
     """
@@ -39,7 +39,7 @@ async def get_aqi_stations(
             async with pool.acquire() as conn:
                 query = """
                 SELECT DISTINCT ON (station_id)
-                    station_id, station_name, city, state, latitude, longitude, pm25_ugm3, measured_at
+                    station_id, station_name, city, state, latitude, longitude, pm25_ugm3, measured_at, source
                 FROM aqi_readings
                 WHERE parameter = $1
                 ORDER BY station_id, measured_at DESC
@@ -59,13 +59,17 @@ async def get_aqi_stations(
                         "longitude": r["longitude"],
                         "pm25_ugm3": pm25_val,
                         "aqi_index": compute_cpcb_aqi(pm25_val),
+                        "source": r["source"],
                         "measured_at": r["measured_at"].isoformat()
                     })
         except Exception as ex:
-            logger.warning(f"Error querying aqi_readings: {ex}")
+            raise HTTPException(503, "Station storage unavailable") from None
 
-    if not readings:
-        raw = await fetch_openaq_stations()
+    if pool is None:
+        try:
+            raw = await fetch_openaq_stations()
+        except Exception:
+            raise HTTPException(503, "Station data unavailable") from None
         for r in raw:
             if state:
                 st_val = (r.get("state") or "").lower()
@@ -79,6 +83,7 @@ async def get_aqi_stations(
                 "longitude": r["longitude"],
                 "pm25_ugm3": pm25_val,
                 "aqi_index": r.get("aqi_index", compute_cpcb_aqi(pm25_val)),
+                "source": r.get("source", "unknown"),
                 "measured_at": r.get("measured_at", datetime.now(timezone.utc).isoformat())
             })
 
@@ -100,7 +105,8 @@ async def get_aqi_stations(
                     "pm25_ugm3": r["pm25_ugm3"],
                     "aqi_index": r["aqi_index"],
                     "phenomenonTime": r["measured_at"],
-                    "resultQuality": "good"
+                    "source": r.get("source", "unknown"),
+                    "resultQuality": "demo" if "DEMO" in r.get("source", "") else "unverified"
                 }]
             }]
         })
@@ -121,10 +127,15 @@ async def get_aqi_surface(resolution_deg: float = Query(0.5, ge=0.1, le=1.0)):
         from backend.ml.downscaler import run_downscaler
         return await run_downscaler(resolution_deg=resolution_deg)
     except Exception as ex:
-        logger.warning(f"Error running GP downscaler ({ex}); falling back to static surface grid.")
+        from backend.config import demo_enabled
+        if not demo_enabled():
+            raise HTTPException(503, "Surface data unavailable") from None
+        logger.warning("Surface calculation failed (%s)", type(ex).__name__)
         if SURFACE_FALLBACK_PATH.exists():
             with open(SURFACE_FALLBACK_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                data["source"] = "DEMO_STATIC"
+                return data
         return {
             "type": "FeatureCollection",
             "computed_at": datetime.now(timezone.utc).isoformat(),

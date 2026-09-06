@@ -3,12 +3,14 @@ services:
     name: prana-backend
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    dockerContext: .
     plan: standard
     region: singapore
-    healthCheckPath: /health
+    healthCheckPath: /ready
     autoDeploy: true
     envVars:
+      - key: PRANA_ENV
+        value: production
       - key: PORT
         value: "8000"
       - key: DATABASE_URL
@@ -16,7 +18,7 @@ services:
           name: prana-db
           property: connectionString
       - key: CORS_ORIGINS
-        value: "*"
+        sync: false
       - key: FIRMS_MAP_KEY
         sync: false
       - key: OPENAQ_API_KEY

@@ -12,6 +12,8 @@ import io
 import time
 import hashlib
 import logging
+from datetime import datetime, timezone
+from starlette.concurrency import run_in_threadpool
 from typing import Optional
 from PIL import Image
 from fastapi import APIRouter, Request, UploadFile, File, Form, HTTPException, status
@@ -19,7 +21,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from backend.models import CitizenPhotoResponse
-from backend.database import compute_cpcb_aqi, get_aqi_category_and_color
+from backend.database import compute_cpcb_aqi, get_aqi_category_and_color, get_db_pool, get_in_memory_store
 
 logger = logging.getLogger("prana.routers.citizen")
 
@@ -34,8 +36,8 @@ MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB in bytes
 async def upload_sky_photo(
     request: Request,
     photo: UploadFile = File(...),
-    latitude: Optional[float] = Form(None),
-    longitude: Optional[float] = Form(None)
+    latitude: Optional[float] = Form(None, ge=-90, le=90, allow_inf_nan=False),
+    longitude: Optional[float] = Form(None, ge=-180, le=180, allow_inf_nan=False)
 ):
     """
     Accepts a sky photo for PM2.5 haze estimation.
@@ -52,16 +54,10 @@ async def upload_sky_photo(
         )
 
     # Step 2: File size check BEFORE reading full body (SEC-003b)
-    content_length = request.headers.get("content-length")
-    if content_length:
-        try:
-            if int(content_length) > MAX_FILE_SIZE:
-                raise HTTPException(
-                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-                    detail="File too large. Maximum 5MB."
-                )
-        except ValueError:
-            pass
+    if photo.size is not None and photo.size > MAX_FILE_SIZE:
+        raise HTTPException(413, "File too large. Maximum 5MB.")
+    if (latitude is None) != (longitude is None):
+        raise HTTPException(422, "Provide both latitude and longitude")
 
     # Read the first 16 bytes for magic bytes verification
     magic_header = await photo.read(16)
@@ -96,6 +92,8 @@ async def upload_sky_photo(
     # Step 4: EXIF strip with Pillow
     try:
         with Image.open(io.BytesIO(full_image_bytes)) as img:
+            if img.width * img.height > 20_000_000:
+                raise ValueError("Image exceeds 20 megapixels")
             # Re-create clean image without EXIF metadata
             clean_img = img.convert("RGB")
             # Resize for model inference (224x224)
@@ -116,18 +114,35 @@ async def upload_sky_photo(
     # Step 6: ML Inference via Dark Channel Prior (DCP) Haze Estimator (REQ-009)
     try:
         from backend.ml.haze_estimator import estimate_pm25_from_photo
-        result = estimate_pm25_from_photo(clean_bytes)
+        result = await run_in_threadpool(estimate_pm25_from_photo, clean_bytes)
         pm25_estimate = result["pm25_estimate"]
         confidence = result["confidence"]
         aqi_index = result["aqi_index"]
         aqi_cat = result["aqi_category"]
         aqi_col = result["aqi_color"]
     except Exception as ex:
-        logger.warning(f"Error running DCP haze estimator ({ex}); using fallback estimation.")
-        pm25_estimate = 99.0
-        confidence = "medium"
-        aqi_index = compute_cpcb_aqi(pm25_estimate)
-        aqi_cat, aqi_col = get_aqi_category_and_color(aqi_index)
+        raise HTTPException(503, "Image estimator is unavailable") from None
+
+    report = {"photo_hash": photo_hash, "latitude": latitude, "longitude": longitude,
+              "pm25_estimate": pm25_estimate, "confidence": confidence,
+              "submitted_at": datetime.now(timezone.utc).isoformat()}
+    pool = get_db_pool()
+    if pool:
+        try:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO citizen_reports
+                    (photo_hash, latitude, longitude, geom, pm25_estimate, confidence)
+                    VALUES ($1,$2,$3,CASE WHEN $2::float8 IS NULL THEN NULL
+                    ELSE ST_SetSRID(ST_Point($3,$2),4326) END,$4,$5)
+                    ON CONFLICT (photo_hash) DO NOTHING""",
+                    photo_hash, latitude, longitude, pm25_estimate, confidence)
+        except Exception:
+            raise HTTPException(503, "Report could not be saved") from None
+    else:
+        reports = get_in_memory_store()["citizen_reports"]
+        if not any(r["photo_hash"] == photo_hash for r in reports):
+            reports.append(report)
 
     elapsed_ms = int((time.perf_counter() - start_time) * 1000)
 

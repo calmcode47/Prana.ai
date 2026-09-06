@@ -5,6 +5,9 @@ polygons for 24h, 48h, and 72h horizons using Open-Meteo wind fields and mixing 
 """
 
 import math
+import json
+from backend.ingesters.memo import cached_snapshot
+from backend.database import get_in_memory_store
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,6 +55,7 @@ def create_ellipse_polygon(
     return points
 
 
+@cached_snapshot("plume", ttl=300)
 async def compute_plume_trajectories(cluster_id_filter: Optional[str] = None) -> Dict[str, Any]:
     """
     Executes DBSCAN fire clustering and analytical Gaussian dispersion modeling.
@@ -62,13 +66,8 @@ async def compute_plume_trajectories(cluster_id_filter: Optional[str] = None) ->
     features = hotspots_data.get("features", [])
 
     if not features:
-        # Fallback single synthetic cluster in Punjab (Sangrur / Ludhiana)
-        fire_points = [
-            {"lat": 30.74, "lon": 75.32, "frp": 45.0},
-            {"lat": 30.82, "lon": 75.45, "frp": 55.0},
-            {"lat": 30.65, "lon": 75.25, "frp": 35.0},
-            {"lat": 30.70, "lon": 75.50, "frp": 60.0},
-        ]
+        return {"type": "FeatureCollection", "computed_at": datetime.now(timezone.utc).isoformat(),
+                "source": hotspots_data.get("source", "unknown"), "features": []}
     else:
         fire_points = []
         for feat in features:
@@ -130,7 +129,7 @@ async def compute_plume_trajectories(cluster_id_filter: Optional[str] = None) ->
             travel_km = (wind_speed * h * 3600.0) / 1000.0
 
             # Displacement in degrees (1 deg ~ 111 km)
-            d_lon = (travel_km * math.sin(downwind_rad)) / 111.0
+            d_lon = (travel_km * math.sin(downwind_rad)) / (111.0 * math.cos(math.radians(centroid_lat)))
             d_lat = (travel_km * math.cos(downwind_rad)) / 111.0
 
             # Advected plume center
@@ -172,8 +171,30 @@ async def compute_plume_trajectories(cluster_id_filter: Optional[str] = None) ->
                 }
             })
 
+    await persist_forecasts(plume_features)
     return {
         "type": "FeatureCollection",
         "computed_at": datetime.now(timezone.utc).isoformat(),
+        "source": "model_estimate; fires=" + hotspots_data.get("source", "unknown") + "; weather=" + punjab_meteo.get("source", "unknown"),
         "features": plume_features
     }
+
+
+async def persist_forecasts(features):
+    pool = get_db_pool()
+    if pool:
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                for feature in features:
+                    p = feature["properties"]
+                    geometry = json.dumps(feature["geometry"])
+                    await conn.execute("DELETE FROM forecast_zones WHERE fire_cluster_id=$1 AND horizon_hours=$2",
+                                       p["cluster_id"], p["horizon_hours"])
+                    await conn.execute("""INSERT INTO forecast_zones
+                        (fire_cluster_id,horizon_hours,geom,centroid_lat,centroid_lon,max_pm25_est,
+                         wind_speed_ms,wind_dir_deg,mixing_height_m)
+                        SELECT $1,$2,g,ST_Y(ST_Centroid(g)),ST_X(ST_Centroid(g)),$4,$5,$6,$7
+                        FROM (SELECT ST_SetSRID(ST_GeomFromGeoJSON($3),4326) AS g) geometry""",
+                        p["cluster_id"],p["horizon_hours"],geometry,p["max_pm25_est"],
+                        p["wind_speed_ms"],p["wind_dir_deg"],p["mixing_height_m"])
+    get_in_memory_store()["forecast_zones"] = features

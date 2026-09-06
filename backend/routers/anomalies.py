@@ -5,7 +5,7 @@ Serves industrial emission spike flags (daytime vs nighttime) detected via Isola
 
 import logging
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 
 from backend.models import AnomaliesResponse, AnomalyItem
 from backend.database import get_db_pool, get_in_memory_store
@@ -53,7 +53,7 @@ async def get_anomalies(
                         "is_anomaly": r["is_anomaly"]
                     })
         except Exception as ex:
-            logger.warning(f"Error querying anomaly_flags from DB: {ex}")
+            raise HTTPException(503, "Anomaly storage unavailable") from None
 
     if not items:
         try:
@@ -64,7 +64,7 @@ async def get_anomalies(
                 days_back=days_back
             )
         except Exception as ex:
-            logger.warning(f"Error running IsolationForest anomaly detection: {ex}")
+            raise HTTPException(503, "Anomaly analysis unavailable") from None
 
     return {
         "count": len(items),

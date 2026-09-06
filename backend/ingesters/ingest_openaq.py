@@ -5,8 +5,11 @@ Stores raw readings as pm25_ugm3, calculates aqi_index server-side using CPCB br
 """
 
 import os
+import math
+from backend.config import demo_enabled
 import json
 import logging
+from backend.ingesters.memo import cached_snapshot
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -36,88 +39,87 @@ FALLBACK_STATIONS: List[Dict[str, Any]] = [
 ]
 
 
+@cached_snapshot("openaq")
 async def fetch_openaq_stations(client: Optional[httpx.AsyncClient] = None) -> List[Dict[str, Any]]:
-    """
-    Fetches ground station readings via OpenAQ v3 API or loads fallback stations.
-    Always includes both pm25_ugm3 and aqi_index fields.
-    """
+    """Join location metadata with actual sensor observations from OpenAQ v3."""
     api_key = os.getenv("OPENAQ_API_KEY")
-    headers = {}
-    if api_key:
-        headers["X-API-Key"] = api_key
-
-    readings: List[Dict[str, Any]] = []
-    now_iso = datetime.now(timezone.utc).isoformat()
-
-    try:
-        should_close = False
-        if client is None:
-            client = httpx.AsyncClient(timeout=10.0)
-            should_close = True
-
+    headers = {"X-API-Key": api_key} if api_key else {}
+    readings = []
+    live_success = False
+    pollutant_readings = []
+    if api_key or client is not None:
+        owned = client is None
+        client = client or httpx.AsyncClient(timeout=10.0)
         try:
-            # Query locations in bbox
-            url = f"{OPENAQ_BASE_URL}/locations?country_id=IN&parameters_id=2&bbox={BBOX_STR}&limit=50"
-            resp = await client.get(url, headers=headers)
-            if resp.status_code == 200:
-                data = resp.json()
-                results = data.get("results", [])
-                for item in results:
-                    coords = item.get("coordinates")
-                    if not coords or coords.get("latitude") is None or coords.get("longitude") is None:
-                        logger.debug(f"Skipping station {item.get('id')} due to missing coordinates.")
+            response = await client.get(f"{OPENAQ_BASE_URL}/locations",
+                params={"parameters_id": 2, "bbox": BBOX_STR, "limit": 100}, headers=headers)
+            response.raise_for_status()
+            locations = response.json()["results"]
+            for item in locations:
+                coords = item.get("coordinates") or {}
+                if coords.get("latitude") is None or coords.get("longitude") is None:
+                    continue
+                sensors = {s["id"] for s in item.get("sensors", [])
+                           if s.get("parameter", {}).get("name") == "pm25"}
+                if not sensors:
+                    continue
+                latest = await client.get(f"{OPENAQ_BASE_URL}/locations/{item['id']}/latest", headers=headers)
+                latest.raise_for_status()
+                sensor_map = {s["id"]: s.get("parameter", {}) for s in item.get("sensors", [])}
+                valid = []
+                for obs in latest.json()["results"]:
+                    value = obs.get("value")
+                    stamp = (obs.get("datetime") or {}).get("utc")
+                    if value is None or not math.isfinite(float(value)) or float(value) < 0 or not stamp:
                         continue
-
-                    # Extract sensor/reading if available
-                    pm25_val = 120.0  # default representative value if not yet measured
-                    sensors = item.get("sensors", [])
-                    for s in sensors:
-                        param = s.get("parameter", {})
-                        if param.get("name") == "pm25" and s.get("latest"):
-                            val = s.get("latest", {}).get("value")
-                            if val is not None and val >= 0:
-                                pm25_val = float(val)
-                                break
-
-                    readings.append({
-                        "station_id": f"IN-OPENAQ-{item.get('id')}",
-                        "name": item.get("name", "Unnamed Station"),
-                        "city": item.get("locality", "NCR"),
-                        "state": "NCR",
-                        "latitude": float(coords["latitude"]),
-                        "longitude": float(coords["longitude"]),
-                        "pm25_ugm3": pm25_val,
-                        "measured_at": now_iso
-                    })
-                if readings:
-                    logger.info(f"Fetched {len(readings)} ground stations from live OpenAQ API.")
+                    dt = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        continue
+                    pollutant = sensor_map.get(obs.get("sensorsId"), {})
+                    if pollutant.get("name") in ("no2", "so2"):
+                        pollutant_readings.append({"station_id": f"IN-OPENAQ-{item['id']}",
+                            "station_name": item.get("name"), "parameter": pollutant["name"],
+                            "value": float(value), "unit": pollutant.get("units", "unknown"),
+                            "measured_at": dt.isoformat(), "source": "OPENAQ_LIVE"})
+                    if obs.get("sensorsId") in sensors:
+                        valid.append((dt, float(value)))
+                if not valid:
+                    continue
+                measured_at, value = max(valid, key=lambda row: row[0])
+                locality = item.get("locality") or ""
+                name = item.get("name") or "Unnamed Station"
+                label = (locality + " " + name).lower()
+                state = next((state for state in ("Delhi", "Punjab", "Haryana") if state.lower() in label), "NCR")
+                if state == "NCR":
+                    if any(word in label for word in ("gurugram", "gurgaon", "faridabad", "manesar", "panipat", "sonipat", "hspcb")):
+                        state = "Haryana"
+                    elif any(word in label for word in ("ludhiana", "amritsar", "jalandhar", "patiala", "ppcb")):
+                        state = "Punjab"
+                    elif "dpcc" in label:
+                        state = "Delhi"
+                readings.append({"station_id": f"IN-OPENAQ-{item['id']}", "name": name,
+                    "city": locality, "state": state, "latitude": float(coords["latitude"]),
+                    "longitude": float(coords["longitude"]), "pm25_ugm3": value,
+                    "measured_at": measured_at.isoformat(), "source": "OPENAQ_LIVE", "parameter": "pm25"})
+            live_success = True
+        except Exception as exc:
+            logger.warning("OpenAQ ingestion failed (%s)", type(exc).__name__)
+            readings = []
+            pollutant_readings = []
         finally:
-            if should_close:
+            if owned:
                 await client.aclose()
-    except Exception as ex:
-        logger.warning(f"Error calling OpenAQ API ({ex}); using fallback ground stations.")
-
-    if not readings:
-        for s in FALLBACK_STATIONS:
-            readings.append({
-                "station_id": s["station_id"],
-                "name": s["name"],
-                "city": s["city"],
-                "state": s["state"],
-                "latitude": s["lat"],
-                "longitude": s["lon"],
-                "pm25_ugm3": s["pm25"],
-                "measured_at": now_iso
-            })
-        logger.info(f"Loaded {len(readings)} fallback ground stations.")
-
-    # Compute aqi_index for every reading (CPCB 24h breakpoints)
+    if not live_success:
+        if not demo_enabled():
+            raise RuntimeError("Live OpenAQ data unavailable; configure OPENAQ_API_KEY")
+        readings = [{"station_id": s["station_id"], "name": s["name"], "city": s["city"],
+            "state": s["state"], "latitude": s["lat"], "longitude": s["lon"], "pm25_ugm3": s["pm25"],
+            "measured_at": "2025-11-04T08:00:00+00:00", "source": "DEMO_STATIC", "parameter": "pm25"}
+            for s in FALLBACK_STATIONS]
     for r in readings:
         r["aqi_index"] = compute_cpcb_aqi(r["pm25_ugm3"])
-
-    # Persist to database / memory
     await persist_aqi_readings(readings)
-
+    await persist_pollutants(pollutant_readings)
     return readings
 
 
@@ -130,8 +132,10 @@ async def persist_aqi_readings(readings: List[Dict[str, Any]]):
         try:
             async with pool.acquire() as conn:
                 stmt = """
-                INSERT INTO aqi_readings (station_id, station_name, city, state, latitude, longitude, parameter, pm25_ugm3, unit, measured_at)
-                VALUES ($1, $2, $3, $4, $5, $6, 'pm25', $7, 'ug/m3', $8)
+                INSERT INTO aqi_readings (station_id, station_name, city, state, latitude, longitude, parameter, pm25_ugm3, unit, measured_at, source)
+                VALUES ($1, $2, $3, $4, $5, $6, 'pm25', $7, 'ug/m3', $8, $9)
+                ON CONFLICT (station_id, parameter, measured_at) DO UPDATE SET
+                pm25_ugm3=EXCLUDED.pm25_ugm3, source=EXCLUDED.source
                 """
                 for r in readings:
                     dt = datetime.fromisoformat(r["measured_at"].replace("Z", "+00:00"))
@@ -144,11 +148,27 @@ async def persist_aqi_readings(readings: List[Dict[str, Any]]):
                         r["latitude"],
                         r["longitude"],
                         r["pm25_ugm3"],
-                        dt
+                        dt,
+                        r.get("source", "unknown")
                     )
-            return
-        except Exception as ex:
-            logger.warning(f"Error persisting aqi_readings to PostgreSQL: {ex}")
+        except Exception:
+            raise RuntimeError("AQI persistence failed") from None
 
     store = get_in_memory_store()
     store["aqi_readings"] = readings
+
+
+async def persist_pollutants(readings):
+    pool = get_db_pool()
+    if pool:
+        async with pool.acquire() as conn:
+            await conn.executemany("""INSERT INTO pollutant_readings
+                (station_id,station_name,parameter,value,unit,measured_at,source)
+                VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(station_id,parameter,measured_at)
+                DO UPDATE SET value=EXCLUDED.value""",
+                [(r["station_id"],r.get("station_name"),r["parameter"],r["value"],r["unit"],
+                  datetime.fromisoformat(r["measured_at"]),r["source"]) for r in readings])
+    store = get_in_memory_store()["pollutant_readings"]
+    keyed = {(r["station_id"],r["parameter"],r["measured_at"]):r for r in store}
+    keyed.update({(r["station_id"],r["parameter"],r["measured_at"]):r for r in readings})
+    store[:] = list(keyed.values())[-100000:]

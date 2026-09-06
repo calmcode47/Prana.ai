@@ -104,7 +104,7 @@ async def benchmark_endpoint(
     }
 
 
-async def run_full_load_test():
+async def _run_load_test():
     """Runs concurrent load benchmarks across all PRANA backend endpoints."""
     print("=" * 80)
     print("PRANA BACKEND CONCURRENCY & LATENCY BENCHMARK")
@@ -185,5 +185,11 @@ async def run_full_load_test():
     return all_sla_passed
 
 
+async def run_full_load_test():
+    async with app.router.lifespan_context(app):
+        return await _run_load_test()
+
+
 if __name__ == "__main__":
-    asyncio.run(run_full_load_test())
+    import sys
+    sys.exit(0 if asyncio.run(run_full_load_test()) else 1)

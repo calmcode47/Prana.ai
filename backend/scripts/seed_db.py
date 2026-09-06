@@ -27,6 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.database import (
     DDL_STATEMENTS,
+    MIGRATIONS,
     compute_cpcb_aqi,
     get_in_memory_store,
 )
@@ -200,31 +201,10 @@ def generate_incidents() -> List[Dict[str, Any]]:
 
 
 def generate_fl_rounds() -> List[Dict[str, Any]]:
-    """Generates 10-round FedAvg convergence history adhering to REQ-008."""
-    run_id = f"FL-{datetime.now(timezone.utc).strftime('%Y%m%d')}-CORRIDOR"
-    rounds = [
-        {"round": 1, "p_acc": 0.58, "d_acc": 0.55, "g_acc": 0.57},
-        {"round": 2, "p_acc": 0.62, "d_acc": 0.59, "g_acc": 0.63},
-        {"round": 3, "p_acc": 0.66, "d_acc": 0.64, "g_acc": 0.68},
-        {"round": 4, "p_acc": 0.70, "d_acc": 0.67, "g_acc": 0.72},
-        {"round": 5, "p_acc": 0.73, "d_acc": 0.71, "g_acc": 0.76},
-        {"round": 6, "p_acc": 0.75, "d_acc": 0.73, "g_acc": 0.79},
-        {"round": 7, "p_acc": 0.78, "d_acc": 0.76, "g_acc": 0.83},
-        {"round": 8, "p_acc": 0.80, "d_acc": 0.78, "g_acc": 0.86},
-        {"round": 9, "p_acc": 0.82, "d_acc": 0.80, "g_acc": 0.88},
-        {"round": 10, "p_acc": 0.83, "d_acc": 0.81, "g_acc": 0.91},
-    ]
-    return [
-        {
-            "round_number": r["round"],
-            "punjab_accuracy": r["p_acc"],
-            "delhi_accuracy": r["d_acc"],
-            "global_accuracy": r["g_acc"],
-            "run_id": run_id,
-            "computed_at": datetime.now(timezone.utc).isoformat(),
-        }
-        for r in rounds
-    ]
+    """Seed measured results from the reproducible synthetic FedAvg experiment."""
+    from backend.ml.federated.server import FederatedServer
+    return [{**r, "computed_at": datetime.now(timezone.utc).isoformat()}
+            for r in FederatedServer().run_rounds(10)]
 
 
 # ==============================================================================
@@ -234,9 +214,10 @@ def generate_fl_rounds() -> List[Dict[str, Any]]:
 async def apply_migrations(conn: asyncpg.Connection):
     """Executes all PostGIS DDL table creation statements."""
     print("[MIGRATION] Applying PostGIS extensions & table schemas...")
-    for ddl in DDL_STATEMENTS:
-        await conn.execute(ddl)
-    print("[MIGRATION] All 7 tables created or verified successfully.")
+    async with conn.transaction():
+        for ddl in DDL_STATEMENTS + MIGRATIONS:
+            await conn.execute(ddl)
+    print("[MIGRATION] All 8 tables created or verified successfully.")
 
 
 async def seed_postgres(conn: asyncpg.Connection, clean: bool = False):
@@ -245,7 +226,7 @@ async def seed_postgres(conn: asyncpg.Connection, clean: bool = False):
         print("[CLEAN] Truncating existing tables...")
         await conn.execute("""
             TRUNCATE TABLE fire_hotspots, aqi_readings, forecast_zones,
-                           anomaly_flags, citizen_reports, incidents, fl_rounds
+                           anomaly_flags, citizen_reports, incidents, fl_rounds, pollutant_readings
             RESTART IDENTITY CASCADE;
         """)
 
@@ -333,6 +314,7 @@ async def verify_postgres(conn: asyncpg.Connection):
         "citizen_reports",
         "incidents",
         "fl_rounds",
+        "pollutant_readings",
     ]
     for tbl in tables:
         count = await conn.fetchval(f"SELECT COUNT(*) FROM {tbl}")
@@ -356,11 +338,15 @@ def seed_in_memory():
 
 
 async def main():
+    from dotenv import load_dotenv
+    load_dotenv(PROJECT_ROOT / "backend" / ".env")
     parser = argparse.ArgumentParser(description="PRANA Database Seeder & Migration CLI")
     parser.add_argument("--clean", action="store_true", help="Truncate tables before seeding")
     parser.add_argument("--verify-only", action="store_true", help="Only verify existing row counts")
     parser.add_argument("--in-memory", action="store_true", help="Seed in-memory store directly")
     args = parser.parse_args()
+    if os.getenv("PRANA_ENV") == "production" and not args.verify_only:
+        parser.error("Synthetic seeding is disabled in production")
 
     print("=" * 70)
     print("PRANA Atmospheric Corridor — Database Seeder & Verification")
@@ -370,10 +356,11 @@ async def main():
         seed_in_memory()
         return
 
+    db_url = os.getenv("DATABASE_URL", DATABASE_URL).replace("postgresql+asyncpg://", "postgresql://")
     # Attempt PostgreSQL Connection
     try:
-        print(f"Connecting to: {DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else DATABASE_URL}")
-        conn = await asyncpg.connect(DATABASE_URL, timeout=3.0)
+        print("Connecting to configured database")
+        conn = await asyncpg.connect(db_url, timeout=5.0)
         print("Connected to PostgreSQL successfully.")
 
         try:
@@ -387,9 +374,9 @@ async def main():
             await conn.close()
 
     except Exception as e:
-        print(f"\n[NOTE] PostgreSQL connection unavailable ({e}).")
-        print("[FALLBACK] Seeding in-memory store for local testing & CI...")
-        seed_in_memory()
+        print(f"Database verification failed: {type(e).__name__}")
+        raise SystemExit(1)
+
 
 
 if __name__ == "__main__":

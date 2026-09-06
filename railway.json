@@ -2,12 +2,11 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "backend/Dockerfile",
-    "context": "backend"
+    "dockerfilePath": "backend/Dockerfile"
   },
   "deploy": {
-    "startCommand": "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2",
-    "healthcheckPath": "/health",
+    "startCommand": "python -m backend.scripts.serve",
+    "healthcheckPath": "/ready",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 5

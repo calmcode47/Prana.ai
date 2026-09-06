@@ -3,7 +3,7 @@ PRANA Pydantic V2 Models
 Defines all request and response schemas matching 04_api.md.
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from pydantic import BaseModel, Field
 
 
@@ -42,9 +42,11 @@ class HotspotsResponse(BaseModel):
 # ==============================================================================
 class Observation(BaseModel):
     pm25_ugm3: float = Field(..., description="Raw PM2.5 in ug/m3")
-    aqi_index: int = Field(..., description="Computed India CPCB AQI (0-500+)")
+    aqi_index: int = Field(..., description="PM2.5 sub-index estimate (0-500)")
     phenomenonTime: str
     resultQuality: Optional[str] = "good"
+    source: str = "unknown"
+    averaging_period: str = "instantaneous; PM2.5 sub-index estimate, not official 24h AQI"
 
 
 class Datastream(BaseModel):
@@ -106,6 +108,7 @@ class SurfaceGridResponse(BaseModel):
     computed_at: str
     resolution_deg: float = 0.1
     features: List[SurfaceGridFeature]
+    source: str = "model_estimate"
 
 
 # ==============================================================================
@@ -136,6 +139,7 @@ class PlumeResponse(BaseModel):
     type: str = "FeatureCollection"
     computed_at: str
     features: List[PlumeFeature]
+    source: str = "model_estimate"
 
 
 # ==============================================================================
@@ -150,6 +154,7 @@ class AnomalyItem(BaseModel):
     is_nighttime: bool
     anomaly_score: float
     is_anomaly: bool
+    source: str = "observations"
 
 
 class AnomaliesResponse(BaseModel):
@@ -167,6 +172,7 @@ class CitizenPhotoResponse(BaseModel):
     aqi_index: int
     aqi_color: str
     processing_time_ms: int
+    source: str = "DCP_HEURISTIC_ESTIMATE"
 
 
 # ==============================================================================
@@ -208,13 +214,13 @@ class LatestAlertResponse(BaseModel):
 
 
 class IncidentCreate(BaseModel):
-    severity: str = Field(..., description="emergency | warning | watch")
+    severity: Literal["emergency", "warning", "watch"]
     location_text: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    pollutant: Optional[str] = "PM2.5"
-    measured_pm25: float
-    satellite_source: Optional[str] = "FIRMS"
+    latitude: Optional[float] = Field(None, ge=-90, le=90, allow_inf_nan=False)
+    longitude: Optional[float] = Field(None, ge=-180, le=180, allow_inf_nan=False)
+    pollutant: Literal["PM2.5"] = "PM2.5"
+    measured_pm25: float = Field(..., ge=0, le=10000, allow_inf_nan=False)
+    satellite_source: Optional[str] = None
     authority: Optional[str] = "CPCB"
 
 
@@ -233,6 +239,9 @@ class FLStatusResponse(BaseModel):
     total_rounds: int
     status: str
     rounds: List[FLRoundItem]
+    implementation: str = "numpy_fedavg"
+    dataset: str = "synthetic_corridor"
+    metric: str = "1 - 0.5 * RMSE / target_std, clipped to [0.1, 0.99]"
 
 
 # ==============================================================================

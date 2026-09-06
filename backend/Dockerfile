@@ -17,12 +17,11 @@ WORKDIR /app
 RUN addgroup --system prana && adduser --system --ingroup prana prana
 
 # Copy requirements and install dependencies
-COPY requirements.txt .
+COPY backend/requirements.lock.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy backend application source and synthetic corridor data
-COPY . /app/backend/
-COPY ./data/ /app/data/
+COPY backend/ /app/backend/
 
 # Environment configurations
 ENV PYTHONUNBUFFERED=1 \
@@ -40,7 +39,7 @@ EXPOSE 8000
 
 # Container Healthcheck (SEC-001)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:${PORT:-8000}/ready || exit 1
 
 # Production server entrypoint
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+CMD ["python", "-m", "backend.scripts.serve"]

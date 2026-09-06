@@ -8,6 +8,10 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from dotenv import load_dotenv
+from pathlib import Path
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
+load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +21,9 @@ from slowapi import _rate_limit_exceeded_handler
 from backend.database import init_db, close_db, get_db_pool
 from backend.scheduler import start_scheduler, stop_scheduler
 from backend.models import HealthResponse
+from backend.config import demo_enabled, production_mode, scheduler_enabled
+from backend.middleware import UploadLimitMiddleware
+from fastapi.responses import JSONResponse
 
 from backend.routers import (
     hotspots,
@@ -41,6 +48,25 @@ logging.basicConfig(
 logger = logging.getLogger("prana.main")
 
 
+class SecretFilter(logging.Filter):
+    def filter(self, record):
+        import re
+        message = record.getMessage()
+        message = re.sub(r"(/api/area/csv/)[^/\s]+", r"\1[REDACTED]", message)
+        for key in ("FIRMS_MAP_KEY", "OPENAQ_API_KEY", "DATABASE_URL", "GEE_SERVICE_ACCOUNT_JSON"):
+            secret = os.getenv(key)
+            if secret:
+                message = message.replace(secret, "[REDACTED]")
+        record.msg, record.args = message, ()
+        return True
+
+
+for name in ("httpx", "httpcore"):
+    logging.getLogger(name).addFilter(SecretFilter())
+for handler in logging.getLogger().handlers:
+    handler.addFilter(SecretFilter())
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown procedures."""
@@ -54,14 +80,16 @@ async def lifespan(app: FastAPI):
         logger.info("Running with in-memory store fallback.")
 
     # Start background scheduler for 15-minute ingestion
-    start_scheduler()
-
-    yield
-
-    logger.info("Shutting down PRANA Backend Engine...")
-    stop_scheduler()
-    await close_db()
-    logger.info("Shutdown complete.")
+    try:
+        if production_mode() and (not os.getenv("CORS_ORIGINS") or "*" in allowed_origins):
+            raise RuntimeError("Production requires explicit CORS_ORIGINS")
+        if scheduler_enabled():
+            start_scheduler()
+        yield
+    finally:
+        stop_scheduler()
+        await close_db()
+        logger.info("Shutdown complete.")
 
 
 app = FastAPI(
@@ -74,6 +102,7 @@ app = FastAPI(
 # Rate Limiter setup (SEC-005)
 app.state.limiter = citizen.limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(UploadLimitMiddleware)
 
 # CORS Policy Configuration (SEC-004)
 # Origins strictly loaded from environment variable, never hardcoded
@@ -122,3 +151,21 @@ async def health():
         "db": db_status,
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+
+@app.get("/ready", tags=["General"])
+async def readiness():
+    """Probe the actual database, distinct from process liveness."""
+    pool = get_db_pool()
+    ready = not production_mode() and not os.getenv("DATABASE_URL")
+    db_status = "in-memory"
+    if pool:
+        try:
+            async with pool.acquire(timeout=3) as conn:
+                ready = await conn.fetchval("SELECT 1", timeout=3) == 1
+            db_status = "connected"
+        except Exception:
+            ready = False
+            db_status = "unavailable"
+    return JSONResponse({"status": "ready" if ready else "unavailable", "db": db_status,
+                         "demo_mode": demo_enabled()}, status_code=200 if ready else 503)

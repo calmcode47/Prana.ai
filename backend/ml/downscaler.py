@@ -5,6 +5,9 @@ to generate a continuous PM2.5 surface grid across the Punjab/Haryana -> Delhi c
 """
 
 import math
+import asyncio
+from backend.ingesters.ingest_gee import fetch_tropomi_aai
+from backend.ingesters.memo import cached_snapshot
 import json
 import logging
 from datetime import datetime, timezone
@@ -70,6 +73,7 @@ def get_interpolated_aai(lon: float, lat: float, aai_features: List[Dict[str, An
     return float(sum(w * v for w, v in zip(weights, values)) / total_w)
 
 
+@cached_snapshot("surface", ttl=300)
 async def run_downscaler(resolution_deg: float = 0.5) -> Dict[str, Any]:
     """
     Executes Gaussian Process downscaling over the corridor bounding box.
@@ -87,20 +91,29 @@ async def run_downscaler(resolution_deg: float = 0.5) -> Dict[str, Any]:
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
-                    SELECT DISTINCT ON (station_id) latitude, longitude, pm25_ugm3
-                    FROM aqi_readings
+                    SELECT DISTINCT ON (station_id) latitude, longitude, pm25_ugm3, source
+                    FROM aqi_readings WHERE parameter = 'pm25' AND latitude IS NOT NULL AND longitude IS NOT NULL
                     ORDER BY station_id, measured_at DESC
                     LIMIT 100;
                     """
                 )
                 readings = [dict(r) for r in rows]
         except Exception:
-            pass
+            raise RuntimeError("Station storage unavailable") from None
 
     if not readings:
         readings = await fetch_openaq_stations()
 
-    aai_features = load_tropomi_aai()
+    aai_data = await fetch_tropomi_aai()
+    aai_features = aai_data["features"]
+    if not readings or not aai_features:
+        raise RuntimeError("Insufficient observations for spatial interpolation")
+    return await asyncio.to_thread(_compute_surface, readings, aai_features, resolution_deg, aai_data.get("source", "unknown"))
+
+
+def _compute_surface(readings, aai_features, resolution_deg, source):
+    from sklearn.gaussian_process import GaussianProcessRegressor
+    from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 
     now = datetime.now(timezone.utc)
     hour = now.hour
@@ -175,5 +188,6 @@ async def run_downscaler(resolution_deg: float = 0.5) -> Dict[str, Any]:
         "type": "FeatureCollection",
         "computed_at": now.isoformat(),
         "resolution_deg": resolution_deg,
+        "source": "model_estimate; satellite=" + source + "; stations=" + ",".join(sorted({r.get("source", "unknown") for r in readings})),
         "features": features_list
     }

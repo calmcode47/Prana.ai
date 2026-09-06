@@ -5,6 +5,8 @@ industrial emission spikes (NO2, SO2) along the NCR industrial belt.
 """
 
 import logging
+import asyncio
+from backend.config import demo_enabled
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List
 import numpy as np
@@ -81,34 +83,66 @@ async def run_anomaly_detection(
     today = datetime.now(timezone.utc).date()
     sample_dataset = []
 
-    # Generate synthetic time-series baseline with an intentional nighttime industrial spike
-    for i in range(days_back):
-        day_date = str(today - timedelta(days=i))
-        for st in SAMPLE_INDUSTRIAL_STATIONS:
-            # Daytime reading (e.g. 14:00, nominal ~45 umol/m2)
-            sample_dataset.append({
-                "station_id": st["station_id"],
-                "station_name": st["station_name"],
-                "value": 42.0 + np.random.normal(0, 5),
-                "day": day_date,
-                "hour_of_day": 14,
-                "is_nighttime": False
-            })
+    pool = get_db_pool()
+    if pool:
+        async with pool.acquire() as conn:
+            raw = [dict(r) for r in await conn.fetch(
+                "SELECT * FROM pollutant_readings WHERE parameter=$1 AND measured_at >= $2 ORDER BY measured_at",
+                parameter, datetime.now(timezone.utc) - timedelta(days=days_back))]
+    else:
+        raw = [r for r in get_in_memory_store()["pollutant_readings"] if r["parameter"] == parameter]
+    # Use local India time to classify night observations; never mix pollutant units.
+    for r in raw:
+        dt = r["measured_at"]
+        if isinstance(dt, str):
+            dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+        if dt < datetime.now(timezone.utc) - timedelta(days=days_back):
+            continue
+        local = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+        sample_dataset.append({**r, "day": str(local.date()), "hour_of_day": local.hour,
+                               "is_nighttime": local.hour < 6 or local.hour >= 20})
+    synthetic = not sample_dataset and demo_enabled()
+    if synthetic:
+        # Generate synthetic time-series baseline with an intentional nighttime industrial spike
+        for i in range(days_back):
+            day_date = str(today - timedelta(days=i))
+            for st in SAMPLE_INDUSTRIAL_STATIONS:
+                # Daytime reading (e.g. 14:00, nominal ~45 umol/m2)
+                sample_dataset.append({
+                    "station_id": st["station_id"],
+                    "station_name": st["station_name"],
+                    "value": 42.0 + np.random.normal(0, 5),
+                    "day": day_date,
+                    "hour_of_day": 14,
+                    "is_nighttime": False
+                })
 
-            # Nighttime reading (e.g. 02:00, normal is ~30, but Manesar has covert midnight spike ~160)
-            is_spike = (st["station_id"] == "IN-CPCB-HR-003" and i in (1, 3, 5))
-            val_night = 175.0 if is_spike else (28.0 + np.random.normal(0, 4))
+                # Nighttime reading (e.g. 02:00, normal is ~30, but Manesar has covert midnight spike ~160)
+                is_spike = (st["station_id"] == "IN-CPCB-HR-003" and i in (1, 3, 5))
+                val_night = 175.0 if is_spike else (28.0 + np.random.normal(0, 4))
 
-            sample_dataset.append({
-                "station_id": st["station_id"],
-                "station_name": st["station_name"],
-                "value": val_night,
-                "day": day_date,
-                "hour_of_day": 2,
-                "is_nighttime": True
-            })
+                sample_dataset.append({
+                    "station_id": st["station_id"],
+                    "station_name": st["station_name"],
+                    "value": val_night,
+                    "day": day_date,
+                    "hour_of_day": 2,
+                    "is_nighttime": True
+                })
 
-    results = train_and_detect_anomalies(sample_dataset, parameter=parameter)
+    # Fit independent baselines per station and unit to avoid comparing unlike sensors.
+    if synthetic:
+        results = await asyncio.to_thread(train_and_detect_anomalies, sample_dataset, parameter=parameter)
+    else:
+        groups = {}
+        for r in sample_dataset:
+            groups.setdefault((r["station_id"], r["unit"]), []).append(r)
+        results = []
+        for group in groups.values():
+            if len(group) >= 8:
+                results.extend(await asyncio.to_thread(train_and_detect_anomalies, group, parameter=parameter))
+    for item in results:
+        item["source"] = "DEMO_SYNTHETIC" if synthetic else "OPENAQ_LIVE"
 
     # Filter according to query arguments
     filtered = []
@@ -117,9 +151,17 @@ async def run_anomaly_detection(
             continue
         filtered.append(item)
 
+    # Schema stores the strongest anomaly for each day/night period.
+    strongest = {}
+    for item in filtered:
+        key = (item["station_id"], item["parameter"], item["day"], item["is_nighttime"])
+        if key not in strongest or item["anomaly_score"] > strongest[key]["anomaly_score"]:
+            strongest[key] = item
+    filtered = list(strongest.values())
+
     # Persist to database if connected
     pool = get_db_pool()
-    if pool:
+    if pool and not synthetic:
         try:
             async with pool.acquire() as conn:
                 stmt = """
@@ -141,6 +183,6 @@ async def run_anomaly_detection(
                         item["is_anomaly"]
                     )
         except Exception as ex:
-            logger.warning(f"Error persisting anomalies to DB: {ex}")
+            raise RuntimeError("Anomaly persistence failed") from None
 
     return filtered

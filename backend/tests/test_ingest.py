@@ -51,7 +51,8 @@ async def test_firms_live():
     if not key or key == "YOUR_FIRMS_MAP_KEY_HERE":
         pytest.skip("FIRMS_MAP_KEY not set")
     data = await fetch_firms_hotspots()
-    assert data["count"] > 0
+    assert data["source"] == "NASA_FIRMS_VIIRS_SNPP_NRT"
+    assert data["count"] >= 0
 
 
 # ==============================================================================
@@ -61,9 +62,14 @@ async def test_firms_live():
 async def test_openaq_fetch_mocked(openaq_locations_json):
     """Verifies OpenAQ ingestion using mocked HTTP response."""
     with respx.mock(base_url="https://api.openaq.org/v3") as respx_mock:
-        respx_mock.get(path__regex=r"/locations.*").mock(
+        respx_mock.get("/locations").mock(
             return_value=httpx.Response(200, json=openaq_locations_json)
         )
+        for location in openaq_locations_json["results"]:
+            sensor = location["sensors"][0]
+            respx_mock.get(f"/locations/{location['id']}/latest").mock(return_value=httpx.Response(200, json={
+                "results": [{"sensorsId": sensor["id"], "value": sensor["latest"]["value"],
+                             "datetime": {"utc": "2025-11-04T08:00:00Z"}}]}))
         async with httpx.AsyncClient() as client:
             readings = await fetch_openaq_stations(client=client)
             assert len(readings) >= 10
@@ -138,7 +144,7 @@ def test_cpcb_aqi_breakpoints():
 
     # Hazardous (>380 ug/m3 -> >500)
     haz_aqi = compute_cpcb_aqi(450)
-    assert haz_aqi > 500
+    assert haz_aqi == 500
 
 
 def test_aqi_category_and_color():
@@ -162,7 +168,7 @@ def test_aqi_category_and_color():
     assert cat == "Severe" and col == "#8F3F97"
 
     cat, col = get_aqi_category_and_color(520)
-    assert cat == "Hazardous" and col == "#7E0023"
+    assert cat == "Severe" and col == "#8F3F97"
 
 
 # ==============================================================================

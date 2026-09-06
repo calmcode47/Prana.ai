@@ -21,3 +21,6 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local database runtime and verification artifacts
+.local/

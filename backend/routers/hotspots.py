@@ -6,7 +6,7 @@ Serves active fire hotspots in the Punjab/Haryana bbox from NASA FIRMS.
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 
 from backend.models import HotspotsResponse
 from backend.ingesters.ingest_firms import fetch_firms_hotspots
@@ -36,11 +36,12 @@ async def get_hotspots(
 
     pool = get_db_pool()
     if pool:
+        source = "POSTGIS_OBSERVATIONS"
         try:
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
-                    SELECT latitude, longitude, frp, brightness, confidence, sensor, acq_datetime
+                    SELECT latitude, longitude, frp, brightness, confidence, sensor, acq_datetime, source
                     FROM fire_hotspots
                     WHERE acq_datetime >= $1
                     ORDER BY acq_datetime DESC
@@ -49,6 +50,7 @@ async def get_hotspots(
                     cutoff
                 )
                 for r in rows:
+                    source = r["source"]
                     conf = r["confidence"] or "nominal"
                     if CONFIDENCE_ORDER.get(conf.lower(), 2) >= min_conf_level:
                         features.append({
@@ -66,15 +68,21 @@ async def get_hotspots(
                             }
                         })
         except Exception as ex:
-            logger.warning(f"Error querying fire_hotspots from DB: {ex}")
+            raise HTTPException(503, "Hotspot storage unavailable") from None
 
     # Fallback to in-memory store or ingestion fetch
-    if not features:
-        data = await fetch_firms_hotspots()
+    if pool is None:
+        try:
+            data = await fetch_firms_hotspots()
+        except Exception:
+            raise HTTPException(503, "Hotspot data unavailable") from None
         source = data.get("source", source)
         raw_features = data.get("features", [])
         for f in raw_features:
             props = f.get("properties", {})
+            observed = datetime.fromisoformat(props["acq_datetime"].replace("Z", "+00:00"))
+            if observed < cutoff:
+                continue
             conf = props.get("confidence", "nominal")
             if CONFIDENCE_ORDER.get(conf.lower(), 2) >= min_conf_level:
                 features.append(f)

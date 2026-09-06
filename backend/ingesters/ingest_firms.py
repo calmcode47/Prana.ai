@@ -6,13 +6,17 @@ Falls back to static GeoJSON if API key is missing or network fails.
 
 import os
 import csv
+import math
 import io
 import json
 import logging
+from backend.ingesters.memo import cached_snapshot
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import httpx
+
+from backend.config import demo_enabled
 
 from backend.database import get_db_pool, get_in_memory_store
 
@@ -23,6 +27,7 @@ BBOX_STR = "73.5,28.5,77.5,32.5"
 STATIC_FALLBACK_PATH = Path(__file__).resolve().parent.parent / "data" / "static" / "firms_fallback.geojson"
 
 
+@cached_snapshot("firms")
 async def fetch_firms_hotspots(client: Optional[httpx.AsyncClient] = None) -> Dict[str, Any]:
     """
     Fetches VIIRS_SNPP_NRT CSV from NASA FIRMS API or loads static fallback.
@@ -33,6 +38,7 @@ async def fetch_firms_hotspots(client: Optional[httpx.AsyncClient] = None) -> Di
     source = "NASA_FIRMS_VIIRS_SNPP_NRT"
     fetched_at = datetime.now(timezone.utc).isoformat()
 
+    live_success = False
     if map_key and map_key != "YOUR_FIRMS_MAP_KEY_HERE":
         url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{map_key}/VIIRS_SNPP_NRT/{BBOX_STR}/1"
         try:
@@ -44,22 +50,29 @@ async def fetch_firms_hotspots(client: Optional[httpx.AsyncClient] = None) -> Di
             try:
                 resp = await client.get(url)
                 if resp.status_code == 200 and not resp.text.startswith("Invalid"):
+                    if "latitude" not in (resp.text.splitlines() or [""])[0]:
+                        raise ValueError("Invalid FIRMS response schema")
                     records = parse_firms_csv(resp.text)
+                    live_success = True
                     logger.info(f"Successfully fetched {len(records)} FIRMS hotspots from live API.")
                 else:
-                    logger.warning(f"FIRMS API returned status {resp.status_code}: {resp.text[:100]}. Using fallback.")
+                    logger.warning("FIRMS API returned status %s", resp.status_code)
             finally:
                 if should_close:
                     await client.aclose()
         except Exception as e:
-            logger.warning(f"Error calling FIRMS API ({e}); loading static fallback.")
+            logger.warning("FIRMS request failed (%s)", type(e).__name__)
 
-    if not records:
+    if not live_success:
+        if not demo_enabled():
+            raise RuntimeError("Live FIRMS data unavailable; configure FIRMS_MAP_KEY")
         source = "NASA_FIRMS_VIIRS_SNPP_NRT_STATIC_FALLBACK"
         records = load_fallback_records()
         logger.info(f"Loaded {len(records)} FIRMS hotspots from fallback GeoJSON.")
 
     # Save records to DB or in-memory store
+    for record in records:
+        record["source"] = source
     await persist_hotspots(records)
 
     # Format as GeoJSON FeatureCollection
@@ -99,13 +112,16 @@ def parse_firms_csv(csv_text: str) -> List[Dict[str, Any]]:
         try:
             lat = float(row["latitude"])
             lon = float(row["longitude"])
+            if not (math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180):
+                continue
             acq_date = row.get("acq_date", "")
             acq_time = row.get("acq_time", "0000").zfill(4)
             # e.g. 2025-11-04 and 0612 -> 2025-11-04T06:12:00Z
             acq_dt_str = f"{acq_date}T{acq_time[:2]}:{acq_time[2:]}:00Z"
 
+            datetime.fromisoformat(acq_dt_str.replace("Z", "+00:00"))
             frp = float(row["frp"]) if row.get("frp") else None
-            brightness = float(row["brightness"]) if row.get("brightness") else None
+            brightness = float(row.get("bright_ti4") or row.get("brightness")) if (row.get("bright_ti4") or row.get("brightness")) else None
             confidence = row.get("confidence", "nominal")
             if confidence in ("l", "low"):
                 confidence = "low"
@@ -160,8 +176,10 @@ async def persist_hotspots(records: List[Dict[str, Any]]):
         try:
             async with pool.acquire() as conn:
                 stmt = """
-                INSERT INTO fire_hotspots (acq_datetime, latitude, longitude, frp, brightness, confidence, sensor)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO fire_hotspots (acq_datetime, latitude, longitude, frp, brightness, confidence, sensor, source)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                ON CONFLICT (acq_datetime, latitude, longitude, sensor) DO UPDATE SET
+                frp=EXCLUDED.frp, brightness=EXCLUDED.brightness, confidence=EXCLUDED.confidence, source=EXCLUDED.source
                 """
                 for r in records:
                     dt = datetime.fromisoformat(r["acq_datetime"].replace("Z", "+00:00"))
@@ -173,11 +191,11 @@ async def persist_hotspots(records: List[Dict[str, Any]]):
                         r["frp"],
                         r["brightness"],
                         r["confidence"],
-                        r["sensor"]
+                        r["sensor"],
+                        r.get("source", "unknown")
                     )
-            return
-        except Exception as ex:
-            logger.warning(f"Error persisting hotspots to PostgreSQL: {ex}")
+        except Exception:
+            raise RuntimeError("Hotspot persistence failed") from None
 
     # Fallback to in-memory store
     store = get_in_memory_store()

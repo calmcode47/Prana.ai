@@ -6,7 +6,8 @@ Serves Flower simulation round history and global vs local model accuracy metric
 import json
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Query, HTTPException
+import asyncio
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -14,7 +15,8 @@ from backend.models import FLStatusResponse
 from backend.database import get_db_pool, get_in_memory_store
 from backend.ml.federated.server import run_federated_simulation
 
-limiter = Limiter(key_func=get_remote_address)
+from backend.routers.citizen import limiter
+_run_lock = asyncio.Lock()
 router = APIRouter(prefix="/api/v1/federated", tags=["Federated Learning"])
 
 PRERUN_CACHE_FILE = Path(__file__).resolve().parent.parent / "data" / "cache" / "fl_prerun.json"
@@ -45,11 +47,11 @@ async def get_federated_status():
                     return {
                         "run_id": latest_run,
                         "total_rounds": len(rounds),
-                        "status": "complete" if len(rounds) >= 10 else "training",
+                        "status": "complete",
                         "rounds": rounds
                     }
         except Exception:
-            pass
+            raise HTTPException(503, "Federated metrics storage is unavailable") from None
 
     # Check in-memory store
     store = get_in_memory_store()
@@ -71,33 +73,24 @@ async def get_federated_status():
         return {
             "run_id": latest_run,
             "total_rounds": len(run_rounds),
-            "status": "complete" if len(run_rounds) >= 10 else "training",
+            "status": "complete",
             "rounds": run_rounds
         }
 
-    # Load from pre-run cached metrics (RISK-005)
-    if PRERUN_CACHE_FILE.exists():
-        with open(PRERUN_CACHE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    # Fallback simulation rounds
-    return {
-        "run_id": "FL-20251104-001",
-        "total_rounds": 10,
-        "status": "complete",
-        "rounds": [
-            { "round_number": i, "punjab_accuracy": 0.55 + (0.025 * i), "delhi_accuracy": 0.52 + (0.027 * i), "global_accuracy": 0.54 + (0.035 * i) }
-            for i in range(1, 11)
-        ]
-    }
+    return {"run_id": "", "total_rounds": 0, "status": "idle", "rounds": []}
 
 
 @router.post("/run", response_model=FLStatusResponse)
 @limiter.limit("5/minute")
-async def trigger_federated_run(request: Request, num_rounds: Optional[int] = 10):
+async def trigger_federated_run(request: Request, num_rounds: int = Query(10, ge=1, le=100)):
     """
     Triggers a 10-round Federated Averaging simulation across Punjab and Delhi nodes.
     Updates fl_rounds in the database and in-memory store.
     """
-    result = await run_federated_simulation(num_rounds=num_rounds or 10)
-    return result
+    if _run_lock.locked():
+        raise HTTPException(409, "A federated simulation is already running")
+    async with _run_lock:
+        try:
+            return await run_federated_simulation(num_rounds=num_rounds)
+        except Exception:
+            raise HTTPException(503, "Federated simulation failed") from None

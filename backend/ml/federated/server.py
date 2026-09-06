@@ -5,6 +5,7 @@ evaluating cross-corridor prediction accuracy and persisting round metrics.
 """
 
 import logging
+import asyncio
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -76,11 +77,15 @@ class FederatedServer:
         """
         global_params = self.global_evaluator.get_parameters()
         round_results: List[Dict[str, Any]] = []
+        local_punjab = PunjabClient(seed=42)
+        local_delhi = DelhiClient(seed=43)
+        local_punjab.set_parameters(global_params)
+        local_delhi.set_parameters(global_params)
 
         for r in range(1, num_rounds + 1):
             # 1. Local Training (fit strictly returns empty dict for metrics - SEC-006)
-            p_params, n_p, p_metrics = self.punjab_client.fit(global_params, {"epochs": 3, "lr": 0.025})
-            d_params, n_d, d_metrics = self.delhi_client.fit(global_params, {"epochs": 3, "lr": 0.025})
+            p_params, n_p, p_metrics = self.punjab_client.fit(global_params, {"epochs": 10, "lr": 0.025})
+            d_params, n_d, d_metrics = self.delhi_client.fit(global_params, {"epochs": 10, "lr": 0.025})
 
             # Assert SEC-006 compliance during execution
             assert p_metrics == {}, "SEC-006 violation: Punjab client leaked non-empty metrics in fit()"
@@ -90,6 +95,9 @@ class FederatedServer:
             global_params = fed_avg([p_params, d_params], [n_p, n_d])
             self.global_evaluator.set_parameters(global_params)
 
+            # Independent local-only baselines receive the same training budget.
+            local_punjab.fit(local_punjab.get_parameters(), {"epochs": 10, "lr": 0.025})
+            local_delhi.fit(local_delhi.get_parameters(), {"epochs": 10, "lr": 0.025})
             # 3. Evaluation on local validation splits
             _, _, p_eval = self.punjab_client.evaluate(p_params)
             _, _, d_eval = self.delhi_client.evaluate(d_params)
@@ -97,14 +105,13 @@ class FederatedServer:
             # 4. Global Evaluation across combined corridor dataset
             _, g_raw_acc = self.global_evaluator.evaluate(self.X_test, self.y_test)
 
-            # Progressive convergence curve modeling cross-corridor synergy (REQ-008)
-            # Punjab model plateaus on receptor transport; Delhi plateaus on upstream emission.
-            # Global model benefits from joint corridor representation.
-            progress = r / num_rounds
-            p_acc = round(float(np.clip(0.55 + 0.28 * (1.0 - np.exp(-1.8 * progress)), 0.50, 0.84)), 3)
-            d_acc = round(float(np.clip(0.52 + 0.29 * (1.0 - np.exp(-1.7 * progress)), 0.48, 0.82)), 3)
-            # Global model surpasses local nodes from round 3 onward, reaching ~0.91 at round 10
-            g_acc = round(float(np.clip(0.54 + 0.38 * (1.0 - np.exp(-2.2 * progress)), 0.52, 0.92)), 3)
+            # Compare every set of weights on the same held-out corridor data.
+            self.global_evaluator.set_parameters(local_punjab.get_parameters())
+            _, p_acc = self.global_evaluator.evaluate(self.X_test, self.y_test)
+            self.global_evaluator.set_parameters(local_delhi.get_parameters())
+            _, d_acc = self.global_evaluator.evaluate(self.X_test, self.y_test)
+            self.global_evaluator.set_parameters(global_params)
+            p_acc, d_acc, g_acc = (round(float(v), 6) for v in (p_acc, d_acc, g_raw_acc))
 
             round_data = {
                 "round_number": r,
@@ -161,7 +168,7 @@ async def save_fl_rounds(rounds: List[Dict[str, Any]]) -> None:
                         r["run_id"],
                     )
         except Exception as e:
-            logger.warning(f"Failed to persist FL rounds to database: {e}")
+            raise RuntimeError("Federated metrics could not be saved") from None
 
 
 async def run_federated_simulation(
@@ -171,8 +178,12 @@ async def run_federated_simulation(
     Runs a full FL simulation and persists results.
     Returns status response dictionary.
     """
-    server = FederatedServer(run_id=run_id)
-    rounds = server.run_rounds(num_rounds=num_rounds)
+    if not 1 <= num_rounds <= 100:
+        raise ValueError("num_rounds must be between 1 and 100")
+    def train():
+        server = FederatedServer(run_id=run_id)
+        return server, server.run_rounds(num_rounds=num_rounds)
+    server, rounds = await asyncio.to_thread(train)
     await save_fl_rounds(rounds)
 
     return {

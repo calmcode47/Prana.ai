@@ -6,8 +6,10 @@ and server-side CPCB 24h breakpoint AQI conversion per DEC-010.
 
 import os
 import logging
+import math
 from typing import Optional, Tuple, Dict, Any, List
 import asyncpg
+from backend.config import production_mode
 
 logger = logging.getLogger("prana.database")
 
@@ -23,6 +25,7 @@ _in_memory_store: Dict[str, List[Dict[str, Any]]] = {
     "citizen_reports": [],
     "incidents": [],
     "fl_rounds": [],
+    "pollutant_readings": [],
 }
 
 
@@ -40,11 +43,11 @@ _in_memory_store: Dict[str, List[Dict[str, Any]]] = {
 
 PM25_BREAKPOINTS = [
     (0.0, 30.0, 0, 50, "Good", "#00C781"),
-    (30.1, 60.0, 51, 100, "Satisfactory", "#92D050"),
-    (60.1, 90.0, 101, 200, "Moderate", "#FFFF00"),
-    (90.1, 120.0, 201, 300, "Poor", "#FF7800"),
-    (120.1, 250.0, 301, 400, "Very Poor", "#FF0000"),
-    (250.1, 380.0, 401, 500, "Severe", "#8F3F97"),
+    (31.0, 60.0, 51, 100, "Satisfactory", "#92D050"),
+    (61.0, 90.0, 101, 200, "Moderate", "#FFFF00"),
+    (91.0, 120.0, 201, 300, "Poor", "#FF7800"),
+    (121.0, 250.0, 301, 400, "Very Poor", "#FF0000"),
+    (251.0, 380.0, 401, 500, "Severe", "#8F3F97"),
 ]
 
 
@@ -55,18 +58,18 @@ def compute_cpcb_aqi(pm25_ugm3: float) -> int:
     """
     if pm25_ugm3 is None or pm25_ugm3 < 0:
         return 0
+    if not math.isfinite(pm25_ugm3):
+        raise ValueError("PM2.5 must be finite")
 
     if pm25_ugm3 <= 30.0:
         return round((50.0 / 30.0) * pm25_ugm3)
 
     for c_lo, c_hi, i_lo, i_hi, _, _ in PM25_BREAKPOINTS:
         if pm25_ugm3 <= c_hi:
-            return round(((i_hi - i_lo) / (c_hi - c_lo)) * (pm25_ugm3 - c_lo) + i_lo)
+            return max(i_lo, round(((i_hi - i_lo) / (c_hi - c_lo)) * (pm25_ugm3 - c_lo) + i_lo))
 
     # > 380 ug/m3 (Severe/Hazardous extrapolation)
-    c_lo, c_hi, i_lo, i_hi = 250.1, 380.0, 401, 500
-    extra = pm25_ugm3 - 380.0
-    return round(500 + (extra * 0.833))
+    return 500
 
 
 def get_aqi_category_and_color(aqi_index: int) -> Tuple[str, str]:
@@ -86,7 +89,7 @@ def get_aqi_category_and_color(aqi_index: int) -> Tuple[str, str]:
     elif aqi_index <= 500:
         return "Severe", "#8F3F97"
     else:
-        return "Hazardous", "#7E0023"
+        return "Severe", "#8F3F97"
 
 
 # ==============================================================================
@@ -230,34 +233,67 @@ DDL_STATEMENTS = [
 # ==============================================================================
 # Connection & Pool Management
 # ==============================================================================
+MIGRATIONS = [
+    """CREATE TABLE IF NOT EXISTS pollutant_readings (
+        id BIGSERIAL PRIMARY KEY, station_id TEXT NOT NULL, station_name TEXT,
+        parameter TEXT NOT NULL CHECK(parameter IN ('no2', 'so2')),
+        value DOUBLE PRECISION NOT NULL CHECK(value >= 0), unit TEXT NOT NULL,
+        measured_at TIMESTAMPTZ NOT NULL, source TEXT NOT NULL,
+        UNIQUE(station_id, parameter, measured_at));
+        CREATE INDEX IF NOT EXISTS idx_pollutant_time ON pollutant_readings(parameter, measured_at DESC);""",
+    # Preserve existing observations while collapsing duplicate ingestion rows.
+    """DELETE FROM fire_hotspots a USING fire_hotspots b
+       WHERE a.id < b.id AND a.acq_datetime=b.acq_datetime AND a.latitude=b.latitude
+       AND a.longitude=b.longitude AND a.sensor=b.sensor;
+       CREATE UNIQUE INDEX IF NOT EXISTS uq_hotspot_observation
+       ON fire_hotspots(acq_datetime, latitude, longitude, sensor);""",
+    """DELETE FROM aqi_readings a USING aqi_readings b
+       WHERE a.id < b.id AND a.station_id=b.station_id AND a.parameter=b.parameter
+       AND a.measured_at=b.measured_at;
+       CREATE UNIQUE INDEX IF NOT EXISTS uq_station_observation
+       ON aqi_readings(station_id, parameter, measured_at);""",
+    "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS satellite_evidence JSONB;",
+    "ALTER TABLE fire_hotspots ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'unknown';",
+    "ALTER TABLE aqi_readings ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'unknown';",
+]
+
+
 async def init_db() -> bool:
     """
     Initializes database pool and creates tables if PostgreSQL is accessible.
     Returns True if connected to PostgreSQL, False if using in-memory store.
     """
     global _pool
+    if _pool is not None:
+        return True
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
+        if production_mode():
+            raise RuntimeError("DATABASE_URL is required in production")
         logger.info("No DATABASE_URL configured; running in in-memory mode.")
         return False
 
     # Standardize url for asyncpg if prefixed with postgresql+asyncpg:// or postgres://
     cleaned_url = db_url.replace("postgresql+asyncpg://", "postgresql://").replace("postgres://", "postgresql://")
 
+    candidate = None
     try:
-        _pool = await asyncpg.create_pool(dsn=cleaned_url, min_size=1, max_size=10, timeout=5.0)
-        async with _pool.acquire() as conn:
-            for stmt in DDL_STATEMENTS:
-                try:
+        candidate = await asyncpg.create_pool(dsn=cleaned_url, min_size=1, max_size=10, timeout=5.0, command_timeout=30.0)
+        async with candidate.acquire() as conn:
+            async with conn.transaction():
+                for stmt in DDL_STATEMENTS:
                     await conn.execute(stmt)
-                except Exception as ex:
-                    logger.warning(f"Error executing DDL statement: {ex}")
+                for stmt in MIGRATIONS:
+                    await conn.execute(stmt)
+        _pool = candidate
         logger.info("PostgreSQL + PostGIS connected and tables initialized.")
         return True
     except Exception as e:
-        logger.warning(f"Could not connect to PostgreSQL ({e}); falling back to in-memory store.")
+        if candidate is not None:
+            await candidate.close()
         _pool = None
-        return False
+        logger.error("PostgreSQL initialization failed (%s)", type(e).__name__)
+        raise RuntimeError("Configured PostgreSQL/PostGIS is unavailable or schema initialization failed") from None
 
 
 async def close_db():

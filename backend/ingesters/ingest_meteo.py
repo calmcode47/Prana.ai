@@ -6,7 +6,11 @@ Caches to JSON files in backend/data/cache/.
 """
 
 import json
+import math
+from backend.config import demo_enabled
+from backend.ingesters.cache import write_json
 import logging
+from backend.ingesters.memo import cached_snapshot
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -23,6 +27,7 @@ DELHI_CENTROID = {"lat": 28.6, "lon": 77.2}
 CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "cache"
 
 
+@cached_snapshot("meteo")
 async def fetch_meteo_forecast(client: Optional[httpx.AsyncClient] = None) -> Dict[str, Any]:
     """
     Fetches Open-Meteo current meteorological data for Punjab and Delhi.
@@ -41,11 +46,9 @@ async def fetch_meteo_forecast(client: Optional[httpx.AsyncClient] = None) -> Di
         punjab_data = await fetch_location_meteo(client, PUNJAB_CENTROID["lat"], PUNJAB_CENTROID["lon"])
         delhi_data = await fetch_location_meteo(client, DELHI_CENTROID["lat"], DELHI_CENTROID["lon"])
 
-        with open(punjab_cache_file, "w", encoding="utf-8") as f:
-            json.dump(punjab_data, f, indent=2)
+        write_json(punjab_cache_file, punjab_data)
 
-        with open(delhi_cache_file, "w", encoding="utf-8") as f:
-            json.dump(delhi_data, f, indent=2)
+        write_json(delhi_cache_file, delhi_data)
 
         logger.info("Successfully fetched and cached Open-Meteo forecasts for Punjab and Delhi.")
         return {
@@ -66,9 +69,11 @@ async def fetch_location_meteo(client: httpx.AsyncClient, lat: float, lon: float
     params = {
         "latitude": lat,
         "longitude": lon,
-        "current": "windspeed_10m,winddirection_10m,boundary_layer_height,temperature_2m",
-        "hourly": "windspeed_10m,winddirection_10m,boundary_layer_height,temperature_2m",
-        "forecast_days": 1
+        "current": "wind_speed_10m,wind_direction_10m,temperature_2m",
+        "hourly": "wind_speed_10m,wind_direction_10m,boundary_layer_height,temperature_2m",
+        "wind_speed_unit": "ms",
+        "timezone": "UTC",
+        "forecast_days": 4
     }
 
     try:
@@ -76,20 +81,33 @@ async def fetch_location_meteo(client: httpx.AsyncClient, lat: float, lon: float
         if resp.status_code == 200:
             data = resp.json()
             current = data.get("current", {})
-            return {
-                "latitude": lat,
-                "longitude": lon,
-                "windspeed_10m": current.get("windspeed_10m", 4.2),
-                "winddirection_10m": current.get("winddirection_10m", 315.0),
-                "boundary_layer_height": current.get("boundary_layer_height", 850.0),
-                "temperature_2m": current.get("temperature_2m", 22.5),
-                "timestamp": current.get("time", datetime.now(timezone.utc).isoformat())
-            }
+            speed = current.get("wind_speed_10m", current.get("windspeed_10m"))
+            direction = current.get("wind_direction_10m", current.get("winddirection_10m"))
+            units = data.get("current_units", {})
+            speed_unit = units.get("wind_speed_10m", units.get("windspeed_10m", "m/s"))
+            if speed_unit == "km/h" and speed is not None:
+                speed = speed / 3.6
+            hourly = data.get("hourly", {})
+            times = hourly.get("time", [])
+            stamp = current.get("time", "")
+            hour_index = max((i for i, t in enumerate(times) if t <= stamp), default=0)
+            heights = hourly.get("boundary_layer_height", [])
+            height = heights[hour_index] if len(heights) > hour_index else current.get("boundary_layer_height")
+            temp = current.get("temperature_2m")
+            if any(v is None or not math.isfinite(float(v)) for v in (speed, direction, height, temp)):
+                raise ValueError("Incomplete meteorological observation")
+            return {"latitude": lat, "longitude": lon, "windspeed_10m": speed,
+                    "winddirection_10m": direction, "boundary_layer_height": height,
+                    "temperature_2m": temp, "timestamp": stamp, "source": "OPEN_METEO_LIVE",
+                    "wind_speed_unit": "m/s", "hourly": hourly}
+
         else:
             logger.warning(f"Open-Meteo returned status {resp.status_code}. Using fallback values.")
     except Exception as e:
         logger.warning(f"Error fetching Open-Meteo data for ({lat}, {lon}): {e}. Using fallback values.")
 
+    if not demo_enabled():
+        raise RuntimeError("Live meteorological data unavailable")
     # Fallback meteorological values representative of winter stubble burning season (NW winds)
     return {
         "latitude": lat,
@@ -98,5 +116,6 @@ async def fetch_location_meteo(client: httpx.AsyncClient, lat: float, lon: float
         "winddirection_10m": 315.0,  # North-Westerly wind towards Delhi
         "boundary_layer_height": 850.0,
         "temperature_2m": 22.0,
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp": "2025-11-04T08:00:00+00:00",
+        "source": "DEMO_STATIC", "wind_speed_unit": "m/s"
     }

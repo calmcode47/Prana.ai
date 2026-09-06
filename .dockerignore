@@ -56,3 +56,10 @@ htmlcov/
 node_modules/
 .next/
 out/
+
+.local/
+**/.venv/
+**/__pycache__/
+**/.env
+**/.env.*
+**/data/cache/

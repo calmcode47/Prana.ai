@@ -5,10 +5,12 @@ Carries both measured_pm25 and measured_aqi.
 """
 
 import uuid
+import json
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Optional
-from fastapi import APIRouter, Query, Response, status
+from typing import Optional, Literal
+from fastapi import APIRouter, Query, Response, status, HTTPException
+from pydantic import AwareDatetime
 
 from backend.models import AlertsResponse, LatestAlertResponse, IncidentCreate, IncidentItem
 from backend.database import get_db_pool, get_in_memory_store, compute_cpcb_aqi
@@ -17,34 +19,10 @@ logger = logging.getLogger("prana.routers.alerts")
 
 router = APIRouter(prefix="/api/v1/alerts", tags=["Alerts"])
 
-# Seed initial incident in in-memory store if empty
-_initial_incidents = [
-    {
-        "incident_id": "INC-20251104-001",
-        "severity": "emergency",
-        "location_text": "Anand Vihar, Delhi",
-        "latitude": 28.647,
-        "longitude": 77.316,
-        "pollutant": "PM2.5",
-        "measured_pm25": 215.0,
-        "measured_aqi": compute_cpcb_aqi(215.0),
-        "satellite_ts": "2025-11-04T06:00:00Z",
-        "satellite_source": "FIRMS",
-        "authority": "DPCC",
-        "created_at": "2025-11-04T08:05:00Z",
-        "satellite_evidence": {
-            "fire_count_50km": 18,
-            "nearest_fire_km": 4.2,
-            "tropomi_aai": 1.84
-        }
-    }
-]
-
-
 async def fetch_alerts(
     severity: Optional[str] = None,
     limit: int = 20,
-    since: Optional[str] = None
+    since: Optional[datetime] = None
 ) -> dict:
     """Internal helper to retrieve alerts without FastAPI parameter defaults."""
     items = []
@@ -61,7 +39,7 @@ async def fetch_alerts(
                     params.append(severity)
                     idx += 1
                 if since:
-                    dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+                    dt = since
                     query += f" AND created_at >= ${idx}"
                     params.append(dt)
                     idx += 1
@@ -83,26 +61,14 @@ async def fetch_alerts(
                         "satellite_source": r["satellite_source"],
                         "authority": r["authority"],
                         "created_at": r["created_at"].isoformat(),
-                        "satellite_evidence": {
-                            "fire_count_50km": 12,
-                            "nearest_fire_km": 5.0,
-                            "tropomi_aai": 1.5
-                        }
+                        "satellite_evidence": json.loads(r["satellite_evidence"]) if r["satellite_evidence"] else None
                     })
         except Exception as ex:
-            logger.warning(f"Error reading incidents from DB: {ex}")
+            raise HTTPException(503, "Incident storage is unavailable") from None
 
-    if not items:
+    if pool is None:
         store = get_in_memory_store()
         all_incidents = store.get("incidents", [])
-        if not all_incidents:
-            now_iso = datetime.now(timezone.utc).isoformat()
-            fresh_initial = dict(_initial_incidents[0])
-            fresh_initial["created_at"] = now_iso
-            fresh_initial["satellite_ts"] = now_iso
-            store["incidents"] = [fresh_initial]
-            all_incidents = store["incidents"]
-
         # Sort by created_at DESC
         sorted_incidents = sorted(
             all_incidents,
@@ -112,6 +78,8 @@ async def fetch_alerts(
 
         for inc in sorted_incidents:
             if severity and inc.get("severity") != severity:
+                continue
+            if since and datetime.fromisoformat(inc["created_at"].replace("Z", "+00:00")) < since:
                 continue
             items.append(inc)
             if len(items) >= limit:
@@ -127,7 +95,7 @@ async def fetch_alerts(
 async def get_alerts(
     severity: Optional[str] = Query(None, pattern="^(emergency|warning|watch)$"),
     limit: int = Query(20, ge=1, le=100),
-    since: Optional[str] = Query(None, description="ISO timestamp filter")
+    since: Optional[AwareDatetime] = Query(None, description="ISO timestamp with timezone")
 ):
     """
     Returns SPCB incident tickets with satellite proof.
@@ -136,7 +104,7 @@ async def get_alerts(
 
 
 @router.get("/latest", response_model=Optional[LatestAlertResponse])
-async def get_latest_alert(response: Response):
+async def get_latest_alert(response: Response, lang: Literal["en", "hi", "pa"] = Query("en")):
     """
     Returns the most recent alert for mobile background_fetch polling (REQ-015).
     Returns HTTP 204 if no alert in the last 24 hours.
@@ -155,8 +123,16 @@ async def get_latest_alert(response: Response):
         return None
 
     title = f"Air Quality {top['severity'].capitalize()} — {top.get('location_text', 'Corridor')}"
-    body = f"AQI {top.get('measured_aqi', 'Elevated')} ({top.get('pollutant', 'PM2.5')}: {top.get('measured_pm25', 0):.1f} µg/m³)."
+    body = f"AQI {top.get('measured_aqi', 'Elevated')} ({top.get('pollutant', 'PM2.5')}: {(top.get('measured_pm25') or 0):.1f} µg/m³)."
 
+    location = top.get("location_text") or "Corridor"
+    pm25 = top.get("measured_pm25") or 0
+    if lang == "hi":
+        title = f"वायु गुणवत्ता चेतावनी — {location}"
+        body = f"अनुमानित AQI {top.get('measured_aqi')}; PM2.5: {pm25:.1f} µg/m³।"
+    elif lang == "pa":
+        title = f"ਹਵਾ ਦੀ ਗੁਣਵੱਤਾ ਚੇਤਾਵਨੀ — {location}"
+        body = f"ਅਨੁਮਾਨਿਤ AQI {top.get('measured_aqi')}; PM2.5: {pm25:.1f} µg/m³।"
     return {
         "incident_id": top["incident_id"],
         "severity": top["severity"],
@@ -173,10 +149,15 @@ async def create_incident(payload: IncidentCreate):
     Computes measured_aqi from measured_pm25 server-side.
     """
     today_str = datetime.now(timezone.utc).strftime("%Y%m%d")
-    inc_id = f"INC-{today_str}-{uuid.uuid4().hex[:4].upper()}"
+    inc_id = f"INC-{today_str}-{uuid.uuid4().hex[:12].upper()}"
     now_iso = datetime.now(timezone.utc).isoformat()
     aqi_val = compute_cpcb_aqi(payload.measured_pm25)
 
+    from backend.routers.evidence import satellite_evidence
+    try:
+        evidence, satellite_ts, satellite_source = await satellite_evidence(payload.latitude, payload.longitude)
+    except Exception:
+        raise HTTPException(503, "Satellite evidence storage unavailable") from None
     item: IncidentItem = IncidentItem(
         incident_id=inc_id,
         severity=payload.severity,
@@ -186,15 +167,11 @@ async def create_incident(payload: IncidentCreate):
         pollutant=payload.pollutant or "PM2.5",
         measured_pm25=payload.measured_pm25,
         measured_aqi=aqi_val,
-        satellite_ts=now_iso,
-        satellite_source=payload.satellite_source or "FIRMS",
+        satellite_ts=satellite_ts,
+        satellite_source=satellite_source,
         authority=payload.authority or "CPCB",
         created_at=now_iso,
-        satellite_evidence={
-            "fire_count_50km": 15,
-            "nearest_fire_km": 3.8,
-            "tropomi_aai": 1.75
-        }
+        satellite_evidence=evidence
     )
 
     pool = get_db_pool()
@@ -206,18 +183,20 @@ async def create_incident(payload: IncidentCreate):
                     """
                     INSERT INTO incidents (incident_id, severity, location_text, latitude, longitude,
                                            pollutant, measured_pm25, measured_aqi, satellite_ts, satellite_source,
-                                           authority, created_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                                           authority, created_at, satellite_evidence)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                     """,
                     inc_id, payload.severity, payload.location_text, payload.latitude, payload.longitude,
-                    payload.pollutant or "PM2.5", payload.measured_pm25, aqi_val, dt_now,
-                    payload.satellite_source or "FIRMS", payload.authority or "CPCB", dt_now
+                    payload.pollutant or "PM2.5", payload.measured_pm25, aqi_val, datetime.fromisoformat(satellite_ts) if satellite_ts else None,
+                    satellite_source, payload.authority or "CPCB", dt_now, json.dumps(evidence) if evidence else None
                 )
         except Exception as ex:
-            logger.warning(f"Error persisting incident to DB: {ex}")
+            raise HTTPException(503, "Incident could not be saved") from None
 
     # In-memory store
     store = get_in_memory_store()
     store.setdefault("incidents", []).insert(0, item.model_dump())
 
+    from backend.routers.websocket import broadcast_alert
+    await broadcast_alert(item.model_dump())
     return item

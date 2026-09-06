@@ -31,6 +31,7 @@ TABLES_REQUIRED = [
     "citizen_reports",
     "incidents",
     "fl_rounds",
+    "pollutant_readings",
 ]
 
 STATIC_FILES_REQUIRED = [
@@ -63,7 +64,7 @@ class PreflightChecker:
 
     async def check_environment(self):
         print("\n--- 1. Environment & Secrets Audit ---")
-        env = os.getenv("ENVIRONMENT", "development")
+        env = os.getenv("PRANA_ENV", "development")
         db_url = os.getenv("DATABASE_URL")
         cors = os.getenv("CORS_ORIGINS", "")
 
@@ -77,13 +78,13 @@ class PreflightChecker:
             else:
                 self.log("Env", "DATABASE_URL configured", True, "Configured")
         else:
-            self.log("Env", "DATABASE_URL configured", True, "Using in-memory store fallback")
+            self.log("Env", "DATABASE_URL configured", env != "production", "In-memory development mode")
 
         # Check CORS
         if not cors:
-            self.log("Env", "CORS Configuration", True, "Default localhost allowed")
+            self.log("Env", "CORS Configuration", env != "production", "Default localhost allowed")
         else:
-            self.log("Env", "CORS Configuration", True, f"origins={cors[:40]}...")
+            self.log("Env", "CORS Configuration", env != "production" or "*" not in cors, "Explicit origins required in production")
 
     async def check_database(self):
         print("\n--- 2. Database & PostGIS Spatial Extension ---")
@@ -120,7 +121,7 @@ class PreflightChecker:
 
             await conn.close()
         except Exception as ex:
-            self.log("Database", "PostgreSQL Connection", True, f"Could not connect ({ex}); fallback active")
+            self.log("Database", "PostgreSQL Connection", False, type(ex).__name__)
 
     def check_static_assets(self):
         print("\n--- 3. Static Satellite & Synthetic Datasets ---")
@@ -168,7 +169,7 @@ class PreflightChecker:
         print(f"Critical Failures:     {self.critical_failures}")
         
         if self.critical_failures == 0:
-            print("\nSTATUS: ALL PRE-FLIGHT READINESS CHECKS PASSED (PRODUCTION READY)")
+            print("\nSTATUS: CONFIGURED-MODE CHECKS PASSED; live providers and deployment require separate verification")
             print("=" * 70)
             return 0
         else:
@@ -178,6 +179,8 @@ class PreflightChecker:
 
 
 async def main():
+    from dotenv import load_dotenv
+    load_dotenv(PROJECT_ROOT / "backend" / ".env")
     print("=" * 70)
     print("PRANA Atmospheric Corridor — Cloud Pre-Flight Readiness Checker")
     print("=" * 70)
