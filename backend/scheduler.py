@@ -11,6 +11,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from backend.ingesters.ingest_firms import fetch_firms_hotspots
 from backend.ingesters.ingest_openaq import fetch_openaq_stations
 from backend.ingesters.ingest_meteo import fetch_meteo_forecast
+from backend.ingesters.ingest_gee import fetch_all_satellite_data
 
 logger = logging.getLogger("prana.scheduler")
 
@@ -19,9 +20,9 @@ scheduler = AsyncIOScheduler()
 
 async def run_ingestion_pipeline():
     """
-    Executes the 15-minute cycle: FIRMS hotspots, OpenAQ readings, and Open-Meteo winds.
+    Executes the ingestion cycle: FIRMS hotspots, OpenAQ readings, Open-Meteo winds, and Sentinel-5P satellite rasters.
     """
-    logger.info("Executing 15-minute background ingestion cycle...")
+    logger.info("Executing background ingestion cycle...")
     try:
         await fetch_firms_hotspots()
     except Exception as e:
@@ -36,6 +37,11 @@ async def run_ingestion_pipeline():
         await fetch_meteo_forecast()
     except Exception as e:
         logger.error(f"Error during Open-Meteo ingestion: {e}")
+
+    try:
+        await fetch_all_satellite_data()
+    except Exception as e:
+        logger.error(f"Error during Sentinel-5P satellite ingestion: {e}")
 
     logger.info("Background ingestion cycle completed.")
 

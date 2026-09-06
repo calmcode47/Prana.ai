@@ -1,0 +1,286 @@
+{
+  "info": {
+    "_postman_id": "c7a8b19e-4b3d-4c7b-91f8-842e4726f901",
+    "name": "PRANA Backend API Collection",
+    "description": "Comprehensive API collection for PRANA (Punjab/Haryana Stubble Burning -> Delhi NCR Early Warning System). Complies with DEC-010 (dual PM2.5 and CPCB AQI) and SEC-001 through SEC-006.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "wsUrl",
+      "value": "ws://localhost:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "General & Health",
+      "item": [
+        {
+          "name": "Root Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": ["{{baseUrl}}"],
+              "path": [""]
+            },
+            "description": "Returns PRANA API service metadata and documentation URLs."
+          }
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Verifies database connectivity (PostgreSQL / In-Memory) and server uptime."
+          }
+        }
+      ]
+    },
+    {
+      "name": "NASA FIRMS Hotspots",
+      "item": [
+        {
+          "name": "Get Active Fire Hotspots",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hotspots?hours_back=24&min_confidence=nominal",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hotspots"],
+              "query": [
+                { "key": "hours_back", "value": "24", "description": "Hours back to query (1-72)" },
+                { "key": "min_confidence", "value": "nominal", "description": "low | nominal | high" }
+              ]
+            },
+            "description": "Returns GeoJSON FeatureCollection of VIIRS active fire hotspots across the Punjab/Haryana corridor."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Air Quality (CPCB & OpenAQ)",
+      "item": [
+        {
+          "name": "Get AQI Stations (OGC SensorThings)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/aqi/stations?parameter=pm25&state=Delhi",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "aqi", "stations"],
+              "query": [
+                { "key": "parameter", "value": "pm25" },
+                { "key": "state", "value": "Delhi", "description": "Filter by state (Delhi, Punjab, Haryana)" }
+              ]
+            },
+            "description": "Returns ground monitoring stations in SensorThings format. Complies with DEC-010 carrying both pm25_ugm3 and aqi_index."
+          }
+        },
+        {
+          "name": "Get GP Downscaler Continuous Surface",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/aqi/surface?resolution_deg=0.5",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "aqi", "surface"],
+              "query": [
+                { "key": "resolution_deg", "value": "0.5", "description": "Spatial resolution in degrees (0.1 to 1.0)" }
+              ]
+            },
+            "description": "Fuses ground CPCB readings with TROPOMI AAI satellite aerosol data using Gaussian Process regression."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Trajectory & Dispersion",
+      "item": [
+        {
+          "name": "Get Plume Forecast Polygons (24h/48h/72h)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/forecast/plume",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "forecast", "plume"]
+            },
+            "description": "DBSCAN clusters active fires and computes Gaussian dispersion ellipses for 24h, 48h, and 72h horizons."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Industrial Anomalies",
+      "item": [
+        {
+          "name": "Get Nighttime Emission Spike Anomalies",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/anomalies?parameter=no2&nighttime_only=true&days_back=7",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "anomalies"],
+              "query": [
+                { "key": "parameter", "value": "no2", "description": "no2 | so2" },
+                { "key": "nighttime_only", "value": "true" },
+                { "key": "days_back", "value": "7" }
+              ]
+            },
+            "description": "IsolationForest anomaly detector identifying covert nighttime industrial emissions in NCR industrial zones."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Alerts & Incidents",
+      "item": [
+        {
+          "name": "List Incident Tickets",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/alerts?severity=emergency&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "alerts"],
+              "query": [
+                { "key": "severity", "value": "emergency", "description": "emergency | warning | watch" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "Lists SPCB emergency tickets with satellite evidence and dual PM2.5/AQI values."
+          }
+        },
+        {
+          "name": "Get Latest Alert (Mobile Polling)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/alerts/latest",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "alerts", "latest"]
+            },
+            "description": "Returns most recent alert for background fetch. Returns 204 No Content if none in past 24h."
+          }
+        },
+        {
+          "name": "Create Incident Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"severity\": \"emergency\",\n  \"location_text\": \"Anand Vihar Corridor, Delhi\",\n  \"latitude\": 28.647,\n  \"longitude\": 77.316,\n  \"pollutant\": \"PM2.5\",\n  \"measured_pm25\": 310.5,\n  \"satellite_source\": \"VIIRS_SNPP\",\n  \"authority\": \"CPCB\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/alerts/incident",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "alerts", "incident"]
+            },
+            "description": "Creates SPCB incident ticket and auto-computes CPCB AQI server-side."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Citizen Science (DCP Optical Haze)",
+      "item": [
+        {
+          "name": "Upload Sky Photo (PM2.5 Estimation)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "photo", "type": "file", "src": "sky.jpg", "description": "JPEG/PNG sky photo <= 5MB" },
+                { "key": "latitude", "value": "28.6139", "type": "text" },
+                { "key": "longitude", "value": "77.2090", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/citizen/photo",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "citizen", "photo"]
+            },
+            "description": "Dark Channel Prior (DCP) inference estimating PM2.5 and AQI in < 3000ms. Enforces SEC-003 validation."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Federated Learning (Flower Simulation)",
+      "item": [
+        {
+          "name": "Get FL Status & Accuracy Progression",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/federated/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "federated", "status"]
+            },
+            "description": "Returns 10-round convergence metrics comparing Punjab, Delhi, and Global model accuracy."
+          }
+        },
+        {
+          "name": "Trigger Federated Simulation Run",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/federated/run?num_rounds=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "federated", "run"],
+              "query": [
+                { "key": "num_rounds", "value": "10" }
+              ]
+            },
+            "description": "Executes multi-round FedAvg between Punjab and Delhi nodes enforcing SEC-006 privacy guarantees."
+          }
+        }
+      ]
+    },
+    {
+      "name": "OGC SensorThings",
+      "item": [
+        {
+          "name": "Get Things Entities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sensorthings/Things",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sensorthings", "Things"]
+            },
+            "description": "Standard OGC SensorThings API endpoint defining the two corridor nodes (Punjab and Delhi)."
+          }
+        }
+      ]
+    }
+  ]
+}

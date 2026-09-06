@@ -163,3 +163,47 @@ def test_aqi_category_and_color():
 
     cat, col = get_aqi_category_and_color(520)
     assert cat == "Hazardous" and col == "#7E0023"
+
+
+# ==============================================================================
+# REQ-002: Sentinel-5P TROPOMI / Google Earth Engine Ingestion
+# ==============================================================================
+@pytest.mark.asyncio
+async def test_gee_aai_ingest():
+    """Verifies Sentinel-5P TROPOMI AAI raster ingestion (REQ-002, DEC-002)."""
+    from backend.ingesters.ingest_gee import fetch_tropomi_aai
+    data = await fetch_tropomi_aai()
+    assert data["type"] == "FeatureCollection"
+    assert "features" in data
+    assert len(data["features"]) >= 1
+    feat = data["features"][0]
+    assert feat["type"] == "Feature"
+    assert feat["geometry"]["type"] == "Point"
+    assert "aai" in feat["properties"]
+    assert feat["properties"]["aai"] > 0
+
+
+@pytest.mark.asyncio
+async def test_gee_no2_ingest():
+    """Verifies Sentinel-5P TROPOMI NO2 column density ingestion (REQ-002, DEC-002)."""
+    from backend.ingesters.ingest_gee import fetch_tropomi_no2
+    data = await fetch_tropomi_no2()
+    assert data["type"] == "FeatureCollection"
+    assert "features" in data
+    assert len(data["features"]) >= 1
+    feat = data["features"][0]
+    assert feat["type"] == "Feature"
+    assert feat["geometry"]["type"] == "Point"
+    assert "no2_umol_m2" in feat["properties"]
+    assert feat["properties"]["no2_umol_m2"] > 0
+
+
+@pytest.mark.asyncio
+async def test_gee_all_satellite_pipeline():
+    """Verifies combined satellite ingestion pipeline."""
+    from backend.ingesters.ingest_gee import fetch_all_satellite_data
+    summary = await fetch_all_satellite_data()
+    assert summary["status"] == "success"
+    assert summary["aai"]["features_count"] >= 1
+    assert summary["no2"]["features_count"] >= 1
+
