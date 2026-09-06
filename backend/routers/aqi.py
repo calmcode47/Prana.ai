@@ -47,8 +47,10 @@ async def get_aqi_stations(
                 """
                 rows = await conn.fetch(query, parameter)
                 for r in rows:
-                    if state and r["state"] and state.lower() not in r["state"].lower():
-                        continue
+                    if state:
+                        st_val = (r["state"] or "").lower()
+                        if state.lower() not in st_val:
+                            continue
                     pm25_val = float(r["pm25_ugm3"])
                     readings.append({
                         "station_id": r["station_id"],
@@ -65,8 +67,10 @@ async def get_aqi_stations(
     if not readings:
         raw = await fetch_openaq_stations()
         for r in raw:
-            if state and r.get("state") and state.lower() not in r["state"].lower():
-                continue
+            if state:
+                st_val = (r.get("state") or "").lower()
+                if state.lower() not in st_val:
+                    continue
             pm25_val = float(r["pm25_ugm3"])
             readings.append({
                 "station_id": r["station_id"],

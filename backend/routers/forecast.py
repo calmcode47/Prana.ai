@@ -3,12 +3,15 @@ Forecast Router (REQ-006)
 Serves Gaussian-plume trajectory forecast polygons for 24h, 48h, and 72h horizons.
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Query
 
 from backend.models import PlumeResponse
 from backend.database import compute_cpcb_aqi
+
+logger = logging.getLogger("prana.routers.forecast")
 
 router = APIRouter(prefix="/api/v1/forecast", tags=["Forecast"])
 
@@ -22,8 +25,8 @@ async def get_forecast_plume(cluster_id: Optional[str] = Query(None)):
     try:
         from backend.ml.trajectory import compute_plume_trajectories
         return await compute_plume_trajectories(cluster_id_filter=cluster_id)
-    except Exception:
-        pass
+    except Exception as ex:
+        logger.warning(f"Error computing plume trajectories ({ex}); falling back to static polygons.")
 
     target_cluster = cluster_id or "CLU-20251104-001"
 

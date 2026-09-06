@@ -241,8 +241,8 @@ async def init_db() -> bool:
         logger.info("No DATABASE_URL configured; running in in-memory mode.")
         return False
 
-    # Standardize url for asyncpg if prefixed with postgresql+asyncpg://
-    cleaned_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+    # Standardize url for asyncpg if prefixed with postgresql+asyncpg:// or postgres://
+    cleaned_url = db_url.replace("postgresql+asyncpg://", "postgresql://").replace("postgres://", "postgresql://")
 
     try:
         _pool = await asyncpg.create_pool(dsn=cleaned_url, min_size=1, max_size=10, timeout=5.0)

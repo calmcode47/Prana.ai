@@ -3,11 +3,14 @@ Anomalies Router (REQ-007)
 Serves industrial emission spike flags (daytime vs nighttime) detected via IsolationForest.
 """
 
+import logging
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Query
 
 from backend.models import AnomaliesResponse, AnomalyItem
 from backend.database import get_db_pool, get_in_memory_store
+
+logger = logging.getLogger("prana.routers.anomalies")
 
 router = APIRouter(prefix="/api/v1", tags=["Anomalies"])
 
@@ -19,8 +22,7 @@ async def get_anomalies(
     days_back: int = Query(7, ge=1, le=90)
 ):
     """
-    Returns anomaly flags for industrial emission spikes.
-    Stub returning items from anomaly_flags table or clean empty array until SESSION-002.
+    Returns anomaly flags for industrial emission spikes (IsolationForest REQ-007).
     """
     items = []
     pool = get_db_pool()
@@ -50,8 +52,8 @@ async def get_anomalies(
                         "anomaly_score": r["anomaly_score"],
                         "is_anomaly": r["is_anomaly"]
                     })
-        except Exception:
-            pass
+        except Exception as ex:
+            logger.warning(f"Error querying anomaly_flags from DB: {ex}")
 
     if not items:
         try:
@@ -61,8 +63,8 @@ async def get_anomalies(
                 nighttime_only=nighttime_only,
                 days_back=days_back
             )
-        except Exception:
-            pass
+        except Exception as ex:
+            logger.warning(f"Error running IsolationForest anomaly detection: {ex}")
 
     return {
         "count": len(items),

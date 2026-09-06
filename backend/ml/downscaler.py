@@ -129,7 +129,7 @@ async def run_downscaler(resolution_deg: float = 0.5) -> Dict[str, Any]:
     y_train_np = np.array(y_train)
 
     # 3. Fit Gaussian Process Regressor
-    kernel = RBF(length_scale=1.0) + WhiteKernel(noise_level=1.0)
+    kernel = RBF(length_scale=1.0) + WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-7, 1e3))
     gpr = GaussianProcessRegressor(kernel=kernel, alpha=0.5, normalize_y=True, random_state=42)
     gpr.fit(x_train_np, y_train_np)
 

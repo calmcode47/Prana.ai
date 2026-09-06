@@ -27,6 +27,7 @@ COPY ./data/ /app/data/
 # Environment configurations
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app \
     PORT=8000 \
     HOST=0.0.0.0
 
