@@ -45,6 +45,10 @@ async def test_postgis_persistence_and_restart(monkeypatch):
                 assert await conn.fetchval(f"SELECT count(*) FROM {table}") == 1
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             assert (await client.get("/ready")).json()["db"] == "connected"
+            monkeypatch.setenv("PRANA_DEMO_MODE", "false")
+            assert (await client.get("/api/v1/aqi/stations")).json()["value"] == []
+            assert (await client.get("/api/v1/hotspots")).json()["features"] == []
+            monkeypatch.setenv("PRANA_DEMO_MODE", "true")
             result = await client.post("/api/v1/alerts/incident", json={"severity": "warning", "measured_pm25": 140})
             assert result.status_code == 201
             incident_id = result.json()["incident_id"]

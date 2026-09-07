@@ -1,3 +1,4 @@
+from backend.config import demo_enabled
 """
 WebSocket Real-Time Push Router (REQ-011, DEC-010)
 Provides live bi-directional and server-push streaming of:
@@ -108,7 +109,7 @@ async def build_snapshot(city_id="delhi"):
             async with pool.acquire() as conn:
                 readings = [dict(r) for r in await conn.fetch("""SELECT DISTINCT ON (station_id)
                     station_id,state,pm25_ugm3,source,measured_at FROM aqi_readings
-                    WHERE parameter='pm25' ORDER BY station_id,measured_at DESC""")]
+                    WHERE parameter='pm25' AND ($1::boolean OR source='OPENAQ_LIVE') ORDER BY station_id,measured_at DESC""", demo_enabled())]
                 fire_count = await conn.fetchval("SELECT count(*) FROM fire_hotspots WHERE acq_datetime >= NOW() - INTERVAL '24 hours'")
         except Exception:
             readings, fire_count = [], None

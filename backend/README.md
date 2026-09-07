@@ -1,6 +1,6 @@
 # PRANA backend
 
-FastAPI backend only. No website or mobile frontend is included or required.
+This guide covers the FastAPI backend. It runs independently of any website or mobile frontend.
 
 ## Run on this machine
 

@@ -1,3 +1,4 @@
+from backend.config import demo_enabled
 """
 Anomalies Router (REQ-007)
 Serves industrial emission spike flags (daytime vs nighttime) detected via IsolationForest.
@@ -32,15 +33,15 @@ async def get_anomalies(
             cutoff = (datetime.now(timezone.utc) - timedelta(days=days_back)).date()
             async with pool.acquire() as conn:
                 query = """
-                SELECT station_id, parameter, day, hour_of_day, is_nighttime, anomaly_score, is_anomaly
+                SELECT station_id, parameter, day, hour_of_day, is_nighttime, anomaly_score, is_anomaly, source
                 FROM anomaly_flags
-                WHERE parameter = $1 AND day >= $2
+                WHERE parameter = $1 AND day >= $2 AND ($3::boolean OR source = 'OPENAQ_LIVE')
                 """
                 if nighttime_only:
                     query += " AND is_nighttime = true"
                 query += " ORDER BY day DESC, hour_of_day DESC"
 
-                rows = await conn.fetch(query, parameter, cutoff)
+                rows = await conn.fetch(query, parameter, cutoff, demo_enabled())
                 for r in rows:
                     items.append({
                         "station_id": r["station_id"],
@@ -50,7 +51,8 @@ async def get_anomalies(
                         "hour_of_day": r["hour_of_day"],
                         "is_nighttime": r["is_nighttime"],
                         "anomaly_score": r["anomaly_score"],
-                        "is_anomaly": r["is_anomaly"]
+                        "is_anomaly": r["is_anomaly"],
+                        "source": r["source"]
                     })
         except Exception as ex:
             raise HTTPException(503, "Anomaly storage unavailable") from None

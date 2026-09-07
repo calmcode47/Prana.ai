@@ -165,10 +165,10 @@ async def run_anomaly_detection(
         try:
             async with pool.acquire() as conn:
                 stmt = """
-                INSERT INTO anomaly_flags (station_id, parameter, day, hour_of_day, is_nighttime, anomaly_score, is_anomaly)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO anomaly_flags (station_id, parameter, day, hour_of_day, is_nighttime, anomaly_score, is_anomaly, source)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, 'OPENAQ_LIVE')
                 ON CONFLICT (station_id, parameter, day, is_nighttime)
-                DO UPDATE SET anomaly_score = EXCLUDED.anomaly_score, is_anomaly = EXCLUDED.is_anomaly;
+                DO UPDATE SET anomaly_score = EXCLUDED.anomaly_score, is_anomaly = EXCLUDED.is_anomaly, hour_of_day = EXCLUDED.hour_of_day, source = EXCLUDED.source;
                 """
                 for item in filtered:
                     d_obj = datetime.strptime(item["day"], "%Y-%m-%d").date()

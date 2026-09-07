@@ -1,3 +1,4 @@
+from backend.config import demo_enabled
 """
 AQI Ground Stations & Surface Grid Router (REQ-003, REQ-005, DEC-010)
 Serves OGC SensorThings-compatible ground station readings (carrying both pm25_ugm3 and aqi_index)
@@ -41,11 +42,11 @@ async def get_aqi_stations(
                 SELECT DISTINCT ON (station_id)
                     station_id, station_name, city, state, latitude, longitude, pm25_ugm3, measured_at, source
                 FROM aqi_readings
-                WHERE parameter = $1
+                WHERE parameter = $1 AND ($2::boolean OR source = 'OPENAQ_LIVE')
                 ORDER BY station_id, measured_at DESC
                 LIMIT 200;
                 """
-                rows = await conn.fetch(query, parameter)
+                rows = await conn.fetch(query, parameter, demo_enabled())
                 for r in rows:
                     if state:
                         st_val = (r["state"] or "").lower()

@@ -234,6 +234,7 @@ DDL_STATEMENTS = [
 # Connection & Pool Management
 # ==============================================================================
 MIGRATIONS = [
+    "ALTER TABLE anomaly_flags ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'unknown';",
     """CREATE TABLE IF NOT EXISTS pollutant_readings (
         id BIGSERIAL PRIMARY KEY, station_id TEXT NOT NULL, station_name TEXT,
         parameter TEXT NOT NULL CHECK(parameter IN ('no2', 'so2')),

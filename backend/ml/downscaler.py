@@ -1,3 +1,4 @@
+from backend.config import demo_enabled
 """
 Gaussian Process Downscaler (REQ-005)
 Calibrates ground CPCB PM2.5 readings against satellite TROPOMI Absorbing Aerosol Index (AAI)
@@ -92,10 +93,10 @@ async def run_downscaler(resolution_deg: float = 0.5) -> Dict[str, Any]:
                 rows = await conn.fetch(
                     """
                     SELECT DISTINCT ON (station_id) latitude, longitude, pm25_ugm3, source
-                    FROM aqi_readings WHERE parameter = 'pm25' AND latitude IS NOT NULL AND longitude IS NOT NULL
+                    FROM aqi_readings WHERE parameter = 'pm25' AND ($1::boolean OR source='OPENAQ_LIVE') AND latitude IS NOT NULL AND longitude IS NOT NULL
                     ORDER BY station_id, measured_at DESC
                     LIMIT 100;
-                    """
+                    """, demo_enabled()
                 )
                 readings = [dict(r) for r in rows]
         except Exception:

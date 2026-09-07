@@ -1,3 +1,4 @@
+from backend.config import demo_enabled
 """
 Hotspots Router (REQ-001)
 Serves active fire hotspots in the Punjab/Haryana bbox from NASA FIRMS.
@@ -43,11 +44,11 @@ async def get_hotspots(
                     """
                     SELECT latitude, longitude, frp, brightness, confidence, sensor, acq_datetime, source
                     FROM fire_hotspots
-                    WHERE acq_datetime >= $1
+                    WHERE acq_datetime >= $1 AND ($2::boolean OR source = 'NASA_FIRMS_VIIRS_SNPP_NRT')
                     ORDER BY acq_datetime DESC
                     LIMIT 500
                     """,
-                    cutoff
+                    cutoff, demo_enabled()
                 )
                 for r in rows:
                     source = r["source"]
