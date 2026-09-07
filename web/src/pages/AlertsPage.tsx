@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchLatestAlert, createIncident, fetchAnomalies, LatestAlertResponse, AnomalyItem } from '../api/client';
+import { fetchLatestAlert, createIncident, fetchAnomalies, fetchAlerts, LatestAlertResponse, AnomalyItem, AlertsResponse, IncidentItem } from '../api/client';
 
 export const AlertsPage: React.FC = () => {
   const [filter, setFilter] = useState<'all' | 'emergency' | 'nighttime' | 'stubble'>('all');
@@ -17,6 +17,13 @@ export const AlertsPage: React.FC = () => {
   const [noticeGenerated, setNoticeGenerated] = useState(false);
   const [sealedPramaan, setSealedPramaan] = useState(false);
   const [transmittedToDM, setTransmittedToDM] = useState(false);
+
+  // Live alerts from backend (GET /api/v1/alerts)
+  const [alertsData, setAlertsData] = useState<AlertsResponse | null>(null);
+
+  useEffect(() => {
+    fetchAlerts(undefined, 10).then(setAlertsData).catch(() => {});
+  }, [filter]);
   const [noticeText, setNoticeText] = useState(
     `FORM 1: NOTICE UNDER SECTION 31A OF THE AIR (PREVENTION AND CONTROL OF POLLUTION) ACT, 1981.\n\n` +
     `WHEREAS telemetry stream INC-NCR-8902 confirms that particulate matter mass concentration at Anand Vihar Airshed Grid #04 ` +
@@ -236,6 +243,60 @@ export const AlertsPage: React.FC = () => {
                 </span>
               </div>
               <span className="font-body-sm text-body-sm text-ink-muted">Updated 12s ago via SPCB-MESH-RT</span>
+            </div>
+
+            {/* Live SPCB Incident Registry (GET /api/v1/alerts) */}
+            <div className="bg-ink-black rounded-2xl p-space-md border-2 border-ink-black shadow-[4px_4px_0px_#1D4ED8] flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-label-md text-label-md uppercase text-cobalt-deep font-bold">Live Registry &bull; GET /api/v1/alerts</div>
+                  <div className="font-headline-sm text-headline-sm text-canvas-cream font-bold mt-0.5">
+                    {alertsData ? `${alertsData.count} Active Incident${alertsData.count !== 1 ? 's' : ''}` : 'Loading backend...'}
+                  </div>
+                </div>
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-coral-watermelon-vivid/20 text-coral-watermelon-vivid font-label-md text-label-md font-bold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-coral-watermelon-vivid animate-pulse"></span>
+                  Live
+                </span>
+              </div>
+              {alertsData && alertsData.items.length > 0 ? (
+                <div className="flex flex-col gap-1.5">
+                  {alertsData.items.map((item: IncidentItem) => (
+                    <div
+                      key={item.incident_id}
+                      className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2 border border-white/10 hover:bg-white/10 transition-colors cursor-pointer"
+                      onClick={() => setSelectedIncident(item.incident_id)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                          item.severity === 'emergency' ? 'bg-coral-watermelon-vivid' :
+                          item.severity === 'warning' ? 'bg-terracotta-deep' :
+                          'bg-cobalt-deep'
+                        }`}></span>
+                        <span className="font-mono text-[11px] text-cobalt-deep font-bold">{item.incident_id}</span>
+                        <span className="font-body-sm text-[11px] text-white/60">{item.location_text}</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {item.measured_pm25 != null && (
+                          <span className="font-label-md text-label-md text-white/80 font-bold">{item.measured_pm25.toFixed(0)} µg/m³</span>
+                        )}
+                        <span className={`px-1.5 py-0.5 rounded font-label-md text-[10px] font-bold uppercase ${
+                          item.severity === 'emergency' ? 'bg-coral-watermelon-vivid/20 text-coral-watermelon-vivid' :
+                          item.severity === 'warning' ? 'bg-terracotta-deep/20 text-terracotta-deep' :
+                          'bg-cobalt-deep/20 text-cobalt-deep'
+                        }`}>{item.severity}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : alertsData ? (
+                <div className="text-white/50 font-body-sm text-body-sm py-2">No incidents in the current filter window.</div>
+              ) : (
+                <div className="flex items-center gap-2 py-2">
+                  <span className="w-2 h-2 rounded-full bg-cobalt-deep animate-ping"></span>
+                  <span className="text-white/50 font-body-sm">Connecting to SPCB-MESH-RT...</span>
+                </div>
+              )}
             </div>
 
             {/* Incident 1: Anand Vihar Acute Airshed Spike */}

@@ -23,7 +23,7 @@ export const LandingPage: React.FC = () => {
       <div className="pointer-events-none absolute -top-12 -right-12 w-64 h-64 rounded-full bg-secondary-fixed/40 blur-2xl"></div>
       <div className="pointer-events-none absolute top-1/2 -left-20 w-80 h-80 rounded-full bg-tertiary-fixed/30 blur-3xl"></div>
 
-      <div className="relative w-full max-w-container-max mx-auto px-gutter-mobile lg:px-gutter-desktop pt-space-xl lg:pt-space-2xl pb-space-3xl flex flex-col gap-space-3xl">
+      <div className="relative w-full px-gutter-mobile lg:px-gutter-desktop pt-space-xl lg:pt-space-2xl pb-space-3xl flex flex-col gap-space-3xl">
         {/* HERO SECTION */}
         <section className="relative w-full flex flex-col items-center text-center">
           {/* Starburst & Badges Floating Accent */}

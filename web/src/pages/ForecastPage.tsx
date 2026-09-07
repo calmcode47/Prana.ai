@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { fetchForecastPlume, PlumeResponse } from '../api/client';
 
 export const ForecastPage: React.FC = () => {
   const [selectedHorizon, setSelectedHorizon] = useState<number>(0);
@@ -6,6 +7,12 @@ export const ForecastPage: React.FC = () => {
   const [currentHour, setCurrentHour] = useState<number>(38);
   const [mandateTriggered, setMandateTriggered] = useState<boolean>(false);
   const [geoJsonExported, setGeoJsonExported] = useState<boolean>(false);
+  const [plumeData, setPlumeData] = useState<PlumeResponse | null>(null);
+
+  // Fetch real plume data from backend (GET /api/v1/forecast/plume)
+  useEffect(() => {
+    fetchForecastPlume().then(setPlumeData).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let timer: any = null;
@@ -559,6 +566,106 @@ export const ForecastPage: React.FC = () => {
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Gaussian Plume Model Output — backend/routers/forecast.py: GET /api/v1/forecast/plume */}
+      <div className="w-full px-gutter-desktop pb-space-2xl">
+        <div className="w-full bg-surface-vanilla rounded-2xl p-space-xl border-2 border-ink-black shadow-[4px_4px_0px_#18181B]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm mb-space-lg">
+            <div>
+              <div className="flex items-center gap-2 font-label-md text-label-md uppercase tracking-wider text-cobalt-deep font-bold mb-1">
+                <span className="material-symbols-outlined text-[16px]">air</span>
+                <span>WRF-HYSPLIT Ensemble</span>
+                <span className="px-2 py-0.5 rounded-full bg-cobalt-deep/10 text-cobalt-deep text-label-md font-bold">
+                  {plumeData ? `${plumeData.features.length} Horizon Envelopes` : 'Loading...'}
+                </span>
+              </div>
+              <h2 className="font-headline-md text-headline-md text-ink-black font-bold">
+                Gaussian Plume Model Output
+              </h2>
+              <p className="font-body-sm text-body-sm text-ink-muted mt-1">
+                Source: {plumeData?.source ?? 'WRF_HYSPLIT_ENSEMBLE'} &bull; Computed: {plumeData ? new Date(plumeData.computed_at).toLocaleString() : '...'}
+              </p>
+            </div>
+            <div className="bg-ink-black text-canvas-cream px-4 py-2 rounded-xl rotate-2 shadow-[3px_3px_0px_#1D4ED8] flex items-center gap-2 flex-shrink-0">
+              <span className="material-symbols-outlined text-cobalt-deep text-[18px]">track_changes</span>
+              <span className="font-label-md text-label-md uppercase font-bold">72h Ensemble</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-space-md">
+            {(plumeData?.features ?? []).map((feature, idx) => {
+              const p = feature.properties;
+              const horizonColors = ['text-cobalt-deep', 'text-terracotta-deep', 'text-coral-watermelon-vivid'];
+              const bgColors = ['bg-cobalt-deep/10', 'bg-terracotta-deep/10', 'bg-coral-watermelon-vivid/10'];
+              const borderColors = ['border-cobalt-deep/30', 'border-terracotta-deep/30', 'border-coral-watermelon-vivid/30'];
+              const shadowColors = ['shadow-[3px_3px_0px_#1D4ED8]', 'shadow-[3px_3px_0px_#EA580C]', 'shadow-[3px_3px_0px_#FF5376]'];
+              const color = horizonColors[idx % 3];
+              const bg = bgColors[idx % 3];
+              const border = borderColors[idx % 3];
+              const shadow = shadowColors[idx % 3];
+              return (
+                <div
+                  key={idx}
+                  className={`p-space-md rounded-2xl border-2 ${border} ${bg} ${shadow} flex flex-col gap-3 hover:-translate-y-0.5 transition-transform`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className={`font-label-lg text-label-lg font-bold uppercase ${color}`}>
+                      T+{p.horizon_hours}h Horizon
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-surface-vanilla text-ink-black font-label-md text-label-md font-bold shadow-[1px_1px_0px_#18181B]">
+                      {p.cluster_id}
+                    </span>
+                  </div>
+
+                  {/* Primary Metric */}
+                  <div className="bg-surface-vanilla rounded-xl p-3 border border-ink-black/10 shadow-[2px_2px_0px_#18181B]">
+                    <div className="font-label-md text-label-md text-ink-muted uppercase font-bold">Peak PM2.5 Estimate</div>
+                    <div className={`font-telemetry-val text-telemetry-val font-bold ${color} leading-none mt-1`}>
+                      {p.max_pm25_est.toFixed(1)}
+                      <span className="font-body-sm text-body-sm text-ink-muted font-normal ml-1">µg/m³</span>
+                    </div>
+                    <div className={`font-label-md text-label-md font-bold mt-1 ${color}`}>AQI {p.max_aqi_est}</div>
+                  </div>
+
+                  {/* Meteorological Parameters */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-surface-vanilla rounded-xl p-2.5 border border-ink-black/10">
+                      <div className="font-label-md text-label-md text-ink-muted uppercase font-bold text-[10px]">Wind Speed</div>
+                      <div className="font-title-sm text-title-sm text-ink-black font-bold mt-0.5">
+                        {p.wind_speed_ms != null ? `${p.wind_speed_ms.toFixed(1)} m/s` : 'N/A'}
+                      </div>
+                    </div>
+                    <div className="bg-surface-vanilla rounded-xl p-2.5 border border-ink-black/10">
+                      <div className="font-label-md text-label-md text-ink-muted uppercase font-bold text-[10px]">Wind Dir</div>
+                      <div className="font-title-sm text-title-sm text-ink-black font-bold mt-0.5">
+                        {p.wind_dir_deg != null ? (
+                          <>{p.wind_dir_deg}&deg; <span className="font-body-sm text-ink-muted font-normal">
+                            ({p.wind_dir_deg >= 315 || p.wind_dir_deg < 45 ? 'N' : p.wind_dir_deg >= 45 && p.wind_dir_deg < 135 ? 'E' : p.wind_dir_deg >= 135 && p.wind_dir_deg < 225 ? 'S' : 'NW'})
+                          </span></>
+                        ) : 'N/A'}
+                      </div>
+                    </div>
+                    <div className="bg-surface-vanilla rounded-xl p-2.5 border border-ink-black/10 col-span-2">
+                      <div className="font-label-md text-label-md text-ink-muted uppercase font-bold text-[10px]">Mixing Height</div>
+                      <div className="font-title-sm text-title-sm text-ink-black font-bold mt-0.5">
+                        {p.mixing_height_m != null ? (
+                          <>{p.mixing_height_m}m <span className="font-body-sm text-ink-muted font-normal">AGL inversion lid</span></>
+                        ) : 'N/A'}
+                      </div>
+                      <div className="mt-1.5 w-full bg-surface-vanilla-strong h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${bg.replace('/10', '')}`}
+                          style={{ width: `${Math.min(100, ((p.mixing_height_m ?? 0) / 600) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

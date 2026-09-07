@@ -1,5 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  fetchAqiSurface, fetchSensorThings, fetchHotspots,
+  SurfaceGridResponse, SensorThingsResponse, HotspotsResponse,
+  getAqiCategoryAndColor,
+} from '../api/client';
 
 export const AirCorridorMapPage: React.FC = () => {
   const [trajectoryHours, setTrajectoryHours] = useState<number>(28);
@@ -14,6 +19,16 @@ export const AirCorridorMapPage: React.FC = () => {
   const toggleLayer = (layer: keyof typeof layers) => {
     setLayers((prev) => ({ ...prev, [layer]: !prev[layer] }));
   };
+
+  const [surfaceData, setSurfaceData] = useState<SurfaceGridResponse | null>(null);
+  const [sensorThingsData, setSensorThingsData] = useState<SensorThingsResponse | null>(null);
+  const [hotspotsData, setHotspotsData] = useState<HotspotsResponse | null>(null);
+
+  useEffect(() => {
+    fetchAqiSurface(0.5).then(setSurfaceData).catch(() => {});
+    fetchSensorThings().then(setSensorThingsData).catch(() => {});
+    fetchHotspots(24, 'nominal').then(setHotspotsData).catch(() => {});
+  }, []);
 
   return (
     <div className="w-full bg-canvas-cream min-h-screen relative overflow-x-hidden pt-20">
@@ -348,6 +363,149 @@ export const AirCorridorMapPage: React.FC = () => {
               <span>Inversion Severity:</span>
               <span className="text-aqi-hazardous font-extrabold">GRAP-IV Emergency Active</span>
             </div>
+          </div>
+        </div>
+
+        {/* AQI GP Surface Grid — backend/routers/aqi.py: GET /api/v1/aqi/surface */}
+        <div className="mt-space-xl">
+          <div className="flex items-center justify-between mb-space-md">
+            <div>
+              <div className="flex items-center gap-2 font-label-md text-label-md uppercase tracking-wider text-cobalt-deep font-bold mb-1">
+                <span className="material-symbols-outlined text-[14px]">grain</span>
+                GP Downscaler &bull; TROPOMI Fusion
+              </div>
+              <h2 className="font-headline-sm text-headline-sm text-ink-black font-bold">AQI Surface Grid PM2.5 Field</h2>
+            </div>
+            <span className="px-3 py-1 rounded-full bg-surface-vanilla border border-ink-black shadow-[2px_2px_0px_#18181B] font-label-md text-label-md font-bold">
+              {surfaceData ? `${surfaceData.features.length} Grid Points · ±${surfaceData.resolution_deg}°` : 'Loading...'}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {(surfaceData?.features ?? []).map((feature, idx) => {
+              const p = feature.properties;
+              const { category, color } = getAqiCategoryAndColor(p.aqi_index);
+              const coords = feature.geometry.coordinates;
+              return (
+                <div
+                  key={idx}
+                  className="bg-surface-vanilla rounded-2xl p-space-md border-2 border-ink-black shadow-[3px_3px_0px_#18181B] flex flex-col gap-2 hover:-translate-y-0.5 transition-transform"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-label-md text-label-md text-ink-muted font-bold uppercase text-[10px]">
+                      {coords[1].toFixed(1)}°N {coords[0].toFixed(1)}°E
+                    </span>
+                    <span className="w-3 h-3 rounded-full border border-ink-black/20" style={{ backgroundColor: color }}></span>
+                  </div>
+                  <div className="font-telemetry-val text-[22px] font-bold leading-none" style={{ color }}>
+                    {p.pm25_estimate.toFixed(0)}
+                    <span className="font-body-sm text-[10px] text-ink-muted font-normal ml-0.5">µg/m³</span>
+                  </div>
+                  <div className="font-label-md text-label-md font-bold" style={{ color }}>AQI {p.aqi_index}</div>
+                  <div className="font-body-sm text-body-sm text-ink-muted">{category}</div>
+                  {p.uncertainty_std != null && (
+                    <div className="text-[10px] text-ink-muted font-mono">±{p.uncertainty_std.toFixed(1)} σ</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {surfaceData && (
+            <p className="mt-3 font-body-sm text-body-sm text-ink-muted">
+              Source: {surfaceData.source} &bull; Computed: {new Date(surfaceData.computed_at).toLocaleString()}
+            </p>
+          )}
+        </div>
+
+        {/* OGC SensorThings Corridor Nodes + Hotspot Summary — backend/routers/sensorthings.py */}
+        <div className="mt-space-xl grid grid-cols-1 md:grid-cols-2 gap-space-lg">
+          {/* SensorThings Nodes */}
+          <div className="bg-surface-vanilla rounded-2xl p-space-lg border-2 border-ink-black shadow-[4px_4px_0px_#18181B]">
+            <div className="flex items-center justify-between mb-space-md">
+              <div>
+                <div className="font-label-md text-label-md uppercase tracking-wider text-forest-jade font-bold mb-1">OGC SensorThings API</div>
+                <h3 className="font-headline-sm text-headline-sm text-ink-black font-bold">PRANA Corridor Nodes</h3>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-forest-jade/10 text-forest-jade font-label-md text-label-md font-bold">
+                {sensorThingsData ? `${sensorThingsData['@iot.count']} Nodes` : '...'}
+              </span>
+            </div>
+            <div className="flex flex-col gap-3">
+              {(sensorThingsData?.value ?? []).map((node) => {
+                const coords = node.Locations?.[0]?.location?.coordinates ?? [0, 0];
+                const isPunjab = node.properties?.state === 'Punjab';
+                return (
+                  <div
+                    key={node['@iot.id']}
+                    className={`p-space-md rounded-xl border-2 shadow-[2px_2px_0px_#18181B] ${
+                      isPunjab ? 'border-terracotta-deep/40 bg-terracotta-deep/5' : 'border-cobalt-deep/40 bg-cobalt-deep/5'
+                    }`}
+                  >
+                    <div className={`flex items-center gap-2 font-label-md text-label-md font-bold uppercase mb-1 ${
+                      isPunjab ? 'text-terracotta-deep' : 'text-cobalt-deep'
+                    }`}>
+                      <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: isPunjab ? '#EA580C' : '#1D4ED8' }}></span>
+                      {node.properties?.node_type?.replace('_', ' ').toUpperCase()}
+                    </div>
+                    <div className="font-headline-sm text-headline-sm text-ink-black font-bold">{node.name}</div>
+                    <p className="font-body-sm text-body-sm text-ink-muted mt-1">{node.description}</p>
+                    <div className="mt-2 flex items-center gap-2 font-mono text-[11px] text-ink-muted">
+                      <span className="material-symbols-outlined text-[13px]">location_on</span>
+                      {coords[1].toFixed(3)}°N, {coords[0].toFixed(3)}°E
+                    </div>
+                    <div className="mt-1 font-label-md text-label-md text-ink-muted">ID: {node['@iot.id']}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* VIIRS Fire Hotspot Summary */}
+          <div className="bg-surface-vanilla rounded-2xl p-space-lg border-2 border-ink-black shadow-[4px_4px_0px_#18181B]">
+            <div className="flex items-center justify-between mb-space-md">
+              <div>
+                <div className="font-label-md text-label-md uppercase tracking-wider text-terracotta-deep font-bold mb-1">NASA FIRMS &bull; VIIRS 375m</div>
+                <h3 className="font-headline-sm text-headline-sm text-ink-black font-bold">Active Fire Hotspots</h3>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-terracotta-deep/10 text-terracotta-deep font-label-md text-label-md font-bold">
+                {hotspotsData ? `${hotspotsData.count.toLocaleString()} Clusters` : '...'}
+              </span>
+            </div>
+            {hotspotsData ? (
+              <>
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="bg-canvas-cream rounded-xl p-3 border border-ink-black/20 shadow-[2px_2px_0px_#18181B]">
+                    <div className="font-label-md text-label-md text-ink-muted uppercase font-bold text-[10px]">Total Clusters</div>
+                    <div className="font-telemetry-val text-[24px] font-bold text-terracotta-deep leading-none mt-1">{hotspotsData.count}</div>
+                  </div>
+                  <div className="bg-canvas-cream rounded-xl p-3 border border-ink-black/20 shadow-[2px_2px_0px_#18181B]">
+                    <div className="font-label-md text-label-md text-ink-muted uppercase font-bold text-[10px]">Source</div>
+                    <div className="font-title-sm text-title-sm font-bold text-ink-black mt-1 text-[11px]">NASA FIRMS VIIRS SNPP NRT</div>
+                  </div>
+                  <div className="bg-canvas-cream rounded-xl p-3 border border-ink-black/20 shadow-[2px_2px_0px_#18181B]">
+                    <div className="font-label-md text-label-md text-ink-muted uppercase font-bold text-[10px]">Bbox</div>
+                    <div className="font-mono text-[10px] font-bold text-cobalt-deep mt-1">Punjab Malwa Grid</div>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {hotspotsData.features.slice(0, 4).map((f, idx) => (
+                    <div key={idx} className="p-2.5 bg-canvas-cream rounded-xl border border-ink-black/20 shadow-[1px_1px_0px_#18181B] flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-terracotta-deep"></span>
+                        <span className="font-label-md text-label-md text-ink-black font-bold">
+                          {f.properties.sensor} &bull; {new Date(f.properties.acq_datetime).toLocaleTimeString()}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 font-label-md text-label-md text-ink-muted">
+                        {f.properties.frp != null && <span className="font-bold text-terracotta-deep">{f.properties.frp.toFixed(0)} MW FRP</span>}
+                        <span>{f.properties.confidence}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-center h-32 text-ink-muted font-body-sm">Loading VIIRS data...</div>
+            )}
           </div>
         </div>
       </div>

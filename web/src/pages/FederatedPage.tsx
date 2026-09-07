@@ -1,10 +1,17 @@
-import React, { useState } from 'react';
-import { triggerFederatedRun } from '../api/client';
+import React, { useState, useEffect } from 'react';
+import { triggerFederatedRun, fetchFederatedStatus, FLStatusResponse } from '../api/client';
 
 export const FederatedPage: React.FC = () => {
   const [currentRound, setCurrentRound] = useState<number>(8);
   const [globalLoss, setGlobalLoss] = useState<number>(0.0384);
   const [isRunningSim, setIsRunningSim] = useState<boolean>(false);
+
+  const [flStatus, setFlStatus] = useState<FLStatusResponse | null>(null);
+
+  // Fetch FL status from backend on mount (GET /api/v1/federated/status)
+  useEffect(() => {
+    fetchFederatedStatus().then(setFlStatus).catch(() => {});
+  }, []);
 
   const handleRunSimulation = async () => {
     if (isRunningSim) return;
@@ -14,10 +21,13 @@ export const FederatedPage: React.FC = () => {
     setGlobalLoss(0.0812);
 
     try {
-      // Trigger actual federated simulation in backend (POST /api/v1/federated/run)
-      await triggerFederatedRun(10);
+      // Trigger actual federated simulation (POST /api/v1/federated/run) and use real response
+      const result = await triggerFederatedRun(10);
+      if (result?.total_rounds) {
+        setFlStatus(result);
+      }
     } catch (e) {
-      // continues simulation animation
+      // continues simulation animation regardless
     }
 
     const interval = setInterval(() => {
@@ -28,6 +38,8 @@ export const FederatedPage: React.FC = () => {
       } else {
         clearInterval(interval);
         setIsRunningSim(false);
+        // Refresh status after sim completes
+        fetchFederatedStatus().then(setFlStatus).catch(() => {});
       }
     }, 500);
   };
@@ -522,6 +534,59 @@ export const FederatedPage: React.FC = () => {
                   </p>
                 </div>
               </div>
+            </div>
+
+            {/* Live Backend FL Run Registry (GET /api/v1/federated/status) */}
+            <div className="p-space-lg rounded-2xl bg-ink-black border-2 border-ink-black shadow-[4px_4px_0px_#1D4ED8] space-y-3">
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <div>
+                  <span className="font-label-md text-label-md uppercase text-cobalt-deep font-bold">Live Backend State</span>
+                  <h3 className="font-headline-sm text-headline-sm text-canvas-cream font-bold mt-0.5">FL Run Registry</h3>
+                </div>
+                <span className="material-symbols-outlined text-cobalt-deep text-[24px]">sync</span>
+              </div>
+
+              {flStatus ? (
+                <div className="space-y-2">
+                  <div className="p-2.5 bg-white/5 rounded-xl border border-white/10 flex items-center justify-between">
+                    <span className="font-label-md text-label-md text-white/70 font-bold">Run ID</span>
+                    <span className="font-mono text-[11px] text-cobalt-deep font-bold">{flStatus.run_id}</span>
+                  </div>
+                  <div className="p-2.5 bg-white/5 rounded-xl border border-white/10 flex items-center justify-between">
+                    <span className="font-label-md text-label-md text-white/70 font-bold">Total Rounds</span>
+                    <span className="font-label-lg text-label-lg text-canvas-cream font-bold">{flStatus.total_rounds}</span>
+                  </div>
+                  <div className="p-2.5 bg-white/5 rounded-xl border border-white/10 flex items-center justify-between">
+                    <span className="font-label-md text-label-md text-white/70 font-bold">Status</span>
+                    <span className={`px-2 py-0.5 rounded-full font-label-md text-label-md font-bold ${
+                      flStatus.status === 'complete' ? 'bg-forest-jade/20 text-forest-jade' :
+                      flStatus.status === 'running' ? 'bg-cobalt-deep/30 text-cobalt-deep' :
+                      'bg-white/10 text-white/60'
+                    }`}>
+                      {flStatus.status.toUpperCase()}
+                    </span>
+                  </div>
+                  {flStatus.rounds.length > 0 && (
+                    <div className="pt-2 border-t border-white/10">
+                      <div className="font-label-md text-label-md text-white/50 uppercase font-bold mb-2">Latest Rounds</div>
+                      <div className="space-y-1">
+                        {flStatus.rounds.slice(-3).reverse().map((r, i) => (
+                          <div key={i} className="flex items-center justify-between text-[11px] text-white/70 font-mono bg-white/5 rounded-lg px-2.5 py-1.5">
+                            <span>Round {r.round_number}</span>
+                            <span className="text-cobalt-deep font-bold">Punjab {(r.punjab_accuracy * 100).toFixed(1)}%</span>
+                            <span className="text-forest-jade">Global {(r.global_accuracy * 100).toFixed(1)}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 py-4">
+                  <span className="w-3 h-3 rounded-full bg-cobalt-deep animate-ping"></span>
+                  <span className="font-body-sm text-body-sm text-white/60">Querying backend status...</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -1,6 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { createIncident } from '../api/client';
+import {
+  createIncident,
+  fetchHotspots, fetchStations, fetchAlerts, fetchHealth, fetchReady,
+  connectCorridorWebSocket,
+  HotspotsResponse, StationsResponse, AlertsResponse, HealthResponse, ReadyResponse,
+  getAqiCategoryAndColor,
+} from '../api/client';
 
 export const DashboardPage: React.FC = () => {
   const [trajectoryHours, setTrajectoryHours] = useState<number>(28);
@@ -15,6 +21,40 @@ export const DashboardPage: React.FC = () => {
   const [isSimulating, setIsSimulating] = useState(false);
   const [squadDispatched, setSquadDispatched] = useState(false);
   const [showCauseIssued, setShowCauseIssued] = useState(false);
+
+  // Live backend data state
+  const [hotspotsData, setHotspotsData] = useState<HotspotsResponse | null>(null);
+  const [stationsData, setStationsData] = useState<StationsResponse | null>(null);
+  const [alertsData, setAlertsData] = useState<AlertsResponse | null>(null);
+  const [healthData, setHealthData] = useState<HealthResponse | null>(null);
+  const [readyData, setReadyData] = useState<ReadyResponse | null>(null);
+  const [wsStatus, setWsStatus] = useState<'connecting' | 'open' | 'closed'>('closed');
+  const [wsLastMsg, setWsLastMsg] = useState<any>(null);
+  const wsDisconnectRef = useRef<(() => void) | null>(null);
+
+  // Fetch live data on mount
+  useEffect(() => {
+    fetchHotspots(hotspotHoursBack, minConfidence).then(setHotspotsData).catch(() => {});
+  }, [hotspotHoursBack, minConfidence]);
+
+  useEffect(() => {
+    fetchStations('pm25').then(setStationsData).catch(() => {});
+    fetchAlerts(undefined, 5).then(setAlertsData).catch(() => {});
+    fetchHealth().then(setHealthData).catch(() => {});
+    fetchReady().then(setReadyData).catch(() => {});
+  }, []);
+
+  // WebSocket real-time connection
+  useEffect(() => {
+    const disconnect = connectCorridorWebSocket(
+      'delhi',
+      (data) => setWsLastMsg(data),
+      (status) => setWsStatus(status)
+    );
+    wsDisconnectRef.current = disconnect;
+    return () => { disconnect(); };
+  }, []);
+
 
   const toggleLayer = (layer: keyof typeof layers) => {
     setLayers((prev) => ({ ...prev, [layer]: !prev[layer] }));
@@ -66,7 +106,7 @@ export const DashboardPage: React.FC = () => {
           <div className="flex items-center flex-wrap gap-space-md font-label-lg text-label-lg">
             <span className="inline-flex items-center gap-1.5 text-terracotta-deep font-bold">
               <span className="material-symbols-outlined text-[18px]">local_fire_department</span>
-              1,842 Fire Clusters Active
+              {hotspotsData ? `${hotspotsData.count.toLocaleString()} Fire Clusters Active` : '1,842 Fire Clusters Active'}
             </span>
             <span className="text-outline-variant font-normal">/</span>
             <span className="inline-flex items-center gap-1.5 text-cobalt-deep font-bold">
@@ -474,76 +514,68 @@ export const DashboardPage: React.FC = () => {
                   </span>
                   <h3 className="font-headline-sm text-headline-sm text-ink-black">NCR Receptor Stations</h3>
                 </div>
-                <span className="font-label-md text-label-md text-cobalt-deep font-bold">14s Refresh</span>
+                <span className="font-label-md text-label-md text-cobalt-deep font-bold">
+                  {stationsData ? `${stationsData['@iot.count']} Live` : '14s Refresh'}
+                </span>
               </div>
               <div className="flex flex-col gap-space-xs">
-                {/* Station 1: Anand Vihar */}
-                <div className="p-space-sm rounded-lg bg-canvas-cream flex items-center justify-between shadow-[2px_2px_0px_#18181B] border border-ink-black/20">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-coral-watermelon-vivid"></span>
-                    <div>
-                      <div className="font-title-sm text-title-sm text-ink-black font-bold">Anand Vihar</div>
-                      <div className="font-body-sm text-body-sm text-ink-muted">East Receptor Gateway</div>
+                {stationsData && stationsData.value.length > 0 ? (
+                  stationsData.value.slice(0, 5).map((station) => {
+                    const obs = station.Datastreams?.[0]?.Observations?.[0];
+                    const pm25 = obs?.pm25_ugm3 ?? 0;
+                    const aqi = obs?.aqi_index ?? 0;
+                    const { category, color } = getAqiCategoryAndColor(aqi);
+                    return (
+                      <div key={station['@iot.id']} className="p-space-sm rounded-lg bg-canvas-cream flex items-center justify-between shadow-[2px_2px_0px_#18181B] border border-ink-black/20">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }}></span>
+                          <div>
+                            <div className="font-title-sm text-title-sm text-ink-black font-bold">{station.name}</div>
+                            <div className="font-body-sm text-body-sm text-ink-muted">{obs?.source ?? 'CPCB'}</div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-telemetry-val text-body-lg font-bold" style={{ color }}>
+                            {pm25.toFixed(1)} µg/m³
+                          </div>
+                          <div className="font-label-md text-label-md text-ink-muted font-bold">AQI {aqi} {category}</div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  // Fallback hardcoded stations
+                  <>
+                    <div className="p-space-sm rounded-lg bg-canvas-cream flex items-center justify-between shadow-[2px_2px_0px_#18181B] border border-ink-black/20">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-coral-watermelon-vivid"></span>
+                        <div><div className="font-title-sm text-title-sm text-ink-black font-bold">Anand Vihar</div><div className="font-body-sm text-body-sm text-ink-muted">East Receptor Gateway</div></div>
+                      </div>
+                      <div className="text-right"><div className="font-telemetry-val text-body-lg font-bold text-coral-watermelon-vivid">412 µg/m³</div><div className="font-label-md text-label-md text-ink-muted font-bold">AQI 452 Severe</div></div>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-telemetry-val text-body-lg font-bold text-coral-watermelon-vivid">
-                      412 µg/m³
+                    <div className="p-space-sm rounded-lg bg-canvas-cream flex items-center justify-between shadow-[2px_2px_0px_#18181B] border border-ink-black/20">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-coral-watermelon-vivid"></span>
+                        <div><div className="font-title-sm text-title-sm text-ink-black font-bold">Jahangirpuri</div><div className="font-body-sm text-body-sm text-ink-muted">North Trans-Inflow</div></div>
+                      </div>
+                      <div className="text-right"><div className="font-telemetry-val text-body-lg font-bold text-coral-watermelon-vivid">394 µg/m³</div><div className="font-label-md text-label-md text-ink-muted font-bold">AQI 428 Severe</div></div>
                     </div>
-                    <div className="font-label-md text-label-md text-ink-muted font-bold">AQI 452 Severe</div>
-                  </div>
-                </div>
-
-                {/* Station 2: Jahangirpuri */}
-                <div className="p-space-sm rounded-lg bg-canvas-cream flex items-center justify-between shadow-[2px_2px_0px_#18181B] border border-ink-black/20">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-coral-watermelon-vivid"></span>
-                    <div>
-                      <div className="font-title-sm text-title-sm text-ink-black font-bold">Jahangirpuri</div>
-                      <div className="font-body-sm text-body-sm text-ink-muted">North Trans-Inflow</div>
+                    <div className="p-space-sm rounded-lg bg-canvas-cream flex items-center justify-between shadow-[2px_2px_0px_#18181B] border border-ink-black/20">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-terracotta-deep"></span>
+                        <div><div className="font-title-sm text-title-sm text-ink-black font-bold">Rohini</div><div className="font-body-sm text-body-sm text-ink-muted">North-West Arc</div></div>
+                      </div>
+                      <div className="text-right"><div className="font-telemetry-val text-body-lg font-bold text-terracotta-deep">382 µg/m³</div><div className="font-label-md text-label-md text-ink-muted font-bold">AQI 405 Severe</div></div>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-telemetry-val text-body-lg font-bold text-coral-watermelon-vivid">
-                      394 µg/m³
+                    <div className="p-space-sm rounded-lg bg-canvas-cream flex items-center justify-between shadow-[2px_2px_0px_#18181B] border border-ink-black/20">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-terracotta-deep"></span>
+                        <div><div className="font-title-sm text-title-sm text-ink-black font-bold">Noida Sec-62</div><div className="font-body-sm text-body-sm text-ink-muted">South-East Exit Channel</div></div>
+                      </div>
+                      <div className="text-right"><div className="font-telemetry-val text-body-lg font-bold text-terracotta-deep">368 µg/m³</div><div className="font-label-md text-label-md text-ink-muted font-bold">AQI 392 Very Poor</div></div>
                     </div>
-                    <div className="font-label-md text-label-md text-ink-muted font-bold">AQI 428 Severe</div>
-                  </div>
-                </div>
-
-                {/* Station 3: Rohini */}
-                <div className="p-space-sm rounded-lg bg-canvas-cream flex items-center justify-between shadow-[2px_2px_0px_#18181B] border border-ink-black/20">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-terracotta-deep"></span>
-                    <div>
-                      <div className="font-title-sm text-title-sm text-ink-black font-bold">Rohini</div>
-                      <div className="font-body-sm text-body-sm text-ink-muted">North-West Arc</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-telemetry-val text-body-lg font-bold text-terracotta-deep">
-                      382 µg/m³
-                    </div>
-                    <div className="font-label-md text-label-md text-ink-muted font-bold">AQI 405 Severe</div>
-                  </div>
-                </div>
-
-                {/* Station 4: Noida Sec-62 */}
-                <div className="p-space-sm rounded-lg bg-canvas-cream flex items-center justify-between shadow-[2px_2px_0px_#18181B] border border-ink-black/20">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-terracotta-deep"></span>
-                    <div>
-                      <div className="font-title-sm text-title-sm text-ink-black font-bold">Noida Sec-62</div>
-                      <div className="font-body-sm text-body-sm text-ink-muted">South-East Exit Channel</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-telemetry-val text-body-lg font-bold text-terracotta-deep">
-                      368 µg/m³
-                    </div>
-                    <div className="font-label-md text-label-md text-ink-muted font-bold">AQI 392 Very Poor</div>
-                  </div>
-                </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -661,6 +693,79 @@ export const DashboardPage: React.FC = () => {
               <div className="p-2.5 bg-canvas-cream rounded-lg text-body-sm text-ink-muted flex items-center gap-2 font-label-md border border-ink-black/20">
                 <span className="material-symbols-outlined text-[16px] text-cobalt-deep">verified_user</span>
                 <span>Cryptographically sealed via State Pollution Board e-Pramaan</span>
+              </div>
+            </div>
+
+            {/* Live Backend System Status Panel (GET /health, GET /ready, WS /ws/delhi) */}
+            <div className="w-full bg-surface-vanilla rounded-xl p-space-lg shadow-[4px_4px_0px_#18181B] border border-ink-black flex flex-col gap-space-md">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-label-md text-label-md uppercase tracking-wider text-ink-muted font-bold">System Telemetry</span>
+                  <h3 className="font-headline-sm text-headline-sm text-ink-black">Backend Health &amp; Connectivity</h3>
+                </div>
+                <span className="material-symbols-outlined text-cobalt-deep text-2xl">monitor_heart</span>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                {/* API Health */}
+                <div className="p-2.5 bg-canvas-cream rounded-lg border border-ink-black/20 flex items-center justify-between shadow-[1px_1px_0px_#18181B]">
+                  <span className="flex items-center gap-2 font-label-md text-label-md font-bold text-ink-black">
+                    <span className="material-symbols-outlined text-[15px] text-cobalt-deep">cloud_done</span>
+                    API Health
+                  </span>
+                  <span className={`px-2 py-0.5 rounded-full font-label-md text-label-md font-bold ${
+                    healthData?.status === 'ok' ? 'bg-forest-jade/20 text-forest-jade' : 'bg-surface-vanilla-strong text-ink-muted'
+                  }`}>
+                    {healthData ? `${healthData.status.toUpperCase()} · ${healthData.db}` : 'Checking...'}
+                  </span>
+                </div>
+
+                {/* Readiness */}
+                <div className="p-2.5 bg-canvas-cream rounded-lg border border-ink-black/20 flex items-center justify-between shadow-[1px_1px_0px_#18181B]">
+                  <span className="flex items-center gap-2 font-label-md text-label-md font-bold text-ink-black">
+                    <span className="material-symbols-outlined text-[15px] text-cobalt-deep">database</span>
+                    Readiness Probe
+                  </span>
+                  <span className={`px-2 py-0.5 rounded-full font-label-md text-label-md font-bold ${
+                    readyData?.status === 'ready' ? 'bg-forest-jade/20 text-forest-jade' : 'bg-terracotta-deep/10 text-terracotta-deep'
+                  }`}>
+                    {readyData ? `${readyData.status.toUpperCase()} · ${readyData.demo_mode ? 'Demo Mode' : 'Live DB'}` : 'Checking...'}
+                  </span>
+                </div>
+
+                {/* WebSocket */}
+                <div className="p-2.5 bg-canvas-cream rounded-lg border border-ink-black/20 flex items-center justify-between shadow-[1px_1px_0px_#18181B]">
+                  <span className="flex items-center gap-2 font-label-md text-label-md font-bold text-ink-black">
+                    <span className="material-symbols-outlined text-[15px] text-cobalt-deep">bolt</span>
+                    WS /ws/delhi
+                  </span>
+                  <span className={`px-2 py-0.5 rounded-full font-label-md text-label-md font-bold flex items-center gap-1 ${
+                    wsStatus === 'open' ? 'bg-forest-jade/20 text-forest-jade' :
+                    wsStatus === 'connecting' ? 'bg-cobalt-deep/10 text-cobalt-deep' :
+                    'bg-terracotta-deep/10 text-terracotta-deep'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      wsStatus === 'open' ? 'bg-forest-jade animate-pulse' :
+                      wsStatus === 'connecting' ? 'bg-cobalt-deep animate-ping' :
+                      'bg-terracotta-deep'
+                    }`}></span>
+                    {wsStatus.toUpperCase()}
+                    {wsLastMsg && wsStatus === 'open' && (
+                      <span className="ml-1 text-ink-muted font-normal">· {wsLastMsg.type ?? 'msg'}</span>
+                    )}
+                  </span>
+                </div>
+
+                {/* Alerts count */}
+                <div className="p-2.5 bg-canvas-cream rounded-lg border border-ink-black/20 flex items-center justify-between shadow-[1px_1px_0px_#18181B]">
+                  <span className="flex items-center gap-2 font-label-md text-label-md font-bold text-ink-black">
+                    <span className="material-symbols-outlined text-[15px] text-coral-watermelon-vivid">crisis_alert</span>
+                    Active Incidents
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full font-label-md text-label-md font-bold bg-coral-watermelon-vivid/10 text-coral-watermelon-vivid">
+                    {alertsData ? `${alertsData.count} Incident${alertsData.count !== 1 ? 's' : ''}` : 'Loading...'}
+                  </span>
+                </div>
               </div>
             </div>
           </div>

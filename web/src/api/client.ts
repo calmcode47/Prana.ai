@@ -215,6 +215,46 @@ export interface ReadyResponse {
   demo_mode: boolean;
 }
 
+// AQI Surface Grid — GP Downscaler (backend/routers/aqi.py: GET /api/v1/aqi/surface)
+export interface SurfacePointProperties {
+  pm25_estimate: number;
+  aqi_index: number;
+  uncertainty_std?: number | null;
+}
+
+export interface SurfaceGridFeature {
+  type: 'Feature';
+  geometry: { type: 'Point'; coordinates: [number, number] };
+  properties: SurfacePointProperties;
+}
+
+export interface SurfaceGridResponse {
+  type: 'FeatureCollection';
+  computed_at: string;
+  resolution_deg: number;
+  features: SurfaceGridFeature[];
+  source: string;
+}
+
+// OGC SensorThings Corridor Nodes (backend/routers/sensorthings.py: GET /api/v1/sensorthings/Things)
+export interface SensorThingsLocation {
+  encodingType: string;
+  location: { type: string; coordinates: [number, number] };
+}
+
+export interface SensorThingsItem {
+  '@iot.id': string;
+  name: string;
+  description: string;
+  properties?: Record<string, any>;
+  Locations: SensorThingsLocation[];
+}
+
+export interface SensorThingsResponse {
+  '@iot.count': number;
+  value: SensorThingsItem[];
+}
+
 // API Config
 const API_BASE = (typeof window !== 'undefined' && (window as any).PRANA_API_URL) || 'http://127.0.0.1:8000';
 
@@ -509,9 +549,9 @@ export async function fetchLatestAlert(lang: 'en' | 'hi' | 'pa' = 'en'): Promise
   return safeFetch<LatestAlertResponse>(`${API_BASE}/api/v1/alerts/latest?lang=${lang}`, undefined, fallbacks[lang]);
 }
 
-export async function createIncident(data: IncidentCreate): Promise<{ status: string; incident_id: string }> {
+export async function createIncident(data: IncidentCreate): Promise<IncidentItem> {
   try {
-    const res = await fetch(`${API_BASE}/api/v1/alerts`, {
+    const res = await fetch(`${API_BASE}/api/v1/alerts/incident`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -520,11 +560,22 @@ export async function createIncident(data: IncidentCreate): Promise<{ status: st
       return await res.json();
     }
   } catch (err) {
-    // fallback simulated ID
+    // fallback simulated incident
   }
   return {
-    status: 'created',
-    incident_id: `INC-AUTO-${Math.floor(1000 + Math.random() * 9000)}`
+    incident_id: `INC-AUTO-${Math.floor(1000 + Math.random() * 9000)}`,
+    severity: data.severity,
+    location_text: data.location_text,
+    latitude: data.latitude,
+    longitude: data.longitude,
+    pollutant: data.pollutant || 'PM2.5',
+    measured_pm25: data.measured_pm25,
+    measured_aqi: data.measured_pm25 ? Math.round(data.measured_pm25 * 1.25) : undefined,
+    satellite_ts: new Date().toISOString(),
+    satellite_source: data.satellite_source || 'SIMULATED_ALERT',
+    authority: data.authority || 'CPCB',
+    created_at: new Date().toISOString(),
+    satellite_evidence: null,
   };
 }
 
@@ -608,6 +659,77 @@ export async function triggerFederatedRun(numRounds: number = 10): Promise<FLSta
     // fallback simulation
   }
   return fetchFederatedStatus();
+}
+
+// Forecast Plume Trajectories (backend/routers/forecast.py: GET /api/v1/forecast/plume)
+export async function fetchForecastPlume(clusterId?: string): Promise<PlumeResponse> {
+  const q = clusterId ? `?cluster_id=${encodeURIComponent(clusterId)}` : '';
+  const fallback: PlumeResponse = {
+    type: 'FeatureCollection',
+    computed_at: new Date().toISOString(),
+    source: 'WRF_HYSPLIT_ENSEMBLE_FALLBACK',
+    features: [
+      {
+        type: 'Feature',
+        geometry: { type: 'Polygon', coordinates: [[[75.5, 30.8], [76.2, 30.4], [76.8, 29.8], [77.1, 29.3], [76.4, 29.0], [75.8, 29.5], [75.5, 30.8]]] },
+        properties: { cluster_id: 'SANGRUR-2026-09', horizon_hours: 24, max_pm25_est: 285.4, max_aqi_est: 362, wind_speed_ms: 6.9, wind_dir_deg: 315, mixing_height_m: 340 }
+      },
+      {
+        type: 'Feature',
+        geometry: { type: 'Polygon', coordinates: [[[76.2, 29.8], [76.9, 29.3], [77.4, 28.9], [77.8, 28.5], [77.1, 28.2], [76.5, 28.6], [76.2, 29.8]]] },
+        properties: { cluster_id: 'SANGRUR-2026-09', horizon_hours: 48, max_pm25_est: 342.1, max_aqi_est: 412, wind_speed_ms: 5.8, wind_dir_deg: 312, mixing_height_m: 280 }
+      },
+      {
+        type: 'Feature',
+        geometry: { type: 'Polygon', coordinates: [[[77.0, 28.8], [77.5, 28.4], [77.9, 28.0], [78.2, 27.8], [77.8, 27.5], [77.2, 27.8], [77.0, 28.8]]] },
+        properties: { cluster_id: 'SANGRUR-2026-09', horizon_hours: 72, max_pm25_est: 420.5, max_aqi_est: 448, wind_speed_ms: 4.2, wind_dir_deg: 308, mixing_height_m: 185 }
+      },
+    ]
+  };
+  return safeFetch<PlumeResponse>(`${API_BASE}/api/v1/forecast/plume${q}`, undefined, fallback);
+}
+
+// AQI GP Surface Grid Downscaler (backend/routers/aqi.py: GET /api/v1/aqi/surface)
+export async function fetchAqiSurface(resolutionDeg: number = 0.5): Promise<SurfaceGridResponse> {
+  const fallback: SurfaceGridResponse = {
+    type: 'FeatureCollection',
+    computed_at: new Date().toISOString(),
+    resolution_deg: resolutionDeg,
+    source: 'GP_DOWNSCALER_TROPOMI_FUSION_FALLBACK',
+    features: [
+      { type: 'Feature', geometry: { type: 'Point', coordinates: [75.8, 30.9] }, properties: { pm25_estimate: 168.5, aqi_index: 242, uncertainty_std: 14.2 } },
+      { type: 'Feature', geometry: { type: 'Point', coordinates: [76.3, 30.4] }, properties: { pm25_estimate: 214.2, aqi_index: 298, uncertainty_std: 17.1 } },
+      { type: 'Feature', geometry: { type: 'Point', coordinates: [76.9, 29.6] }, properties: { pm25_estimate: 285.2, aqi_index: 362, uncertainty_std: 22.1 } },
+      { type: 'Feature', geometry: { type: 'Point', coordinates: [77.2, 28.9] }, properties: { pm25_estimate: 342.8, aqi_index: 412, uncertainty_std: 26.4 } },
+      { type: 'Feature', geometry: { type: 'Point', coordinates: [77.3, 28.6] }, properties: { pm25_estimate: 420.5, aqi_index: 448, uncertainty_std: 31.2 } },
+      { type: 'Feature', geometry: { type: 'Point', coordinates: [77.1, 28.4] }, properties: { pm25_estimate: 394.1, aqi_index: 427, uncertainty_std: 29.8 } },
+    ]
+  };
+  return safeFetch<SurfaceGridResponse>(`${API_BASE}/api/v1/aqi/surface?resolution_deg=${resolutionDeg}`, undefined, fallback);
+}
+
+// OGC SensorThings Interoperability (backend/routers/sensorthings.py: GET /api/v1/sensorthings/Things)
+export async function fetchSensorThings(): Promise<SensorThingsResponse> {
+  const fallback: SensorThingsResponse = {
+    '@iot.count': 2,
+    value: [
+      {
+        '@iot.id': 'punjab-node-001',
+        name: 'Punjab Federated Node',
+        description: 'Agricultural burn and air quality monitoring node — Punjab state',
+        properties: { node_type: 'federated_client', state: 'Punjab' },
+        Locations: [{ encodingType: 'application/geo+json', location: { type: 'Point', coordinates: [75.8, 30.9] } }]
+      },
+      {
+        '@iot.id': 'delhi-node-001',
+        name: 'Delhi Receptor Node',
+        description: 'Urban receptor and air quality monitoring node — NCR',
+        properties: { node_type: 'federated_client', state: 'Delhi' },
+        Locations: [{ encodingType: 'application/geo+json', location: { type: 'Point', coordinates: [77.209, 28.614] } }]
+      }
+    ]
+  };
+  return safeFetch<SensorThingsResponse>(`${API_BASE}/api/v1/sensorthings/Things`, undefined, fallback);
 }
 
 // Real-Time WebSocket Streaming Connector (backend/routers/websocket.py: WS /ws/{city_id})
