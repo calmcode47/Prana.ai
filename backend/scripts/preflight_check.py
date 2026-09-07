@@ -32,12 +32,15 @@ TABLES_REQUIRED = [
     "incidents",
     "fl_rounds",
     "pollutant_readings",
+    "legal_notices",
+    "enforcement_dispatches",
+    "cems_readings",
 ]
 
 STATIC_FILES_REQUIRED = [
     "firms_fallback.geojson",
     "surface_grid_fallback.geojson",
-    "tropomi_aai_fallback.geojson",
+    "open_meteo_air_quality_fallback.geojson",
 ]
 
 SYNTHETIC_DATA_REQUIRED = [

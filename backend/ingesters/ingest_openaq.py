@@ -9,6 +9,7 @@ import math
 from backend.config import demo_enabled
 import json
 import logging
+from datetime import timedelta
 from backend.ingesters.memo import cached_snapshot
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,40 +53,53 @@ async def fetch_openaq_stations(client: Optional[httpx.AsyncClient] = None) -> L
         client = client or httpx.AsyncClient(timeout=10.0)
         try:
             response = await client.get(f"{OPENAQ_BASE_URL}/locations",
-                params={"parameters_id": 2, "bbox": BBOX_STR, "limit": 100}, headers=headers)
+                params={"parameters_id": 2, "bbox": BBOX_STR, "limit": 1000}, headers=headers)
             response.raise_for_status()
             locations = response.json()["results"]
-            for item in locations:
-                coords = item.get("coordinates") or {}
-                if coords.get("latitude") is None or coords.get("longitude") is None:
-                    continue
-                sensors = {s["id"] for s in item.get("sensors", [])
-                           if s.get("parameter", {}).get("name") == "pm25"}
-                if not sensors:
-                    continue
-                latest = await client.get(f"{OPENAQ_BASE_URL}/locations/{item['id']}/latest", headers=headers)
+            location_by_id = {item["id"]: item for item in locations}
+            latest_by_parameter = {}
+            for parameter_id, parameter in ((2, "pm25"), (5, "no2"), (6, "so2")):
+                latest = await client.get(f"{OPENAQ_BASE_URL}/parameters/{parameter_id}/latest",
+                    params={"bbox": BBOX_STR, "limit": 1000}, headers=headers)
                 latest.raise_for_status()
-                sensor_map = {s["id"]: s.get("parameter", {}) for s in item.get("sensors", [])}
-                valid = []
-                for obs in latest.json()["results"]:
+                latest_by_parameter[parameter] = latest.json().get("results", [])
+
+            for parameter in ("no2", "so2"):
+                for obs in latest_by_parameter[parameter]:
                     value = obs.get("value")
                     stamp = (obs.get("datetime") or {}).get("utc")
+                    location = location_by_id.get(obs.get("locationsId"), {})
                     if value is None or not math.isfinite(float(value)) or float(value) < 0 or not stamp:
                         continue
-                    dt = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-                    if dt.tzinfo is None:
+                    observed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                    age = datetime.now(timezone.utc) - observed
+                    if age < -timedelta(hours=1) or age > timedelta(hours=24):
                         continue
-                    pollutant = sensor_map.get(obs.get("sensorsId"), {})
-                    if pollutant.get("name") in ("no2", "so2"):
-                        pollutant_readings.append({"station_id": f"IN-OPENAQ-{item['id']}",
-                            "station_name": item.get("name"), "parameter": pollutant["name"],
-                            "value": float(value), "unit": pollutant.get("units", "unknown"),
-                            "measured_at": dt.isoformat(), "source": "OPENAQ_LIVE"})
-                    if obs.get("sensorsId") in sensors:
-                        valid.append((dt, float(value)))
-                if not valid:
+                    pollutant_readings.append({"station_id": f"IN-OPENAQ-{obs.get('locationsId')}",
+                        "station_name": location.get("name"), "parameter": parameter,
+                        "value": float(value), "unit": "ug/m3", "measured_at": stamp,
+                        "source": "OPENAQ_LIVE"})
+
+            newest_by_location = {}
+            for obs in latest_by_parameter["pm25"]:
+                item = location_by_id.get(obs.get("locationsId"))
+                coords = obs.get("coordinates") or (item or {}).get("coordinates") or {}
+                value = obs.get("value")
+                stamp = (obs.get("datetime") or {}).get("utc")
+                if item is None or coords.get("latitude") is None or coords.get("longitude") is None:
                     continue
-                measured_at, value = max(valid, key=lambda row: row[0])
+                if value is None or not math.isfinite(float(value)) or float(value) < 0 or not stamp:
+                    continue
+                dt = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                age = datetime.now(timezone.utc) - dt
+                if age < -timedelta(hours=1) or age > timedelta(hours=24):
+                    continue
+                previous = newest_by_location.get(item["id"])
+                if previous is not None and previous[0] >= dt:
+                    continue
+                newest_by_location[item["id"]] = (dt, float(value), coords, item)
+
+            for measured_at, value, coords, item in newest_by_location.values():
                 locality = item.get("locality") or ""
                 name = item.get("name") or "Unnamed Station"
                 label = (locality + " " + name).lower()

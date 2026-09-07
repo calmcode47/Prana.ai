@@ -1,7 +1,7 @@
 """
 PRANA Database Initialization, Migration & Seeding CLI (REQ-001 - REQ-010, DEC-010)
 Connects to PostgreSQL + PostGIS or the in-memory fallback store to:
-1. Create all 7 tables with PostGIS spatial indexes and unique constraints.
+1. Create all backend tables with PostGIS spatial indexes and unique constraints.
 2. Seed realistic November high-pollution corridor episode datasets:
    - Active stubble burn hotspots in Sangrur, Ludhiana, Bathinda (Punjab)
    - High-severity CPCB receptor readings in Anand Vihar, Punjabi Bagh, ITO (Delhi)
@@ -217,7 +217,7 @@ async def apply_migrations(conn: asyncpg.Connection):
     async with conn.transaction():
         for ddl in DDL_STATEMENTS + MIGRATIONS:
             await conn.execute(ddl)
-    print("[MIGRATION] All 8 tables created or verified successfully.")
+    print("[MIGRATION] All 11 application tables created or verified successfully.")
 
 
 async def seed_postgres(conn: asyncpg.Connection, clean: bool = False):
@@ -226,7 +226,8 @@ async def seed_postgres(conn: asyncpg.Connection, clean: bool = False):
         print("[CLEAN] Truncating existing tables...")
         await conn.execute("""
             TRUNCATE TABLE fire_hotspots, aqi_readings, forecast_zones,
-                           anomaly_flags, citizen_reports, incidents, fl_rounds, pollutant_readings
+                           anomaly_flags, citizen_reports, incidents, fl_rounds, pollutant_readings,
+                           legal_notices, enforcement_dispatches, cems_readings
             RESTART IDENTITY CASCADE;
         """)
 
@@ -315,6 +316,9 @@ async def verify_postgres(conn: asyncpg.Connection):
         "incidents",
         "fl_rounds",
         "pollutant_readings",
+        "legal_notices",
+        "enforcement_dispatches",
+        "cems_readings",
     ]
     for tbl in tables:
         count = await conn.fetchval(f"SELECT COUNT(*) FROM {tbl}")

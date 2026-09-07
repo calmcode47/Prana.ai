@@ -110,7 +110,9 @@ async def build_snapshot(city_id="delhi"):
                 readings = [dict(r) for r in await conn.fetch("""SELECT DISTINCT ON (station_id)
                     station_id,state,pm25_ugm3,source,measured_at FROM aqi_readings
                     WHERE parameter='pm25' AND ($1::boolean OR source='OPENAQ_LIVE') ORDER BY station_id,measured_at DESC""", demo_enabled())]
-                fire_count = await conn.fetchval("SELECT count(*) FROM fire_hotspots WHERE acq_datetime >= NOW() - INTERVAL '24 hours'")
+                fire_count = await conn.fetchval("""SELECT count(*) FROM fire_hotspots
+                    WHERE acq_datetime >= NOW() - INTERVAL '24 hours'
+                    AND ($1::boolean OR source='NASA_FIRMS_VIIRS_SNPP_NRT')""", demo_enabled())
         except Exception:
             readings, fire_count = [], None
     if not readings and pool is None:

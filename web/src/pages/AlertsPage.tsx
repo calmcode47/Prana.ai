@@ -1,5 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { fetchLatestAlert, createIncident, fetchAnomalies, fetchAlerts, LatestAlertResponse, AnomalyItem, AlertsResponse, IncidentItem } from '../api/client';
+import {
+  AlertsResponse,
+  AnomalyItem,
+  CemsForensicsResponse,
+  IncidentItem,
+  LatestAlertResponse,
+  LegalNotice,
+  LegalRegistryResponse,
+  createIncident,
+  createLegalNotice,
+  fetchAlerts,
+  fetchAnomalies,
+  fetchCemsForensics,
+  fetchLatestAlert,
+  fetchLegalRegistry,
+  fetchSignaturePackage,
+  queueLegalDispatch,
+} from '../api/client';
 
 export const AlertsPage: React.FC = () => {
   const [filter, setFilter] = useState<'all' | 'emergency' | 'nighttime' | 'stubble'>('all');
@@ -17,12 +34,19 @@ export const AlertsPage: React.FC = () => {
   const [noticeGenerated, setNoticeGenerated] = useState(false);
   const [sealedPramaan, setSealedPramaan] = useState(false);
   const [transmittedToDM, setTransmittedToDM] = useState(false);
+  const [signatureStatus, setSignatureStatus] = useState<string>('');
+  const [dispatchStatus, setDispatchStatus] = useState<string>('');
+  const [currentNotice, setCurrentNotice] = useState<LegalNotice | null>(null);
+  const [legalRegistry, setLegalRegistry] = useState<LegalRegistryResponse | null>(null);
+  const [cemsData, setCemsData] = useState<CemsForensicsResponse | null>(null);
 
   // Live alerts from backend (GET /api/v1/alerts)
   const [alertsData, setAlertsData] = useState<AlertsResponse | null>(null);
 
   useEffect(() => {
     fetchAlerts(undefined, 10).then(setAlertsData).catch(() => {});
+    fetchLegalRegistry().then(setLegalRegistry).catch(() => {});
+    fetchCemsForensics('CEMS-FLUE-MAN8', 24).then(setCemsData).catch(() => {});
   }, [filter]);
   const [noticeText, setNoticeText] = useState(
     `FORM 1: NOTICE UNDER SECTION 31A OF THE AIR (PREVENTION AND CONTROL OF POLLUTION) ACT, 1981.\n\n` +
@@ -40,27 +64,109 @@ export const AlertsPage: React.FC = () => {
     fetchAnomalies(anomalyParam, nighttimeOnly, daysBack).then((data) => setAnomaliesList(data.items));
   }, [anomalyParam, nighttimeOnly, daysBack]);
 
-  const handleGenerateNotice = () => {
+  const refreshRegistry = () => fetchLegalRegistry().then(setLegalRegistry).catch(() => {});
+
+  const createDraftFromSelection = async (): Promise<LegalNotice> => {
+    const selectedAlert = alertsData?.items.find((item) => item.incident_id === selectedIncident);
+    const isCems = selectedIncident.includes('CEMS');
+    const measuredPm25 = selectedAlert?.measured_pm25 ?? (isCems ? 180 : 342.6);
+    const incident = selectedAlert ?? await createIncident({
+      severity: isCems ? 'warning' : 'emergency',
+      location_text: isCems ? 'Manesar Sector 8 industrial CEMS' : selectedIncident,
+      pollutant: 'PM2.5',
+      measured_pm25: measuredPm25,
+      satellite_source: isCems ? 'CEMS_TELEMETRY' : 'FIRMS_VIIRS',
+      authority: 'SPCB Legal Review',
+    });
+    const notice = await createLegalNotice({
+      incident_id: incident.incident_id,
+      issuing_authority: 'State Pollution Control Board Review Desk',
+      requested_direction: noticeText,
+    });
+    setSelectedIncident(incident.incident_id);
+    setCurrentNotice(notice);
+    setNoticeText(notice.body);
+    refreshRegistry();
+    return notice;
+  };
+
+  const handleGenerateNotice = async () => {
+    await createDraftFromSelection();
     setNoticeGenerated(true);
     setTimeout(() => setNoticeGenerated(false), 2000);
   };
 
-  const handleSignPramaan = () => {
-    setSealedPramaan(true);
-    setTimeout(() => setSealedPramaan(false), 2400);
+  const handleSignPramaan = async () => {
+    const notice = currentNotice ?? await createDraftFromSelection();
+    const signature = await fetchSignaturePackage(notice.notice_id);
+    setSignatureStatus(signature.status);
+    setSealedPramaan(signature.provider_call_performed);
+    setTimeout(() => {
+      setSealedPramaan(false);
+      setSignatureStatus('');
+    }, 3000);
   };
 
   const handleTransmitDM = async () => {
-    setTransmittedToDM(true);
-    await createIncident({
-      severity: 'emergency',
-      location_text: selectedIncident === 'INC-NCR-8902' ? 'Anand Vihar Airshed Grid #04' : selectedIncident,
-      pollutant: 'PM2.5',
-      measured_pm25: 342.6,
-      authority: 'CPCB & DM Command',
+    const notice = currentNotice ?? await createDraftFromSelection();
+    const dispatch = await queueLegalDispatch({
+      incident_id: notice.incident_id,
+      notice_id: notice.notice_id,
+      recipient_kind: 'district_magistrate',
+      recipient_reference: 'District Magistrate and Police Command review queue',
     });
-    setTimeout(() => setTransmittedToDM(false), 3000);
+    setDispatchStatus(dispatch.status);
+    setTransmittedToDM(Boolean(dispatch.message_sent));
+    refreshRegistry();
+    setTimeout(() => {
+      setTransmittedToDM(false);
+      setDispatchStatus('');
+    }, 3000);
   };
+
+  const registryItems = [
+    ...(legalRegistry?.notices ?? []).map((notice) => ({
+      id: notice.notice_id,
+      title: notice.issuing_authority,
+      detail: notice.legal_basis,
+      status: notice.status,
+      statusColor: 'bg-cobalt-deep text-on-primary',
+    })),
+    ...(legalRegistry?.dispatches ?? []).map((dispatch) => ({
+      id: dispatch.dispatch_id,
+      title: dispatch.recipient_reference,
+      detail: `Incident ${dispatch.incident_id}`,
+      status: dispatch.status,
+      statusColor: 'bg-terracotta-deep text-on-primary',
+    })),
+  ].slice(0, 6);
+
+  const handleLoadCemsDossier = async () => {
+    const data = await fetchCemsForensics('CEMS-FLUE-MAN8', 24);
+    setCemsData(data);
+    setSelectedIncident(data.facility_id);
+    setCurrentNotice(null);
+    setNoticeText(
+      data.status === 'REVIEW_REQUIRED'
+        ? `CEMS FORENSIC REVIEW REQUIRED.\n\nFacility: ${data.facility_id}\nReview windows: ${data.review_windows.length}\nMethod: ${data.method}`
+        : `CEMS FORENSIC RESULT.\n\nFacility: ${data.facility_id}\nReadings received: ${data.readings.length}\nNo bypass pattern was detected.\nMethod: ${data.method}`
+    );
+  };
+
+  const cemsReadings = cemsData?.readings ?? [];
+  const cemsPath = (field: 'stack_velocity_ms' | 'scrubber_load_kw') => {
+    if (cemsReadings.length < 2) return '';
+    const values = cemsReadings.map((reading) => reading[field]);
+    const min = Math.min(...values);
+    const span = Math.max(Math.max(...values) - min, 1);
+    return values.map((value, index) => {
+      const x = 40 + (index / (values.length - 1)) * 480;
+      const y = 110 - ((value - min) / span) * 80;
+      return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+  };
+  const cemsStackPath = cemsPath('stack_velocity_ms');
+  const cemsLoadPath = cemsPath('scrubber_load_kw');
 
   return (
     <div className="w-full bg-canvas-cream min-h-screen relative overflow-x-hidden pt-20">
@@ -126,14 +232,14 @@ export const AlertsPage: React.FC = () => {
                   Official Statutory Bulletin
                 </span>
                 <span className="font-mono text-xs text-ink-muted">
-                  ID: {bulletin?.incident_id || 'INC-2026-09-001'}
+                  ID: {bulletin?.incident_id || 'No current incident'}
                 </span>
               </div>
               <h4 className="font-headline-sm text-headline-sm font-bold text-ink-black">
-                {bulletin?.title || 'CRITICAL AIR QUALITY ALERT: DELHI-NCR CORRIDOR'}
+                {bulletin?.title || 'NO CURRENT BACKEND BULLETIN'}
               </h4>
               <p className="font-body-sm text-body-sm text-ink-muted leading-relaxed">
-                {bulletin?.body || 'Severe atmospheric advection active. Anand Vihar PM2.5 exceeded 420 ug/m3. Emergency GRAP Stage IV protocols initiated under Section 31A.'}
+                {bulletin?.body || 'The backend has no current alert bulletin for this language.'}
               </p>
             </div>
 
@@ -372,7 +478,7 @@ export const AlertsPage: React.FC = () => {
                         Trajectory Convergence
                       </span>
                       <span className="px-2 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed font-label-md text-label-md font-bold">
-                        HYSPLIT 4.2
+                        {alertsData?.items[0]?.satellite_source ?? 'Source unavailable'}
                       </span>
                     </div>
                     <p className="font-body-sm text-body-sm text-ink-muted">
@@ -552,11 +658,11 @@ export const AlertsPage: React.FC = () => {
                         Stack Velocity vs. ID Fan Electrical Draw
                       </span>
                       <p className="font-body-sm text-body-sm text-ink-muted">
-                        CEMS Stack #02 telemetry correlates flue velocity surging while wet-scrubber pump drops to zero power draw.
+                        {cemsData ? `${cemsData.readings.length} readings analyzed. ${cemsData.method}` : 'Loading backend CEMS forensics.'}
                       </p>
                     </div>
                     <span className="px-2.5 py-1 rounded bg-secondary-container text-on-secondary-container font-label-md text-label-md font-bold">
-                      Midnight Cutoff (01:14 - 03:40 AM)
+                      {cemsData?.status ?? 'CHECKING TELEMETRY'}
                     </span>
                   </div>
 
@@ -566,32 +672,29 @@ export const AlertsPage: React.FC = () => {
                       <line stroke="#18181B" strokeDasharray="3 3" strokeOpacity="0.15" x1="40" x2="520" y1="20" y2="20" />
                       <line stroke="#18181B" strokeDasharray="3 3" strokeOpacity="0.15" x1="40" x2="520" y1="60" y2="60" />
                       <line stroke="#18181B" strokeDasharray="3 3" strokeOpacity="0.15" x1="40" x2="520" y1="100" y2="100" />
-                      <rect fill="#FF5376" fillOpacity="0.12" height="95" rx="4" width="160" x="220" y="15" />
-                      <text fill="#FF5376" fontFamily="Plus Jakarta Sans" fontSize="10" fontWeight="700" x="230" y="32">
-                        TAMPER WINDOW DETECTED
-                      </text>
+                      {cemsData?.status === 'REVIEW_REQUIRED' && (
+                        <>
+                          <rect fill="#FF5376" fillOpacity="0.12" height="95" rx="4" width="160" x="220" y="15" />
+                          <text fill="#FF5376" fontFamily="Plus Jakarta Sans" fontSize="10" fontWeight="700" x="230" y="32">REVIEW WINDOW DETECTED</text>
+                        </>
+                      )}
                       {/* Stack Flue Velocity Curve */}
                       <path
-                        d="M40,90 Q90,88 140,85 T220,80 Q250,30 280,28 T350,30 Q380,82 420,84 T520,85"
+                        d={cemsStackPath}
                         stroke="#1D4ED8"
                         strokeLinecap="round"
                         strokeWidth="3"
                       />
                       {/* Scrubber Pump Load */}
                       <path
-                        d="M40,35 Q90,36 140,38 T220,40 L225,108 Q280,110 350,110 L380,42 Q450,40 520,38"
+                        d={cemsLoadPath}
                         stroke="#EA580C"
                         strokeDasharray="4 2"
                         strokeLinecap="round"
                         strokeWidth="2.5"
                       />
-                      <circle cx="280" cy="28" fill="#FF5376" r="5" stroke="#18181B" strokeWidth="1.5" />
-                      <circle cx="280" cy="110" fill="#18181B" r="5" stroke="#FAF6EE" strokeWidth="1.5" />
-                      <text fill="#52525B" fontFamily="Plus Jakarta Sans" fontSize="10" x="40" y="125">23:00</text>
-                      <text fill="#52525B" fontFamily="Plus Jakarta Sans" fontSize="10" x="140" y="125">00:30</text>
-                      <text fill="#FF5376" fontFamily="Plus Jakarta Sans" fontSize="10" fontWeight="700" x="220" y="125">01:14 (Cutoff)</text>
-                      <text fill="#18181B" fontFamily="Plus Jakarta Sans" fontSize="10" fontWeight="700" x="350" y="125">03:40 (Re-engage)</text>
-                      <text fill="#52525B" fontFamily="Plus Jakarta Sans" fontSize="10" x="480" y="125">05:00</text>
+                      <text fill="#52525B" fontFamily="Plus Jakarta Sans" fontSize="10" x="40" y="125">{cemsReadings[0] ? new Date(cemsReadings[0].measured_at).toLocaleTimeString() : 'No readings'}</text>
+                      <text fill="#52525B" fontFamily="Plus Jakarta Sans" fontSize="10" x="440" y="125">{cemsReadings.length ? new Date(cemsReadings[cemsReadings.length - 1].measured_at).toLocaleTimeString() : ''}</text>
                     </svg>
                     <div className="flex items-center justify-end gap-5 mt-1 font-label-md text-label-md">
                       <span className="flex items-center gap-1.5 text-cobalt-deep font-bold">
@@ -612,15 +715,7 @@ export const AlertsPage: React.FC = () => {
                     <span>Offense: Wilful bypass of Air Pollution Control Equipment (APCE)</span>
                   </div>
                   <button
-                    onClick={() => {
-                      setSelectedIncident('CEMS-FLUE-MAN8');
-                      setNoticeText(
-                        `FORM 2: NOTICE UNDER SECTION 31A - INDUSTRIAL APCE BYPASS.\n\n` +
-                        `TO: Precision Auto Forgings Pvt. Ltd, Manesar Sector 8.\n` +
-                        `CEMS Telemetry indicates zero pump current between 01:14 - 03:40 AM with continuous stack flue flow.\n` +
-                        `Immediate explanation and show-cause required within 24 hours.`
-                      );
-                    }}
+                    onClick={handleLoadCemsDossier}
                     className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-ink-black text-canvas-cream font-label-lg text-label-lg shadow-[3px_3px_0px_#1D4ED8] hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all cursor-pointer"
                     type="button"
                   >
@@ -744,7 +839,13 @@ export const AlertsPage: React.FC = () => {
                   type="button"
                 >
                   <span className="material-symbols-outlined text-[16px] text-forest-jade">verified</span>
-                  <span>{sealedPramaan ? 'Cryptographically Sealed via e-Pramaan' : 'Sign via e-Pramaan (DL-ENV-902)'}</span>
+                  <span>{sealedPramaan
+                    ? 'Cryptographically Sealed via e-Pramaan'
+                    : signatureStatus === 'PROVIDER_NOT_CONFIGURED'
+                      ? 'e-Pramaan Provider Not Configured'
+                      : signatureStatus === 'READY_FOR_PROVIDER'
+                        ? 'Ready for Authorized eSign'
+                        : 'Check e-Pramaan Signing Readiness'}</span>
                 </button>
 
                 <button
@@ -753,13 +854,17 @@ export const AlertsPage: React.FC = () => {
                   type="button"
                 >
                   <span className="material-symbols-outlined text-[18px]">send</span>
-                  <span>{transmittedToDM ? 'Transmitted to DM & Police Command!' : 'Transmit to District Magistrate'}</span>
+                  <span>{transmittedToDM
+                    ? 'Transmitted to DM & Police Command!'
+                    : dispatchStatus === 'PENDING_CONFIGURATION'
+                      ? 'DM Dispatch Pending Configuration'
+                      : 'Queue District Magistrate Review'}</span>
                 </button>
               </div>
 
               <div className="p-2.5 bg-canvas-cream rounded-xl border border-ink-black/20 text-body-sm text-ink-muted flex items-center gap-2 font-label-md">
                 <span className="material-symbols-outlined text-[16px] text-cobalt-deep">security</span>
-                <span>Audit trail anchored to National Clean Air Programme (NCAP) ledger</span>
+                <span>Backend records drafts, hashes, and dispatch requests for audit review</span>
               </div>
             </div>
 
@@ -770,36 +875,14 @@ export const AlertsPage: React.FC = () => {
                   Enforcement Registry (Last 24 Hours)
                 </h3>
                 <span className="px-2 py-0.5 rounded-full bg-surface-vanilla-strong text-[11px] font-bold text-ink-black border border-ink-black/20">
-                  4 Active Warrants
+                  {legalRegistry?.warrants.length ?? 0} Active Warrants
                 </span>
               </div>
 
               <div className="space-y-3">
-                {[
-                  {
-                    id: 'NTC-DL-4029',
-                    title: 'M/s Apex Steel Castings',
-                    detail: 'Flue gas bypassing baghouse filter',
-                    status: 'Transmitted',
-                    statusColor: 'bg-forest-jade text-on-primary',
-                  },
-                  {
-                    id: 'NTC-HR-1182',
-                    title: 'Bahadurgarh Clinker Stack',
-                    detail: 'Midnight opacity exceedance +310%',
-                    status: 'Sealed',
-                    statusColor: 'bg-cobalt-deep text-on-primary',
-                  },
-                  {
-                    id: 'NTC-PB-0941',
-                    title: 'Sangrur Agricultural Sector 9',
-                    detail: 'Stubble burn clusters advecting to NCR',
-                    status: 'Dispatched',
-                    statusColor: 'bg-terracotta-deep text-on-primary',
-                  },
-                ].map((item, i) => (
+                {registryItems.map((item, i) => (
                   <div
-                    key={i}
+                      key={item.id || i}
                     className="p-3 bg-canvas-cream rounded-xl border border-ink-black/20 shadow-[2px_2px_0px_#18181B] flex items-center justify-between"
                   >
                     <div>
@@ -811,6 +894,11 @@ export const AlertsPage: React.FC = () => {
                     </span>
                   </div>
                 ))}
+                {registryItems.length === 0 && (
+                  <div className="p-3 bg-canvas-cream rounded-xl border border-ink-black/20 font-body-sm text-body-sm text-ink-muted">
+                    No legal drafts or dispatch requests have been recorded.
+                  </div>
+                )}
               </div>
             </div>
           </section>

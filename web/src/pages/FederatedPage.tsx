@@ -2,49 +2,41 @@ import React, { useState, useEffect } from 'react';
 import { triggerFederatedRun, fetchFederatedStatus, FLStatusResponse } from '../api/client';
 
 export const FederatedPage: React.FC = () => {
-  const [currentRound, setCurrentRound] = useState<number>(8);
-  const [globalLoss, setGlobalLoss] = useState<number>(0.0384);
+  const [currentRound, setCurrentRound] = useState<number>(0);
+  const [globalLoss, setGlobalLoss] = useState<number | null>(null);
   const [isRunningSim, setIsRunningSim] = useState<boolean>(false);
 
   const [flStatus, setFlStatus] = useState<FLStatusResponse | null>(null);
 
   // Fetch FL status from backend on mount (GET /api/v1/federated/status)
   useEffect(() => {
-    fetchFederatedStatus().then(setFlStatus).catch(() => {});
+    fetchFederatedStatus().then((status) => {
+      setFlStatus(status);
+      const latest = status.rounds[status.rounds.length - 1];
+      setCurrentRound(latest?.round_number ?? 0);
+      setGlobalLoss(latest?.global_loss ?? null);
+    }).catch(() => {});
   }, []);
 
   const handleRunSimulation = async () => {
     if (isRunningSim) return;
     setIsRunningSim(true);
-    let round = 1;
-    setCurrentRound(1);
-    setGlobalLoss(0.0812);
 
     try {
-      // Trigger actual federated simulation (POST /api/v1/federated/run) and use real response
       const result = await triggerFederatedRun(10);
-      if (result?.total_rounds) {
-        setFlStatus(result);
-      }
-    } catch (e) {
-      // continues simulation animation regardless
+      setFlStatus(result);
+      const latest = result.rounds[result.rounds.length - 1];
+      setCurrentRound(latest?.round_number ?? result.total_rounds);
+      setGlobalLoss(latest?.global_loss ?? null);
+    } finally {
+      setIsRunningSim(false);
     }
-
-    const interval = setInterval(() => {
-      round += 1;
-      if (round <= 10) {
-        setCurrentRound(round);
-        setGlobalLoss((prev) => +(prev * 0.88).toFixed(4));
-      } else {
-        clearInterval(interval);
-        setIsRunningSim(false);
-        // Refresh status after sim completes
-        fetchFederatedStatus().then(setFlStatus).catch(() => {});
-      }
-    }, 500);
   };
 
-  const progressWidth = (currentRound / 10) * 100;
+  const totalRounds = flStatus?.total_rounds || 10;
+  const progressWidth = Math.min(100, (currentRound / totalRounds) * 100);
+  const dp = flStatus?.privacy?.dp_sgd;
+  const secureAggregation = flStatus?.privacy?.secure_aggregation;
 
   return (
     <div className="w-full bg-canvas-cream min-h-screen relative overflow-x-hidden pt-20">
@@ -64,10 +56,13 @@ export const FederatedPage: React.FC = () => {
               </span>
               <span className="inline-flex items-center gap-space-2xs px-space-sm py-1 rounded-full bg-surface-vanilla text-ink-black font-label-md text-label-md shadow-[2px_2px_0px_#18181B] border border-ink-black/20 font-bold">
                 <span className="material-symbols-outlined text-[14px] text-cobalt-deep">lock_reset</span>
-                PAILLIER HOMOMORPHIC CRYPTOSYSTEM 2048-BIT (SEC-006)
+                {secureAggregation?.enabled
+                  ? `${secureAggregation.scheme?.toUpperCase()} HOMOMORPHIC CRYPTOSYSTEM ${secureAggregation.key_bits}-BIT (SEC-006)`
+                  : 'SECURE AGGREGATION AWAITING RUN'}
               </span>
               <span className="inline-flex items-center gap-space-2xs px-space-sm py-1 rounded-full bg-surface-vanilla text-ink-black font-label-md text-label-md shadow-[2px_2px_0px_#18181B] border border-ink-black/20 font-bold">
-                <span className="text-terracotta-deep font-bold">DP-SGD</span> ε=0.42 (δ=1e-5)
+                <span className="text-terracotta-deep font-bold">DP-SGD</span>{' '}
+                {dp?.enabled ? `ε=${dp.epsilon_spent ?? dp.target_epsilon} (δ=${dp.delta})` : 'AWAITING RUN'}
               </span>
             </div>
 
@@ -112,14 +107,14 @@ export const FederatedPage: React.FC = () => {
                     SIMULATION ORCHESTRATION
                   </span>
                   <span className="px-2 py-0.5 rounded-full bg-forest-jade/20 text-forest-jade font-bold">
-                    {isRunningSim ? 'TRAINING IN PROGRESS' : 'ACTIVE CYCLE'}
+                    {isRunningSim ? 'TRAINING IN PROGRESS' : (flStatus?.status ?? 'checking').toUpperCase()}
                   </span>
                 </div>
 
                 <div className="flex items-baseline justify-between pt-1">
                   <div>
                     <span className="font-headline-md text-headline-md text-ink-black font-bold" id="sim-round-display">
-                      Round {currentRound} of 10
+                      Round {currentRound} of {totalRounds}
                     </span>
                     <p className="font-label-md text-label-md text-ink-muted mt-0.5">
                       Synchronized FedAvg Ephemeral Pass
@@ -127,7 +122,7 @@ export const FederatedPage: React.FC = () => {
                   </div>
                   <div className="text-right">
                     <span className="font-telemetry-val text-telemetry-val text-cobalt-deep font-extrabold" id="sim-loss-display">
-                      {globalLoss.toFixed(4)}
+                      {globalLoss == null ? '—' : globalLoss.toFixed(4)}
                     </span>
                     <p className="font-telemetry-unit text-telemetry-unit text-ink-muted uppercase font-bold">
                       Global Cross-Entropy Loss
@@ -146,7 +141,7 @@ export const FederatedPage: React.FC = () => {
 
                 <div className="flex items-center justify-between pt-1">
                   <span className="font-body-sm text-body-sm text-ink-muted font-semibold">
-                    Noise σ: 1.15 | Clip C=1.0
+                    Noise σ: {dp?.noise_multiplier?.toFixed(2) ?? '—'} | Clip C={dp?.max_grad_norm ?? '—'}
                   </span>
                   <button
                     onClick={handleRunSimulation}
@@ -484,7 +479,7 @@ export const FederatedPage: React.FC = () => {
                       01. Rényi Differential Privacy
                     </span>
                     <span className="px-2 py-0.5 rounded bg-forest-jade/20 text-forest-jade text-xs font-bold">
-                      ε=0.42 (δ=1e-5)
+                      {dp?.enabled ? `ε=${dp.epsilon_spent ?? dp.target_epsilon} (δ=${dp.delta})` : 'Awaiting run'}
                     </span>
                   </div>
                   <p className="font-body-sm text-body-sm text-ink-muted mt-1">
@@ -498,7 +493,7 @@ export const FederatedPage: React.FC = () => {
                       02. Paillier Homomorphic Encryption
                     </span>
                     <span className="px-2 py-0.5 rounded bg-cobalt-deep/10 text-cobalt-deep text-xs font-bold">
-                      2048-bit Keys
+                      {secureAggregation?.enabled ? `${secureAggregation.key_bits}-bit Keys` : 'Awaiting run'}
                     </span>
                   </div>
                   <p className="font-body-sm text-body-sm text-ink-muted mt-1">

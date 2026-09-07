@@ -4,13 +4,17 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: .
-    plan: standard
+    plan: 1c-2g
+    numInstances: 1
     region: singapore
     healthCheckPath: /ready
+    preDeployCommand: python -m backend.scripts.migrate_db
     autoDeploy: true
     envVars:
       - key: PRANA_ENV
         value: production
+      - key: PRANA_DEMO_MODE
+        value: "false"
       - key: PORT
         value: "8000"
       - key: DATABASE_URL
@@ -28,6 +32,8 @@ databases:
   - name: prana-db
     databaseName: prana
     user: prana
-    plan: standard
+    plan: 1c-2g
+    diskSizeGB: 10
+    ipAllowList: []
     region: singapore
     postgresMajorVersion: "16"

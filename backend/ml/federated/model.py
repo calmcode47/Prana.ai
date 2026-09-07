@@ -105,6 +105,46 @@ class CorridorPredictor:
 
         return loss
 
+    def fit_epoch_dp(
+        self, X: np.ndarray, y: np.ndarray, lr: float, max_grad_norm: float,
+        noise_multiplier: float, rng: np.random.Generator,
+    ) -> Tuple[float, float]:
+        """Run record-level DP-SGD with per-example clipping and Gaussian noise."""
+        count = len(X)
+        if count == 0:
+            return 0.0, 0.0
+        y = y.reshape(-1, 1)
+        predicted, a1, a2 = self.forward(X)
+        error = predicted - y
+        loss = float(np.mean(error ** 2))
+
+        delta3 = error
+        g_w3 = np.einsum("ni,nj->nij", a2, delta3)
+        g_b3 = delta3
+        delta2 = (delta3 @ self.W3.T) * (1.0 - a2 ** 2)
+        g_w2 = np.einsum("ni,nj->nij", a1, delta2)
+        g_b2 = delta2
+        delta1 = (delta2 @ self.W2.T) * (1.0 - a1 ** 2)
+        g_w1 = np.einsum("ni,nj->nij", X, delta1)
+        g_b1 = delta1
+        gradients = [g_w1, g_b1, g_w2, g_b2, g_w3, g_b3]
+        squared = np.zeros(count)
+        for gradient in gradients:
+            squared += np.sum(gradient.reshape(count, -1) ** 2, axis=1)
+        norms = np.sqrt(squared)
+        factors = np.minimum(1.0, max_grad_norm / np.maximum(norms, 1e-12))
+        noise_std = noise_multiplier * max_grad_norm / count
+        averaged = []
+        for gradient in gradients:
+            broadcast = factors.reshape((count,) + (1,) * (gradient.ndim - 1))
+            mean = np.mean(gradient * broadcast, axis=0)
+            averaged.append(mean + rng.normal(0.0, noise_std, size=mean.shape))
+        for parameter, gradient in zip(
+            (self.W1, self.b1, self.W2, self.b2, self.W3, self.b3), averaged
+        ):
+            parameter -= lr * gradient
+        return loss, float(np.mean(norms > max_grad_norm))
+
     def evaluate(self, X: np.ndarray, y: np.ndarray) -> Tuple[float, float]:
         """
         Evaluates model on validation data.

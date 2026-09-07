@@ -1,5 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { fetchForecastPlume, PlumeResponse } from '../api/client';
+import {
+  BiomassEmissionsResponse,
+  FireAqiLagResponse,
+  PlumeResponse,
+  createIncident,
+  fetchBiomassEmissions,
+  fetchFireAqiLag,
+  fetchForecastPlume,
+  queueLegalDispatch,
+} from '../api/client';
 
 export const ForecastPage: React.FC = () => {
   const [selectedHorizon, setSelectedHorizon] = useState<number>(0);
@@ -8,10 +17,14 @@ export const ForecastPage: React.FC = () => {
   const [mandateTriggered, setMandateTriggered] = useState<boolean>(false);
   const [geoJsonExported, setGeoJsonExported] = useState<boolean>(false);
   const [plumeData, setPlumeData] = useState<PlumeResponse | null>(null);
+  const [lagData, setLagData] = useState<FireAqiLagResponse | null>(null);
+  const [biomassData, setBiomassData] = useState<BiomassEmissionsResponse | null>(null);
 
   // Fetch real plume data from backend (GET /api/v1/forecast/plume)
   useEffect(() => {
     fetchForecastPlume().then(setPlumeData).catch(() => {});
+    fetchFireAqiLag(7).then(setLagData).catch(() => {});
+    fetchBiomassEmissions(7).then(setBiomassData).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -32,6 +45,51 @@ export const ForecastPage: React.FC = () => {
   };
 
   const scrubberPercent = ((currentHour / 72) * 100).toFixed(1);
+  const selectedPlume = plumeData?.features.reduce((closest, feature) =>
+    Math.abs(feature.properties.horizon_hours - currentHour) < Math.abs(closest.properties.horizon_hours - currentHour)
+      ? feature : closest
+  , plumeData.features[0]);
+  const strongestLag = lagData?.strongest_lag;
+  const totalFrp = biomassData?.regions.reduce((sum, region) => sum + region.frp_sum_mw, 0) ?? null;
+  const correlationPoints = (lagData?.correlations ?? []).map((item) => ({
+    cx: 40 + (item.lag_hours / 72) * 300,
+    cy: 75 - item.pearson_r * 60,
+    r: 4,
+  }));
+
+  const handleGeoJsonExport = () => {
+    if (!plumeData) return;
+    const blob = new Blob([JSON.stringify(plumeData, null, 2)], { type: 'application/geo+json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `prana-plume-${new Date(plumeData.computed_at).toISOString().slice(0, 10)}.geojson`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    setGeoJsonExported(true);
+    setTimeout(() => setGeoJsonExported(false), 2400);
+  };
+
+  const handleMandateQueue = async () => {
+    if (!selectedPlume) return;
+    const incident = await createIncident({
+      severity: 'emergency',
+      location_text: `Forecast plume ${selectedPlume.properties.cluster_id} at T+${selectedPlume.properties.horizon_hours}h`,
+      pollutant: 'PM2.5',
+      measured_pm25: selectedPlume.properties.max_pm25_est,
+      satellite_source: plumeData?.source,
+      authority: 'Inter-State Emergency Review',
+    });
+    await queueLegalDispatch({
+      incident_id: incident.incident_id,
+      recipient_kind: 'spcb',
+      recipient_reference: 'Punjab, Haryana, and Delhi SPCB review queue',
+    });
+    setMandateTriggered(true);
+    setTimeout(() => setMandateTriggered(false), 2600);
+  };
 
   return (
     <div className="w-full bg-canvas-cream min-h-screen relative overflow-x-hidden pt-20">
@@ -45,7 +103,7 @@ export const ForecastPage: React.FC = () => {
           <div className="flex flex-wrap items-center gap-space-sm">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-vanilla shadow-[2px_2px_0px_#18181B] text-label-md font-label-md text-ink-black border border-ink-black/20">
               <span className="w-2 h-2 rounded-full bg-coral-watermelon-vivid"></span>
-              WRF-CHEM + HYSPLIT MODEL V4.2
+              {plumeData?.source ?? 'LOADING FORECAST MODEL'}
             </span>
             <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-surface-vanilla text-label-md font-label-md text-ink-muted shadow-[1px_1px_0px_#18181B]">
               <span>Boundary Layer Dynamic:</span>
@@ -82,10 +140,7 @@ export const ForecastPage: React.FC = () => {
           {/* Action Cluster */}
           <div className="flex items-center gap-space-sm">
             <button
-              onClick={() => {
-                setGeoJsonExported(true);
-                setTimeout(() => setGeoJsonExported(false), 2400);
-              }}
+              onClick={handleGeoJsonExport}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-surface-vanilla hover:bg-surface-vanilla-strong shadow-[2px_2px_0px_#18181B] border border-ink-black text-label-lg font-label-lg text-ink-black transition-transform hover:-translate-y-0.5 cursor-pointer"
               type="button"
             >
@@ -94,15 +149,12 @@ export const ForecastPage: React.FC = () => {
               <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
             </button>
             <button
-              onClick={() => {
-                setMandateTriggered(true);
-                setTimeout(() => setMandateTriggered(false), 2600);
-              }}
+              onClick={handleMandateQueue}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-coral-watermelon-vivid hover:opacity-90 shadow-[3px_3px_0px_#18181B] text-label-lg font-label-lg text-on-secondary transition-transform hover:-translate-y-0.5 cursor-pointer font-bold"
               type="button"
             >
               <span className="material-symbols-outlined text-[18px]">warning</span>
-              <span>{mandateTriggered ? 'Inter-State Mandate Broadcast!' : 'Trigger Inter-State Emergency Mandate'}</span>
+              <span>{mandateTriggered ? 'Inter-State Review Queued' : 'Queue Inter-State Emergency Review'}</span>
             </button>
           </div>
         </div>
@@ -159,12 +211,12 @@ export const ForecastPage: React.FC = () => {
             <div className="flex items-center gap-2 flex-wrap">
               <div className="flex items-center rounded-full bg-canvas-cream px-3 py-1 shadow-[2px_2px_0px_#18181B] border border-ink-black text-label-md font-label-md">
                 <span className="text-ink-muted mr-1.5">Mixing Layer Depth:</span>
-                <span className="text-terracotta-deep font-bold">280m AGL</span>
+                <span className="text-terracotta-deep font-bold">{selectedPlume?.properties.mixing_height_m == null ? 'N/A' : `${selectedPlume.properties.mixing_height_m}m AGL`}</span>
                 <span className="ml-1 text-ink-muted italic">(Trapping Plumes)</span>
               </div>
               <div className="flex items-center rounded-full bg-canvas-cream px-3 py-1 shadow-[2px_2px_0px_#18181B] border border-ink-black text-label-md font-label-md">
                 <span className="text-ink-muted mr-1.5">Wind Speed &amp; Vector:</span>
-                <span className="text-cobalt-deep font-bold">2.4 m/s NW (310°)</span>
+                <span className="text-cobalt-deep font-bold">{selectedPlume?.properties.wind_speed_ms == null ? 'N/A' : `${selectedPlume.properties.wind_speed_ms.toFixed(1)} m/s (${selectedPlume.properties.wind_dir_deg ?? 'N/A'}°)`}</span>
               </div>
             </div>
           </div>
@@ -401,7 +453,7 @@ export const ForecastPage: React.FC = () => {
                     Atmospheric Regression
                   </span>
                   <h2 className="font-headline-sm text-headline-sm text-ink-black mt-0.5">
-                    30-Day Transit Correlation &amp; Lag Scatter
+                    7-Day Transit Correlation &amp; Lag Scatter
                   </h2>
                 </div>
                 <span className="w-7 h-7 rounded-full bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black flex items-center justify-center text-ink-black">
@@ -409,24 +461,24 @@ export const ForecastPage: React.FC = () => {
                 </span>
               </div>
               <p className="font-body-sm text-body-sm text-ink-muted mb-4">
-                Empirical lag correlation comparing upstream Punjab Fire Radiative Power (FRP in Megawatts) with downwind Delhi NCR particulate surge over a 36-hour transit window.
+                {lagData?.method ?? 'Loading empirical fire and air-quality lag analysis.'}
               </p>
 
               {/* Core Statistical Badges */}
               <div className="grid grid-cols-3 gap-2 mb-5">
                 <div className="bg-canvas-cream p-3 rounded-xl shadow-[2px_2px_0px_#18181B] border border-ink-black">
                   <span className="block font-label-md text-label-md text-ink-muted font-bold">Pearson r</span>
-                  <span className="font-telemetry-val text-telemetry-val text-cobalt-deep">0.884</span>
-                  <span className="block text-[10px] text-forest-jade font-bold">Strong Correl.</span>
+                  <span className="font-telemetry-val text-telemetry-val text-cobalt-deep">{strongestLag?.pearson_r.toFixed(3) ?? 'N/A'}</span>
+                  <span className="block text-[10px] text-forest-jade font-bold">{lagData?.status === 'computed' ? 'Computed' : 'Insufficient data'}</span>
                 </div>
                 <div className="bg-canvas-cream p-3 rounded-xl shadow-[2px_2px_0px_#18181B] border border-ink-black">
                   <span className="block font-label-md text-label-md text-ink-muted font-bold">Transit Delay</span>
-                  <span className="font-telemetry-val text-telemetry-val text-ink-black">36.4h</span>
-                  <span className="block text-[10px] text-ink-muted font-bold">Mean Wind Speed</span>
+                  <span className="font-telemetry-val text-telemetry-val text-ink-black">{strongestLag ? `${strongestLag.lag_hours}h` : 'N/A'}</span>
+                  <span className="block text-[10px] text-ink-muted font-bold">Strongest measured lag</span>
                 </div>
                 <div className="bg-canvas-cream p-3 rounded-xl shadow-[2px_2px_0px_#18181B] border border-ink-black">
                   <span className="block font-label-md text-label-md text-ink-muted font-bold">Total FRP</span>
-                  <span className="font-telemetry-val text-telemetry-val text-terracotta-deep">48.2k</span>
+                  <span className="font-telemetry-val text-telemetry-val text-terracotta-deep">{totalFrp == null ? 'N/A' : totalFrp.toFixed(1)}</span>
                   <span className="block text-[10px] text-ink-muted font-bold">Megawatts Flux</span>
                 </div>
               </div>
@@ -434,8 +486,8 @@ export const ForecastPage: React.FC = () => {
               {/* Scatter Plot Visualization */}
               <div className="w-full h-64 bg-canvas-cream rounded-xl p-3 shadow-[2px_2px_0px_#18181B] border border-ink-black relative flex flex-col justify-between">
                 <div className="flex items-center justify-between text-[11px] font-bold text-ink-muted px-1">
-                  <span>Delhi PM2.5 Peak (µg/m³) vs Lagged Upstream FRP</span>
-                  <span className="text-cobalt-deep font-bold">R² = 0.781</span>
+                  <span>Pearson correlation by candidate lag hour</span>
+                  <span className="text-cobalt-deep font-bold">R² = {strongestLag ? (strongestLag.pearson_r ** 2).toFixed(3) : 'N/A'}</span>
                 </div>
                 <svg className="w-full h-44 overflow-visible" viewBox="0 0 360 160">
                   <line stroke="#EFE9DA" strokeWidth="1" x1="40" x2="340" y1="20" y2="20" />
@@ -446,24 +498,12 @@ export const ForecastPage: React.FC = () => {
                   <line stroke="#18181B" strokeWidth="1.5" x1="40" x2="40" y1="10" y2="140" />
 
                   {/* Linear Regression Line */}
-                  <line stroke="#1D4ED8" strokeDasharray="4 2" strokeWidth="2" x1="50" x2="330" y1="130" y2="25" />
+                  {lagData?.status === 'computed' && (
+                    <line stroke="#1D4ED8" strokeDasharray="4 2" strokeWidth="2" x1="50" x2="330" y1="130" y2="25" />
+                  )}
 
                   {/* Scatter Data Points */}
-                  {[
-                    { cx: 60, cy: 125, r: 4 },
-                    { cx: 75, cy: 118, r: 4.5 },
-                    { cx: 90, cy: 110, r: 3.5 },
-                    { cx: 110, cy: 105, r: 4 },
-                    { cx: 130, cy: 98, r: 5 },
-                    { cx: 155, cy: 88, r: 4 },
-                    { cx: 170, cy: 82, r: 5.5 },
-                    { cx: 195, cy: 75, r: 4.5 },
-                    { cx: 215, cy: 68, r: 5 },
-                    { cx: 235, cy: 60, r: 6 },
-                    { cx: 260, cy: 48, r: 5 },
-                    { cx: 285, cy: 40, r: 5.5 },
-                    { cx: 310, cy: 30, r: 6 },
-                  ].map((pt, i) => (
+                  {correlationPoints.map((pt, i) => (
                     <circle
                       key={i}
                       cx={pt.cx}
@@ -476,10 +516,10 @@ export const ForecastPage: React.FC = () => {
                   ))}
                 </svg>
                 <div className="flex justify-between text-[10px] text-ink-muted font-bold px-4">
-                  <span>0 GW FRP</span>
-                  <span>20 GW FRP</span>
-                  <span>40 GW FRP</span>
-                  <span>60 GW FRP</span>
+                  <span>0h</span>
+                  <span>24h</span>
+                  <span>48h</span>
+                  <span>72h</span>
                 </div>
               </div>
             </div>
@@ -577,7 +617,7 @@ export const ForecastPage: React.FC = () => {
             <div>
               <div className="flex items-center gap-2 font-label-md text-label-md uppercase tracking-wider text-cobalt-deep font-bold mb-1">
                 <span className="material-symbols-outlined text-[16px]">air</span>
-                <span>WRF-HYSPLIT Ensemble</span>
+                <span>{plumeData?.source ?? 'Loading forecast source'}</span>
                 <span className="px-2 py-0.5 rounded-full bg-cobalt-deep/10 text-cobalt-deep text-label-md font-bold">
                   {plumeData ? `${plumeData.features.length} Horizon Envelopes` : 'Loading...'}
                 </span>
@@ -586,7 +626,7 @@ export const ForecastPage: React.FC = () => {
                 Gaussian Plume Model Output
               </h2>
               <p className="font-body-sm text-body-sm text-ink-muted mt-1">
-                Source: {plumeData?.source ?? 'WRF_HYSPLIT_ENSEMBLE'} &bull; Computed: {plumeData ? new Date(plumeData.computed_at).toLocaleString() : '...'}
+                Source: {plumeData?.source ?? 'Unavailable'} &bull; Computed: {plumeData ? new Date(plumeData.computed_at).toLocaleString() : '...'}
               </p>
             </div>
             <div className="bg-ink-black text-canvas-cream px-4 py-2 rounded-xl rotate-2 shadow-[3px_3px_0px_#1D4ED8] flex items-center gap-2 flex-shrink-0">

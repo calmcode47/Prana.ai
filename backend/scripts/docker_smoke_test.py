@@ -39,7 +39,7 @@ def run_container_smoke_test():
     # 1. Environment & Architecture Validation
     print("\n--- 1. Container Configuration Audit ---")
     print(f"  [PASS] Python Runtime: {sys.version.split()[0]}")
-    print(f"  [PASS] DATABASE_URL: {os.getenv('DATABASE_URL')}")
+    print("  [INFO] DATABASE_URL: " + ("configured (redacted)" if os.getenv("DATABASE_URL") else "not configured"))
     print(f"  [PASS] CORS_ORIGINS: {os.getenv('CORS_ORIGINS')}")
     print(f"  [PASS] Container Host/Port: {os.getenv('HOST', '0.0.0.0')}:{os.getenv('PORT', '8000')}")
 
@@ -83,7 +83,7 @@ def run_container_smoke_test():
             print(f"  [PASS] Endpoint `{ep}` -> HTTP {r.status_code} OK")
 
     print("\n" + "=" * 70)
-    print("DOCKER CONTAINER SMOKE TEST RESULT: 100% PASSED")
+    print("LOCAL APPLICATION SMOKE CHECK PASSED; no Docker container was executed by this script")
     print("=" * 70)
     return 0
 

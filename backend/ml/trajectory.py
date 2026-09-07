@@ -71,9 +71,24 @@ async def compute_plume_trajectories(cluster_id_filter: Optional[str] = None) ->
     else:
         fire_points = []
         for feat in features:
-            coords = feat.get("geometry", {}).get("coordinates", [75.0, 30.5])
-            frp = feat.get("properties", {}).get("frp", 25.0) or 25.0
+            coords = feat["geometry"]["coordinates"]
+            frp = feat.get("properties", {}).get("frp")
+            if frp is None:
+                continue  # Missing radiative power cannot support a concentration estimate.
+            frp = float(frp)
+            if not math.isfinite(frp) or frp < 0:
+                raise ValueError("Invalid fire radiative power")
+            if frp == 0:
+                continue
+            if len(coords) != 2 or not all(math.isfinite(float(v)) for v in coords):
+                raise ValueError("Invalid fire coordinates")
+            if not (-180 <= coords[0] <= 180 and -90 < coords[1] < 90):
+                raise ValueError("Fire coordinates out of range")
             fire_points.append({"lon": coords[0], "lat": coords[1], "frp": frp})
+
+    if not fire_points:
+        return {"type": "FeatureCollection", "computed_at": datetime.now(timezone.utc).isoformat(),
+                "source": hotspots_data.get("source", "unknown"), "features": []}
 
     # 2. Cluster fires with DBSCAN (eps ~ 0.35 degrees ≈ 38km, min_samples=2)
     coords_np = np.array([[p["lon"], p["lat"]] for p in fire_points])
@@ -93,16 +108,18 @@ async def compute_plume_trajectories(cluster_id_filter: Optional[str] = None) ->
     if not clusters:
         clusters[0] = {
             "points": fire_points,
-            "total_frp": sum(p["frp"] for p in fire_points) or 150.0
+            "total_frp": sum(p["frp"] for p in fire_points)
         }
 
     # 3. Fetch meteorological fields from Open-Meteo
     meteo_data = await fetch_meteo_forecast()
-    punjab_meteo = meteo_data.get("punjab", {})
-    wind_speed = float(punjab_meteo.get("windspeed_10m", 4.2))
-    wind_dir = float(punjab_meteo.get("winddirection_10m", 315.0))  # Direction wind is coming FROM
-    mixing_height = float(punjab_meteo.get("boundary_layer_height", 850.0))
-    temp_2m = float(punjab_meteo.get("temperature_2m", 22.0))
+    punjab_meteo = meteo_data["punjab"]
+    wind_speed = float(punjab_meteo["windspeed_10m"])
+    wind_dir = float(punjab_meteo["winddirection_10m"])  # Direction wind is coming FROM
+    mixing_height = float(punjab_meteo["boundary_layer_height"])
+    if (not all(math.isfinite(v) for v in (wind_speed, wind_dir, mixing_height))
+            or wind_speed < 0 or not 0 <= wind_dir <= 360 or mixing_height <= 0):
+        raise ValueError("Invalid meteorological inputs")
 
     # Downwind direction is opposite from where wind originates
     downwind_deg = (wind_dir + 180.0) % 360.0
@@ -151,7 +168,7 @@ async def compute_plume_trajectories(cluster_id_filter: Optional[str] = None) ->
 
             # Concentration estimates: inversely proportional to horizon and mixing height
             dilution = max(1.0, (h / 24.0) * (mixing_height / 500.0))
-            max_pm25 = round(max(60.0, (q_frp * 2.8) / dilution), 1)
+            max_pm25 = round((q_frp * 2.8) / dilution, 1)
             max_aqi = compute_cpcb_aqi(max_pm25)
 
             plume_features.append({
@@ -176,6 +193,7 @@ async def compute_plume_trajectories(cluster_id_filter: Optional[str] = None) ->
         "type": "FeatureCollection",
         "computed_at": datetime.now(timezone.utc).isoformat(),
         "source": "model_estimate; fires=" + hotspots_data.get("source", "unknown") + "; weather=" + punjab_meteo.get("source", "unknown"),
+        "model_assumptions": "Steady current wind; heuristic fire contribution only; no background PM2.5 or field calibration",
         "features": plume_features
     }
 

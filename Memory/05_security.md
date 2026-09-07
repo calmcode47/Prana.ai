@@ -18,7 +18,7 @@
 | Data type | Sensitivity | Owner | Retention | External sharing |
 |---|---|---|---|---|
 | NASA FIRMS fire coordinates | Public satellite data | NASA (public domain) | 90 days | None required |
-| Sentinel-5P TROPOMI AAI and NO2 rasters | Public satellite data | ESA/Copernicus (public) | 7 days cache | None |
+| CAMS AOD and surface pollutant model fields | Public model data through Open-Meteo | Open-Meteo/Copernicus CAMS | 15 minutes cache | None |
 | OpenAQ ground readings | Public government data | CPCB via OpenAQ | 90 days | None |
 | Open-Meteo wind and temperature data | Public meteorological | Open-Meteo (public) | 7 days cache | None |
 | Citizen sky photos | User-submitted; potentially location-revealing | Submitter | NOT STORED (hash only) | None |
@@ -41,7 +41,6 @@ No credential appears in:
 Required env vars:
 ```
 FIRMS_MAP_KEY=<free registration at firms.modaps.eosdis.nasa.gov>
-GEE_SERVICE_ACCOUNT_JSON=<path or inline JSON for GEE service account>
 DATABASE_URL=postgresql+asyncpg://user:pass@host/prana
 CORS_ORIGINS=https://<actual_vercel_url>,http://localhost:3000
 ```
@@ -49,7 +48,6 @@ CORS_ORIGINS=https://<actual_vercel_url>,http://localhost:3000
 .env.example (committed to repo):
 ```
 FIRMS_MAP_KEY=YOUR_FIRMS_MAP_KEY_HERE
-GEE_SERVICE_ACCOUNT_JSON={"type": "service_account", ...}
 DATABASE_URL=postgresql+asyncpg://prana:prana@localhost/prana
 CORS_ORIGINS=http://localhost:3000,http://localhost:8000
 ```

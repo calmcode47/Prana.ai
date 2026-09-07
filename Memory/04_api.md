@@ -413,30 +413,28 @@ Rate limit: 5,000 req / 10 min per MAP_KEY
 
 Fallback (RISK-001): static GeoJSON from backend/data/static/firms_fallback.geojson. UI shows "data as of [date]" banner.
 
-### Google Earth Engine / Sentinel-5P (REQ-002, DEC-002)
+### Open-Meteo CAMS Air Quality (REQ-002, DEC-002)
 
-Two GEE collections used:
-- COPERNICUS/S5P/NRTI/L3_AER_AI -> Absorbing Aerosol Index (AAI); fed to GP Downscaler (REQ-005)
-- COPERNICUS/S5P/NRTI/L3_NO2 -> NO2 column density; used for anomaly visualization and IsolationForest (REQ-007)
+Base URL: https://air-quality-api.open-meteo.com/v1/air-quality
+Credential: none for noncommercial use within published limits
+Domain: cams_global for the India corridor
+Current variables: aerosol_optical_depth, nitrogen_dioxide, pm2_5, dust, sulphur_dioxide, ozone
+Bbox sampling grid: 73.5, 28.5, 77.5, 32.5
+Refresh: every 15 minutes; cached to backend/data/cache/open_meteo_air_quality.geojson
 
-Credential: GEE_SERVICE_ACCOUNT_JSON env var (server-side only; SEC-002)
-Access: Python earthengine-api; server-side only
-Bbox: 73.5, 28.5, 77.5, 32.5
-Cloud filter: cloud_fraction < 0.3
-Refresh: daily cron; cached to backend/data/cache/tropomi_aai.geojson and tropomi_no2.geojson
+Aerosol optical depth is dimensionless AOD at 550 nm. It is not Sentinel-5P absorbing aerosol index and the backend does not label it as AAI.
 
-Fallback (RISK-002): static pre-computed tiles in backend/data/static/tropomi_aai_fallback.geojson and tropomi_no2_fallback.geojson.
+Fallback (RISK-002): explicitly labelled demonstration values in backend/data/static/open_meteo_air_quality_fallback.geojson, available only in demo mode.
 
 ### OpenAQ v3 (REQ-003, DEC-003)
 
 Base URL: https://api.openaq.org/v3
-No credential required for public tier.
+Credential: OPENAQ_API_KEY.
 
 Endpoints used:
-- GET /locations?country_id=IN&parameters_id=2&bbox=73.5,28.5,77.5,32.5&limit=200
-  (parameters_id=2 is PM2.5 in OpenAQ v3; verify against live API docs before implementation — UNVERIFIED)
-- GET /measurements?locations_id={id}&parameters_id=2&limit=1&order_by=datetime&sort=desc
-  (sort parameter syntax: UNVERIFIED — confirm against https://api.openaq.org/v3/docs before building ingest_openaq.py)
+- GET /locations?parameters_id=2&bbox=73.5,28.5,77.5,32.5&limit=1000
+- GET /parameters/2/latest for PM2.5, /parameters/5/latest for NO2 in µg/m³, and /parameters/6/latest for SO2 in µg/m³
+- Observations older than 24 hours or more than one hour in the future are rejected.
 
 Rate limit: generous public tier (~60 req/min); add X-API-Key if available (optional upgrade).
 

@@ -164,7 +164,7 @@ To be completed before submission:
 | Limitation | Linked RISK | Acceptable |
 |---|---|---|
 | Live FIRMS data requires MAP_KEY (RISK-001) | RISK-001 | Yes — static fallback identical visually |
-| Live TROPOMI requires GEE account (RISK-002) | RISK-002 | Yes — static fallback tiles used |
+| Open-Meteo CAMS live availability (RISK-002) | RISK-002 | Yes — fail closed in live mode; labelled static fallback only in demo mode |
 | Railway free-tier cold start (RISK-003) | RISK-003 | Yes — /health ping mitigates |
 | Open-Meteo 1-3h lag on wind data (RISK-006) | RISK-006 | Yes — noted in UI |
 | Gaussian-plume assumes Pasquill-Gifford class D stability | None | Yes — sufficient for demo; HYSPLIT explicitly excluded (NON-007) |

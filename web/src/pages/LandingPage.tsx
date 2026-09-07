@@ -1,21 +1,67 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  BriefingResponse,
+  MobileReleaseResponse,
+  fetchLatestBriefing,
+  fetchLatestMobileRelease,
+} from '../api/client';
 
 export const LandingPage: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [audioProgress, setAudioProgress] = useState(40);
+  const [audioProgress, setAudioProgress] = useState(0);
   const [activeTimeTab, setActiveTimeTab] = useState<'0' | '24' | '48' | '72'>('0');
   const [mobileAlertModal, setMobileAlertModal] = useState(false);
+  const [briefing, setBriefing] = useState<BriefingResponse | null>(null);
+  const [mobileRelease, setMobileRelease] = useState<MobileReleaseResponse | null | undefined>(undefined);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    let interval: any = null;
-    if (isPlaying) {
-      interval = setInterval(() => {
-        setAudioProgress((prev) => (prev >= 98 ? 0 : prev + 1));
-      }, 150);
+    fetchLatestBriefing().then(setBriefing).catch(() => setBriefing(null));
+    fetchLatestMobileRelease().then(setMobileRelease).catch(() => setMobileRelease(null));
+  }, []);
+
+  useEffect(() => {
+    if (!briefing?.audio_url) return;
+    const audio = new Audio(briefing.audio_url);
+    audio.playbackRate = 1.5;
+    audioRef.current = audio;
+    const updateProgress = () => {
+      setAudioProgress(audio.duration ? (audio.currentTime / audio.duration) * 100 : 0);
+    };
+    const stopPlayback = () => setIsPlaying(false);
+    audio.addEventListener('timeupdate', updateProgress);
+    audio.addEventListener('ended', stopPlayback);
+    return () => {
+      audio.pause();
+      audio.removeEventListener('timeupdate', updateProgress);
+      audio.removeEventListener('ended', stopPlayback);
+      audioRef.current = null;
+    };
+  }, [briefing?.audio_url]);
+
+  const handleAudioToggle = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      await audio.play();
+      setIsPlaying(true);
+    } else {
+      audio.pause();
+      setIsPlaying(false);
     }
-    return () => clearInterval(interval);
-  }, [isPlaying]);
+  };
+
+  const handleOpenMobileRelease = async () => {
+    setMobileAlertModal(true);
+    if (mobileRelease === undefined) {
+      try {
+        setMobileRelease(await fetchLatestMobileRelease());
+      } catch {
+        setMobileRelease(null);
+      }
+    }
+  };
 
   return (
     <div className="w-full bg-canvas-cream min-h-screen relative overflow-x-hidden pt-20">
@@ -71,7 +117,7 @@ export const LandingPage: React.FC = () => {
               <span className="font-bold">➔</span>
             </Link>
             <button
-              onClick={() => setMobileAlertModal(true)}
+              onClick={handleOpenMobileRelease}
               className="inline-flex items-center gap-space-xs px-space-lg py-space-md rounded-full bg-surface-vanilla text-ink-black font-label-lg text-label-lg shadow-[3px_3px_0px_#18181B] hover:bg-surface-vanilla-strong hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all"
               type="button"
             >
@@ -93,10 +139,10 @@ export const LandingPage: React.FC = () => {
                     Atmospheric Audio Briefing
                   </span>
                   <span className="text-outline-variant">•</span>
-                  <span className="font-label-md text-label-md text-ink-muted">Ep. 42 (Today 06:00 IST)</span>
+                  <span className="font-label-md text-label-md text-ink-muted">{briefing?.audio_status ?? 'Checking briefing service'}</span>
                 </div>
                 <div className="font-title-sm text-title-sm text-ink-black font-semibold">
-                  Northwesterly Vector Inversion: The 185m Nocturnal Lid
+                  {briefing?.script || 'No current atmospheric briefing is available.'}
                 </div>
               </div>
             </div>
@@ -104,7 +150,7 @@ export const LandingPage: React.FC = () => {
             <div className="flex items-center gap-space-sm w-full md:w-auto justify-end">
               <button
                 aria-label="Play brief"
-                onClick={() => setIsPlaying(!isPlaying)}
+                onClick={handleAudioToggle}
                 className="w-10 h-10 rounded-full bg-ink-black text-canvas-cream flex items-center justify-center shadow-[2px_2px_0px_#18181B] hover:scale-105 transition-transform cursor-pointer"
                 type="button"
               >
@@ -120,8 +166,8 @@ export const LandingPage: React.FC = () => {
                   ></div>
                 </div>
                 <div className="flex justify-between font-label-md text-label-md text-ink-muted">
-                  <span>{isPlaying ? '02:14' : '00:00'}</span>
-                  <span>05:30</span>
+                  <span>{Math.round(audioProgress)}%</span>
+                  <span>{briefing?.audio_url ? 'Audio' : 'Unavailable'}</span>
                 </div>
               </div>
               <span className="px-2 py-1 rounded bg-surface-vanilla-strong font-label-md text-label-md text-ink-black font-semibold">
@@ -520,7 +566,7 @@ export const LandingPage: React.FC = () => {
                 </Link>
                 <button
                   aria-label="Audio brief"
-                  onClick={() => setIsPlaying(!isPlaying)}
+                  onClick={handleAudioToggle}
                   className="p-2 rounded-full bg-surface-vanilla-strong text-ink-black shadow-[2px_2px_0px_#18181B]"
                   type="button"
                 >
@@ -582,17 +628,22 @@ export const LandingPage: React.FC = () => {
               <h3 className="font-headline-sm text-headline-sm font-bold text-ink-black">PRANA Field Mobile Client</h3>
             </div>
             <p className="font-body-md text-body-md text-ink-muted mb-4">
-              Direct telemetry client with offline Bluetooth sync for field inspectors, district magistrates, and agrarian enforcement teams.
+              {mobileRelease
+                ? 'The signed field-client release is available from the configured artifact service.'
+                : 'No signed mobile build or mobile artifact host is configured in the backend.'}
             </p>
             <div className="p-3 bg-canvas-cream rounded-xl border border-ink-black/20 font-mono text-xs text-ink-black mb-4 flex items-center justify-between">
-              <span>Android APK / iOS TestFlight</span>
-              <span className="px-2 py-0.5 rounded bg-forest-jade/20 text-forest-jade font-bold">Build 2026.09</span>
+              <span>{mobileRelease ? 'Signed mobile release' : 'Android APK / iOS TestFlight'}</span>
+              <span className="px-2 py-0.5 rounded bg-forest-jade/20 text-forest-jade font-bold">{mobileRelease ? `Build ${mobileRelease.version}` : 'Not configured'}</span>
             </div>
             <button
-              onClick={() => setMobileAlertModal(false)}
+              onClick={() => {
+                if (mobileRelease) window.location.assign(mobileRelease.download_url);
+                else setMobileAlertModal(false);
+              }}
               className="w-full py-2.5 rounded-full bg-ink-black text-canvas-cream font-label-lg text-label-lg shadow-[3px_3px_0px_#1D4ED8]"
             >
-              Close Notification
+              {mobileRelease ? 'Download Signed Release' : 'Close Notification'}
             </button>
           </div>
         </div>

@@ -7,6 +7,7 @@ import os
 import pytest
 import respx
 import httpx
+from datetime import datetime, timezone
 
 from backend.ingesters.ingest_firms import fetch_firms_hotspots, parse_firms_csv
 from backend.ingesters.ingest_openaq import fetch_openaq_stations
@@ -65,11 +66,14 @@ async def test_openaq_fetch_mocked(openaq_locations_json):
         respx_mock.get("/locations").mock(
             return_value=httpx.Response(200, json=openaq_locations_json)
         )
-        for location in openaq_locations_json["results"]:
-            sensor = location["sensors"][0]
-            respx_mock.get(f"/locations/{location['id']}/latest").mock(return_value=httpx.Response(200, json={
-                "results": [{"sensorsId": sensor["id"], "value": sensor["latest"]["value"],
-                             "datetime": {"utc": "2025-11-04T08:00:00Z"}}]}))
+        pm25 = [{"locationsId": location["id"], "sensorsId": location["sensors"][0]["id"],
+                 "value": location["sensors"][0]["latest"]["value"],
+                 "coordinates": location["coordinates"],
+                 "datetime": {"utc": datetime.now(timezone.utc).isoformat()}}
+                for location in openaq_locations_json["results"]]
+        respx_mock.get("/parameters/2/latest").mock(return_value=httpx.Response(200, json={"results": pm25}))
+        respx_mock.get("/parameters/5/latest").mock(return_value=httpx.Response(200, json={"results": []}))
+        respx_mock.get("/parameters/6/latest").mock(return_value=httpx.Response(200, json={"results": []}))
         async with httpx.AsyncClient() as client:
             readings = await fetch_openaq_stations(client=client)
             assert len(readings) >= 10
@@ -172,44 +176,41 @@ def test_aqi_category_and_color():
 
 
 # ==============================================================================
-# REQ-002: Sentinel-5P TROPOMI / Google Earth Engine Ingestion
+# REQ-002: Open-Meteo CAMS Air Quality Ingestion
 # ==============================================================================
 @pytest.mark.asyncio
-async def test_gee_aai_ingest():
-    """Verifies Sentinel-5P TROPOMI AAI raster ingestion (REQ-002, DEC-002)."""
-    from backend.ingesters.ingest_gee import fetch_tropomi_aai
-    data = await fetch_tropomi_aai()
+async def test_open_meteo_aod_ingest():
+    from backend.ingesters.ingest_openmeteo_air import fetch_air_quality_aod
+    data = await fetch_air_quality_aod()
     assert data["type"] == "FeatureCollection"
     assert "features" in data
     assert len(data["features"]) >= 1
     feat = data["features"][0]
     assert feat["type"] == "Feature"
     assert feat["geometry"]["type"] == "Point"
-    assert "aai" in feat["properties"]
-    assert feat["properties"]["aai"] > 0
+    assert "aerosol_optical_depth" in feat["properties"]
+    assert feat["properties"]["aerosol_optical_depth"] > 0
 
 
 @pytest.mark.asyncio
-async def test_gee_no2_ingest():
-    """Verifies Sentinel-5P TROPOMI NO2 column density ingestion (REQ-002, DEC-002)."""
-    from backend.ingesters.ingest_gee import fetch_tropomi_no2
-    data = await fetch_tropomi_no2()
+async def test_open_meteo_no2_ingest():
+    from backend.ingesters.ingest_openmeteo_air import fetch_air_quality_no2
+    data = await fetch_air_quality_no2()
     assert data["type"] == "FeatureCollection"
     assert "features" in data
     assert len(data["features"]) >= 1
     feat = data["features"][0]
     assert feat["type"] == "Feature"
     assert feat["geometry"]["type"] == "Point"
-    assert "no2_umol_m2" in feat["properties"]
-    assert feat["properties"]["no2_umol_m2"] > 0
+    assert "no2_ugm3" in feat["properties"]
+    assert feat["properties"]["no2_ugm3"] > 0
 
 
 @pytest.mark.asyncio
-async def test_gee_all_satellite_pipeline():
-    """Verifies combined satellite ingestion pipeline."""
-    from backend.ingesters.ingest_gee import fetch_all_satellite_data
-    summary = await fetch_all_satellite_data()
+async def test_open_meteo_combined_air_pipeline():
+    from backend.ingesters.ingest_openmeteo_air import fetch_all_air_quality
+    summary = await fetch_all_air_quality()
     assert summary["status"] == "success"
-    assert summary["aai"]["features_count"] >= 1
-    assert summary["no2"]["features_count"] >= 1
+    assert summary["aerosol_optical_depth"]["features_count"] >= 1
+    assert summary["nitrogen_dioxide"]["features_count"] >= 1
 

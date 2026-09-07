@@ -70,10 +70,12 @@ def isolated_runtime(monkeypatch, request):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("FIRMS_MAP_KEY", raising=False)
     monkeypatch.delenv("OPENAQ_API_KEY", raising=False)
-    monkeypatch.delenv("GEE_SERVICE_ACCOUNT_JSON", raising=False)
     monkeypatch.setenv("PRANA_ENV", "development")
     monkeypatch.setenv("PRANA_DEMO_MODE", "true")
     monkeypatch.setenv("PRANA_SCHEDULER_ENABLED", "false")
+    # Expensive privacy protocols have focused unit tests; general API tests use plain FedAvg.
+    monkeypatch.setenv("PRANA_FL_PAILLIER_ENABLED", "false")
+    monkeypatch.setenv("PRANA_FL_DP_ENABLED", "false")
     import httpx
     async def no_live_network(*args, **kwargs):
         raise httpx.ConnectError("Live network disabled in unit tests")

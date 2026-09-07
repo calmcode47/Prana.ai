@@ -1,13 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { fetchReady } from '../api/client';
+import {
+  connectCorridorWebSocket,
+  downloadLegalDossier,
+  fetchAlerts,
+  fetchHotspots,
+  fetchReady,
+  fetchStations,
+} from '../api/client';
 
 export const Header: React.FC = () => {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [dossierExported, setDossierExported] = useState(false);
-  const [dbStatus, setDbStatus] = useState<string>('PostGIS 3.6 Connected');
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(true);
+  const [dossierStatus, setDossierStatus] = useState<'idle' | 'exporting' | 'done' | 'empty' | 'error'>('idle');
+  const [dbStatus, setDbStatus] = useState<string>('Checking backend...');
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
+  const [fireCount, setFireCount] = useState<number | null>(null);
+  const [stationCount, setStationCount] = useState<number | null>(null);
+  const [latestPm25, setLatestPm25] = useState<number | null>(null);
+  const [latestAqi, setLatestAqi] = useState<number | null>(null);
+  const [firmsSource, setFirmsSource] = useState('Checking feed');
+  const [wsStatus, setWsStatus] = useState<'connecting' | 'open' | 'closed'>('connecting');
 
   useEffect(() => {
     fetchReady()
@@ -18,6 +31,27 @@ export const Header: React.FC = () => {
       .catch(() => {
         setDbStatus('In-Memory Store Fallback');
       });
+  }, []);
+
+  useEffect(() => {
+    fetchHotspots(24, 'nominal').then((data) => {
+      setFireCount(data.count);
+      setFirmsSource(data.source);
+    }).catch(() => setFirmsSource('Feed unavailable'));
+
+    fetchStations('pm25').then((data) => {
+      setStationCount(data['@iot.count']);
+      const observations = data.value.flatMap((station) =>
+        station.Datastreams.flatMap((stream) => stream.Observations)
+      );
+      const latest = observations.sort((a, b) =>
+        Date.parse(b.phenomenonTime) - Date.parse(a.phenomenonTime)
+      )[0];
+      setLatestPm25(latest?.pm25_ugm3 ?? null);
+      setLatestAqi(latest?.aqi_index ?? null);
+    }).catch(() => setStationCount(null));
+
+    return connectCorridorWebSocket('ncr', () => undefined, setWsStatus);
   }, []);
 
   const navLinks = [
@@ -33,12 +67,28 @@ export const Header: React.FC = () => {
     return location.pathname === path || aliases.includes(location.pathname);
   };
 
-  const handleExportDossier = () => {
-    setDossierExported(true);
-    setTimeout(() => {
-      setDossierExported(false);
-    }, 3000);
+  const handleExportDossier = async () => {
+    setDossierStatus('exporting');
+    try {
+      const alerts = await fetchAlerts(undefined, 1);
+      const incident = alerts.items[0];
+      if (!incident) {
+        setDossierStatus('empty');
+      } else {
+        await downloadLegalDossier(incident.incident_id);
+        setDossierStatus('done');
+      }
+    } catch {
+      setDossierStatus('error');
+    }
+    setTimeout(() => setDossierStatus('idle'), 3000);
   };
+
+  const dossierLabel = dossierStatus === 'exporting' ? 'Preparing Dossier ZIP...'
+    : dossierStatus === 'done' ? 'Dossier Exported'
+    : dossierStatus === 'empty' ? 'No Incident to Export'
+    : dossierStatus === 'error' ? 'Dossier Export Failed'
+    : 'Export SPCB Dossier';
 
   return (
     <header className="fixed top-0 left-0 w-full z-50 bg-canvas-cream/95 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
@@ -47,7 +97,7 @@ export const Header: React.FC = () => {
         <div className="flex items-center gap-space-md">
           <span className="flex items-center gap-space-2xs">
             <span className="w-2 h-2 rounded-full bg-forest-jade animate-pulse"></span>
-            <span className="text-ink-black font-semibold">CPCB Synchrony:</span> 14s latency
+            <span className="text-ink-black font-semibold">AQ Station Synchrony:</span> {stationCount == null ? 'Unavailable' : `${stationCount} stations`}
           </span>
           <span className="text-outline-variant">|</span>
           <span className="flex items-center gap-space-2xs">
@@ -55,16 +105,16 @@ export const Header: React.FC = () => {
           </span>
           <span className="text-outline-variant">|</span>
           <span className="flex items-center gap-space-2xs">
-            <span className="text-terracotta-deep font-semibold">NASA FIRMS</span> VIIRS I-Band Live Feed
+            <span className="text-terracotta-deep font-semibold">NASA FIRMS</span> {firmsSource}
           </span>
           <span className="text-outline-variant">|</span>
           <span className="flex items-center gap-space-2xs">
-            <span className="text-forest-jade font-semibold">WS /ws/ncr:</span> Active 60s Stream
+            <span className="text-forest-jade font-semibold">WS /ws/ncr:</span> {wsStatus === 'open' ? 'Active Stream' : wsStatus === 'connecting' ? 'Connecting' : 'Unavailable'}
           </span>
         </div>
         <div className="flex items-center gap-space-sm">
           <span className="px-2 py-0.5 rounded-full bg-canvas-cream text-ink-black font-bold shadow-[1px_1px_0px_#18181B]">
-            {isDemoMode ? 'IN-NCR GRID 09 (DEMO MODE)' : 'IN-NCR GRID 09 (PRODUCTION)'}
+            {isDemoMode ? 'IN-NCR GRID 09 (DEMO MODE)' : 'IN-NCR GRID 09 (LIVE DATA MODE)'}
           </span>
           <span className="text-ink-muted">Sync T+0.04s UTC</span>
         </div>
@@ -82,11 +132,11 @@ export const Header: React.FC = () => {
               <span className="w-2.5 h-2.5 rounded-full bg-coral-watermelon-vivid animate-ping"></span>
               <span className="font-bold text-ink-black uppercase tracking-wider">Live Corridors</span>
               <span className="text-outline-variant">/</span>
-              <span className="text-terracotta-deep font-bold">247 Active Fires</span>
+              <span className="text-terracotta-deep font-bold">{fireCount == null ? 'Fire Feed Unavailable' : `${fireCount} Active Fires`}</span>
               <span className="text-outline-variant">/</span>
-              <span className="px-2 py-0.5 rounded-full bg-aqi-hazardous text-on-tertiary font-bold">Delhi AQI 387 Hazardous</span>
+              <span className="px-2 py-0.5 rounded-full bg-aqi-hazardous text-on-tertiary font-bold">Delhi AQI {latestAqi ?? 'N/A'}</span>
               <span className="text-outline-variant">/</span>
-              <span className="font-telemetry-val text-body-sm font-bold text-ink-black">PM2.5: 312.4 µg/m³</span>
+              <span className="font-telemetry-val text-body-sm font-bold text-ink-black">PM2.5: {latestPm25 == null ? 'N/A' : `${latestPm25.toFixed(1)} µg/m³`}</span>
             </div>
           </div>
         </div>
@@ -118,9 +168,9 @@ export const Header: React.FC = () => {
             className="inline-flex items-center gap-space-xs px-space-md py-2.5 rounded-full bg-ink-black text-canvas-cream font-label-lg text-label-lg shadow-[3px_3px_0px_#1D4ED8] hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 transition-transform"
             type="button"
           >
-            <span>{dossierExported ? 'Sealing Dossier PDF...' : 'Export SPCB Dossier'}</span>
+            <span>{dossierLabel}</span>
             <span className="material-symbols-outlined text-[16px]">
-              {dossierExported ? 'check_circle' : 'arrow_forward'}
+              {dossierStatus === 'done' ? 'check_circle' : 'arrow_forward'}
             </span>
           </button>
           <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-[1.5px_1.5px_0px_#18181B]">

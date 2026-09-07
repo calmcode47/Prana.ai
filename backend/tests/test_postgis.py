@@ -29,7 +29,7 @@ async def test_postgis_persistence_and_restart(monkeypatch):
         assert pool is not None
         async with pool.acquire() as conn:
             assert await conn.fetchval("SELECT PostGIS_Version()")
-            await conn.execute("TRUNCATE fire_hotspots,aqi_readings,forecast_zones,anomaly_flags,citizen_reports,incidents,fl_rounds,pollutant_readings RESTART IDENTITY")
+            await conn.execute("TRUNCATE fire_hotspots,aqi_readings,forecast_zones,anomaly_flags,citizen_reports,incidents,fl_rounds,pollutant_readings,legal_notices,enforcement_dispatches,cems_readings RESTART IDENTITY CASCADE")
         stamp = datetime.now(timezone.utc).isoformat()
         fire = {"latitude": 30.5, "longitude": 75.5, "acq_datetime": stamp, "frp": 10,
                 "brightness": 330, "confidence": "high", "sensor": "VIIRS_SNPP", "source": "TEST"}
@@ -43,11 +43,23 @@ async def test_postgis_persistence_and_restart(monkeypatch):
         async with pool.acquire() as conn:
             for table in ("fire_hotspots", "aqi_readings", "pollutant_readings"):
                 assert await conn.fetchval(f"SELECT count(*) FROM {table}") == 1
+        # A failed batch must not publish a partial completed training run.
+        from backend.ml.federated.server import save_fl_rounds
+        prior = [dict(r) for r in database.get_in_memory_store()["fl_rounds"]]
+        metric = dict(run_id="FL-ROLLBACK-TEST", round_number=1, punjab_accuracy=0.2,
+                      delhi_accuracy=0.3, global_accuracy=0.4)
+        with pytest.raises(RuntimeError, match="could not be saved"):
+            await save_fl_rounds([metric, {**metric, "round_number": 2, "global_accuracy": None}])
+        async with pool.acquire() as conn:
+            assert await conn.fetchval("SELECT count(*) FROM fl_rounds WHERE run_id=$1", metric["run_id"]) == 0
+        assert database.get_in_memory_store()["fl_rounds"] == prior
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             assert (await client.get("/ready")).json()["db"] == "connected"
             monkeypatch.setenv("PRANA_DEMO_MODE", "false")
             assert (await client.get("/api/v1/aqi/stations")).json()["value"] == []
             assert (await client.get("/api/v1/hotspots")).json()["features"] == []
+            from backend.routers.websocket import build_snapshot
+            assert (await build_snapshot("delhi"))["fire_count"] == 0
             monkeypatch.setenv("PRANA_DEMO_MODE", "true")
             result = await client.post("/api/v1/alerts/incident", json={"severity": "warning", "measured_pm25": 140})
             assert result.status_code == 201

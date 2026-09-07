@@ -140,6 +140,7 @@ class PlumeResponse(BaseModel):
     computed_at: str
     features: List[PlumeFeature]
     source: str = "model_estimate"
+    model_assumptions: str = "Steady current wind; heuristic fire contribution only; no background PM2.5 or field calibration"
 
 
 # ==============================================================================
@@ -182,6 +183,7 @@ class SatelliteEvidence(BaseModel):
     fire_count_50km: Optional[int] = None
     nearest_fire_km: Optional[float] = None
     tropomi_aai: Optional[float] = None
+    aerosol_optical_depth: Optional[float] = None
 
 
 class IncidentItem(BaseModel):
@@ -232,6 +234,10 @@ class FLRoundItem(BaseModel):
     punjab_accuracy: float
     delhi_accuracy: float
     global_accuracy: float
+    punjab_loss: Optional[float] = None
+    delhi_loss: Optional[float] = None
+    global_loss: Optional[float] = None
+    dp_epsilon_spent: Optional[float] = None
 
 
 class FLStatusResponse(BaseModel):
@@ -239,9 +245,10 @@ class FLStatusResponse(BaseModel):
     total_rounds: int
     status: str
     rounds: List[FLRoundItem]
-    implementation: str = "numpy_fedavg"
+    implementation: str = "numpy_fedavg_with_optional_paillier_and_dp_sgd"
     dataset: str = "synthetic_corridor"
     metric: str = "1 - 0.5 * RMSE / target_std, clipped to [0.1, 0.99]"
+    privacy: Optional[Dict[str, Any]] = None
 
 
 # ==============================================================================

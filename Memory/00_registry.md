@@ -42,10 +42,10 @@
 | ID | Statement | Source | Status | Canonical owner | Depends on | Verification | Disposition |
 |---|---|---|---|---|---|---|---|
 | REQ-001 | Ingest real-time fire hotspots from NASA FIRMS (VIIRS_SNPP_NRT) for bbox 73.5-77.5E 28.5-32.5N | USER-REQUIRED | VERIFIED | 04_api.md | DEC-001 | API returns >=1 fire record in Oct-Nov test window | active |
-| REQ-002 | Ingest Sentinel-5P TROPOMI NO2 (L3_NO2) and Absorbing Aerosol Index (L3_AER_AI) via Google Earth Engine for corridor | USER-REQUIRED | VERIFIED | 04_api.md | DEC-002 | GEE query returns non-null image for bbox for both products | active |
+| REQ-002 | Ingest AOD, NO2, PM2.5, dust, SO2, and ozone from Open-Meteo CAMS global for corridor | USER-REQUIRED | VERIFIED | 04_api.md | Keyless CAMS query returns non-empty current grid for bbox | active |
 | REQ-003 | Ingest ground AQI (PM2.5 PM10) from OpenAQ v3 API for Indian stations | USER-REQUIRED | VERIFIED | 04_api.md | DEC-003 | API returns >=10 Delhi/NCR station readings | active |
 | REQ-004 | Ingest wind vectors, boundary-layer height, and 2m temperature from Open-Meteo API | USER-REQUIRED | VERIFIED | 04_api.md | none | Returns windspeed_10m winddirection_10m boundary_layer_height temperature_2m | active |
-| REQ-005 | GP Regression fuses TROPOMI Absorbing Aerosol Index (AAI from L3_AER_AI) + CPCB ground PM2.5 readings into continuous 0.1-deg PM2.5 surface grid | USER-REQUIRED | INFERRED | 03_data.md | REQ-002 REQ-003 | /api/v1/aqi/surface returns GeoJSON grid covering corridor bbox | active |
+| REQ-005 | GP Regression fuses CAMS aerosol optical depth + ground PM2.5 readings into a continuous PM2.5 surface grid | USER-REQUIRED | INFERRED | 03_data.md | REQ-002 REQ-003 | /api/v1/aqi/surface returns GeoJSON grid covering corridor bbox | active |
 | REQ-006 | Gaussian-plume model produces affected-zone polygons for t+24h t+48h t+72h from fire cluster + wind + mixing height | USER-REQUIRED | VERIFIED | 03_data.md | REQ-001 REQ-004 | /api/v1/forecast/plume returns 3 GeoJSON polygons per cluster | active |
 | REQ-007 | IsolationForest flags unusual nighttime NO2/SO2 spikes per facility time series; one record per (station, parameter, day, is_nighttime) | USER-REQUIRED | INFERRED | 03_data.md | REQ-002 | Anomaly endpoint returns score + binary flag; nighttime and daytime rows distinct per station-day | active |
 | REQ-008 | Flower in-process FL simulation: 10 rounds FedAvg Punjab+Delhi nodes; global model accuracy exceeds each local model | USER-REQUIRED | VERIFIED | 03_data.md | DEC-004 | /api/v1/federated/status returns round history with improving global accuracy | active |
@@ -77,7 +77,7 @@
 | ID | Decision | Status | Evidence | Consequence |
 |---|---|---|---|---|
 | DEC-001 | NASA FIRMS REST API (VIIRS_SNPP_NRT) as primary fire source | VERIFIED | NASA FIRMS API docs 2026-09-06 | Requires free MAP_KEY; mock fallback available |
-| DEC-002 | Google Earth Engine for Sentinel-5P TROPOMI (L3_NO2 and L3_AER_AI); pre-computed tile fallback | VERIFIED | GEE Catalog COPERNICUS/S5P/NRTI/L3_NO2 and L3_AER_AI 2026-09-06 | Requires free GEE account |
+| DEC-002 | Open-Meteo CAMS global Air Quality API with explicit static demo fallback | VERIFIED | Open-Meteo Air Quality API 2026-09-07 | No authentication for noncommercial use within published limits |
 | DEC-003 | OpenAQ v3 API as ground AQI source; no key required | VERIFIED | OpenAQ API docs 2026-09-06 | No credential needed |
 | DEC-004 | Flower in-process simulation; 2 virtual clients; 10 rounds FedAvg | VERIFIED | Flower fl.simulation docs 2026-09-06 | Single-machine; no infra cost |
 | DEC-005 | flutter_local_notifications + background_fetch for push; no Firebase | VERIFIED | flutter_local_notifications pub.dev 2026-09-06 | OS-native; zero cloud dependency |

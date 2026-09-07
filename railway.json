@@ -1,10 +1,12 @@
 {
-  "$schema": "https://railway.app/railway.schema.json",
+  "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
     "dockerfilePath": "backend/Dockerfile"
   },
   "deploy": {
+    "preDeployCommand": ["python -m backend.scripts.migrate_db"],
+    "numReplicas": 1,
     "startCommand": "python -m backend.scripts.serve",
     "healthcheckPath": "/ready",
     "healthcheckTimeout": 30,

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  fetchAqiSurface, fetchSensorThings, fetchHotspots,
-  SurfaceGridResponse, SensorThingsResponse, HotspotsResponse,
+  fetchAqiSurface, fetchSensorThings, fetchHotspots, fetchMeteorology, fetchBiomassEmissions,
+  BiomassEmissionsResponse, MeteorologyResponse, SurfaceGridResponse, SensorThingsResponse, HotspotsResponse,
   getAqiCategoryAndColor,
 } from '../api/client';
 
@@ -23,12 +23,27 @@ export const AirCorridorMapPage: React.FC = () => {
   const [surfaceData, setSurfaceData] = useState<SurfaceGridResponse | null>(null);
   const [sensorThingsData, setSensorThingsData] = useState<SensorThingsResponse | null>(null);
   const [hotspotsData, setHotspotsData] = useState<HotspotsResponse | null>(null);
+  const [meteorologyData, setMeteorologyData] = useState<MeteorologyResponse | null>(null);
+  const [biomassData, setBiomassData] = useState<BiomassEmissionsResponse | null>(null);
 
   useEffect(() => {
     fetchAqiSurface(0.5).then(setSurfaceData).catch(() => {});
     fetchSensorThings().then(setSensorThingsData).catch(() => {});
     fetchHotspots(24, 'nominal').then(setHotspotsData).catch(() => {});
+    fetchMeteorology().then(setMeteorologyData).catch(() => {});
+    fetchBiomassEmissions(7).then(setBiomassData).catch(() => {});
   }, []);
+
+  const punjabMeteo = meteorologyData?.regions.punjab;
+  const delhiMeteo = meteorologyData?.regions.delhi;
+  const punjabBiomass = biomassData?.regions.find((item) => item.region === 'Punjab');
+  const totalFrp = biomassData?.regions.reduce((sum, item) => sum + item.frp_sum_mw, 0);
+  const delhiSurface = surfaceData?.features.reduce((closest, feature) => {
+    const [lon, lat] = feature.geometry.coordinates;
+    const [closestLon, closestLat] = closest.geometry.coordinates;
+    return Math.hypot(lon - 77.2, lat - 28.6) < Math.hypot(closestLon - 77.2, closestLat - 28.6)
+      ? feature : closest;
+  }, surfaceData.features[0]);
 
   return (
     <div className="w-full bg-canvas-cream min-h-screen relative overflow-x-hidden pt-20">
@@ -248,7 +263,7 @@ export const AirCorridorMapPage: React.FC = () => {
                 <div className="font-headline-sm text-headline-sm text-ink-black mt-1">Punjab Malwa Basin</div>
                 <p className="font-body-sm text-body-sm text-ink-muted mt-0.5">Sangrur, Barnala, Tarn Taran</p>
                 <div className="mt-2 text-label-md font-bold text-terracotta-deep">
-                  1,240 MW Total FRP Recorded
+                  {totalFrp == null ? 'FRP unavailable' : `${totalFrp.toFixed(1)} MW Total FRP Recorded`}
                 </div>
               </div>
 
@@ -266,7 +281,7 @@ export const AirCorridorMapPage: React.FC = () => {
                 <div className="font-headline-sm text-headline-sm text-ink-black mt-1">Karnal-Panipat Corridor</div>
                 <p className="font-body-sm text-body-sm text-ink-muted mt-0.5">Secondary aerosol conversion</p>
                 <div className="mt-2 text-label-md font-bold text-cobalt-deep">
-                  PM2.5: 285 µg/m³ • 14h Inflow
+                  Wind: {punjabMeteo ? `${punjabMeteo.wind_speed_ms.toFixed(1)} m/s at ${punjabMeteo.wind.direction_from_deg.toFixed(0)}°` : 'Unavailable'}
                 </div>
               </div>
 
@@ -284,7 +299,7 @@ export const AirCorridorMapPage: React.FC = () => {
                 <div className="font-headline-sm text-headline-sm text-ink-black mt-1">Delhi NCR Basin</div>
                 <p className="font-body-sm text-body-sm text-ink-muted mt-0.5">Anand Vihar, ITO, IGI Trap</p>
                 <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-aqi-hazardous text-on-tertiary text-label-md font-bold shadow-[1px_1px_0px_#18181B]">
-                  AQI 387 • 340m Inversion Lid
+                  AQI {delhiSurface?.properties.aqi_index ?? 'N/A'} • {delhiMeteo ? `${delhiMeteo.mixing_layer_height_m_agl.toFixed(0)}m Mixing Layer` : 'Layer unavailable'}
                 </div>
               </div>
             </div>
@@ -327,11 +342,11 @@ export const AirCorridorMapPage: React.FC = () => {
             </div>
             <h3 className="font-headline-sm text-headline-sm text-ink-black font-bold">Punjab Biomass Ignition</h3>
             <p className="font-body-sm text-body-sm text-ink-muted mt-1 leading-relaxed">
-              VIIRS 375m I-band satellite detections record 1,420 MW thermal radiative power concentrated in Sangrur and Tarn Taran.
+              VIIRS observations currently record {totalFrp == null ? 'no available' : `${totalFrp.toFixed(1)} MW of`} fire radiative power across the stored corridor feed.
             </p>
             <div className="mt-4 pt-3 border-t border-ink-black/10 flex justify-between font-label-md text-label-md font-bold">
               <span>Emission Rate:</span>
-              <span className="text-terracotta-deep">38.4 kg/s carbonaceous PM</span>
+              <span className="text-terracotta-deep">{punjabBiomass?.estimated_aerosol_kg_s == null ? 'Coefficient not configured' : `${punjabBiomass.estimated_aerosol_kg_s.toFixed(2)} kg/s`}</span>
             </div>
           </div>
 
@@ -342,11 +357,11 @@ export const AirCorridorMapPage: React.FC = () => {
             </div>
             <h3 className="font-headline-sm text-headline-sm text-ink-black font-bold">Karnal-Panipat Advection</h3>
             <p className="font-body-sm text-body-sm text-ink-muted mt-1 leading-relaxed">
-              Clear nocturnal skies accelerate secondary particulate formation. Northwesterly advection winds transport the plume at 24.8 km/h.
+              Open-Meteo supplies the current wind vector used by the backend forecast for the Punjab-to-NCR corridor.
             </p>
             <div className="mt-4 pt-3 border-t border-ink-black/10 flex justify-between font-label-md text-label-md font-bold">
               <span>Advection Velocity:</span>
-              <span className="text-cobalt-deep">6.9 m/s NW vector</span>
+              <span className="text-cobalt-deep">{punjabMeteo ? `${punjabMeteo.wind_speed_ms.toFixed(2)} m/s from ${punjabMeteo.wind.direction_from_deg.toFixed(0)}°` : 'Unavailable'}</span>
             </div>
           </div>
 
@@ -357,11 +372,11 @@ export const AirCorridorMapPage: React.FC = () => {
             </div>
             <h3 className="font-headline-sm text-headline-sm text-ink-black font-bold">Delhi NCR Inversion Trap</h3>
             <p className="font-body-sm text-body-sm text-ink-muted mt-1 leading-relaxed">
-              Shallow planetary boundary layer collapses to 185m AGL after sunset. Ridge topography prevents lateral plume dispersal.
+              The live boundary-layer height is available. A vertical temperature profile is still required to measure inversion depth.
             </p>
             <div className="mt-4 pt-3 border-t border-ink-black/10 flex justify-between font-label-md text-label-md font-bold">
               <span>Inversion Severity:</span>
-              <span className="text-aqi-hazardous font-extrabold">GRAP-IV Emergency Active</span>
+              <span className="text-aqi-hazardous font-extrabold">{meteorologyData?.inversion.status === 'not_measured' ? 'Not measured' : meteorologyData?.inversion.status ?? 'Unavailable'}</span>
             </div>
           </div>
         </div>
@@ -372,7 +387,7 @@ export const AirCorridorMapPage: React.FC = () => {
             <div>
               <div className="flex items-center gap-2 font-label-md text-label-md uppercase tracking-wider text-cobalt-deep font-bold mb-1">
                 <span className="material-symbols-outlined text-[14px]">grain</span>
-                GP Downscaler &bull; TROPOMI Fusion
+                AQI Surface &bull; {surfaceData?.source ?? 'Loading source'}
               </div>
               <h2 className="font-headline-sm text-headline-sm text-ink-black font-bold">AQI Surface Grid PM2.5 Field</h2>
             </div>

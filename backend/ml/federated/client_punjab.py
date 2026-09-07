@@ -21,6 +21,8 @@ class PunjabClient:
 
     def __init__(self, data_path: Optional[Path] = None, seed: int = 42):
         self.model = CorridorPredictor(seed=seed)
+        self.rng = np.random.default_rng(seed + 10_000)
+        self.last_fit_telemetry: Dict[str, float] = {}
         
         # Load local dataset
         path = data_path or (DATA_DIR / "punjab_train.npz")
@@ -61,8 +63,18 @@ class PunjabClient:
         epochs = (config or {}).get("epochs", 3)
         lr = (config or {}).get("lr", 0.02)
 
+        losses, clipped = [], []
         for _ in range(epochs):
-            self.model.fit_epoch(self.X_train, self.y_train, lr=lr)
+            if (config or {}).get("dp_enabled"):
+                loss, fraction = self.model.fit_epoch_dp(
+                    self.X_train, self.y_train, lr, float(config["max_grad_norm"]),
+                    float(config["noise_multiplier"]), self.rng)
+                clipped.append(fraction)
+            else:
+                loss = self.model.fit_epoch(self.X_train, self.y_train, lr=lr)
+            losses.append(loss)
+        self.last_fit_telemetry = {"loss": float(np.mean(losses)),
+                                   "clipped_fraction": float(np.mean(clipped)) if clipped else 0.0}
 
         # SEC-006: Third element MUST be an empty dictionary {}
         return self.get_parameters(), len(self.X_train), {}

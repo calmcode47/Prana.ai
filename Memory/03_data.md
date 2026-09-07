@@ -167,7 +167,7 @@ CREATE TABLE incidents (
     measured_pm25   REAL,                   -- PM2.5 ug/m3
     measured_aqi    INTEGER,                -- computed India AQI index
     satellite_ts    TIMESTAMPTZ,
-    satellite_source TEXT,                  -- FIRMS | TROPOMI
+    satellite_source TEXT,                  -- FIRMS | OPEN_METEO_CAMS_GLOBAL
     authority       TEXT,                   -- DPCC | CPCB | HSPCB | PPCB
     auto_generated  BOOLEAN NOT NULL DEFAULT TRUE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -200,14 +200,14 @@ CREATE INDEX ON fl_rounds (run_id, round_number);
 
 ### Model 1: GP Downscaler (REQ-005)
 
-Purpose: Calibrate sparse CPCB ground PM2.5 readings against dense but spatially biased TROPOMI Absorbing Aerosol Index (AAI) to produce a continuous PM2.5 surface at 0.1-degree resolution.
+Purpose: Calibrate sparse ground PM2.5 readings against CAMS global aerosol optical depth to produce a continuous PM2.5 surface.
 
-TROPOMI product used: COPERNICUS/S5P/NRTI/L3_AER_AI (Absorbing Aerosol Index). NOT the NO2 product.
-The NO2 product (L3_NO2) is used separately for anomaly visualization only (REQ-007).
+Air-quality product used: Open-Meteo CAMS global. Aerosol optical depth is dimensionless AOD at 550 nm and is not absorbing aerosol index.
+CAMS surface NO2 is retained separately for supporting analytics; it is not a satellite column-density measurement.
 
 Method: Gaussian Process Regression (GPR) with RBF + noise kernel.
 - Input features per grid cell:
-  - tropomi_aai: TROPOMI Absorbing Aerosol Index value at grid cell centroid
+  - aerosol_optical_depth: CAMS AOD at 550 nm at grid cell centroid
   - dist_nearest_station_km: distance in km to nearest CPCB station with a reading in the last 3h
   - hour_sin, hour_cos: cyclical encoding of local hour
   - season_flag: boolean (True if Oct-Nov)
@@ -215,8 +215,8 @@ Method: Gaussian Process Regression (GPR) with RBF + noise kernel.
 - Inference: predict pm25_ugm3 for every 0.1-degree grid cell in corridor bbox [73.5-77.5E, 28.5-32.5N]
 - Library: scikit-learn GaussianProcessRegressor; kernel = RBF(length_scale=1.0) + WhiteKernel()
 
-Training data: historical CPCB PM2.5 + TROPOMI AAI pairs from OpenAQ v3 archive (Oct-Nov 2022-2024 windows). Stored as backend/data/training/gp_training_pairs.parquet.
-Fallback: IDW (inverse-distance weighting) interpolation from ground stations only when TROPOMI/GEE data unavailable.
+Training data requirement: user-supplied historical ground PM2.5 + CAMS AOD pairs with timestamps and provenance.
+Fallback: explicitly labelled static demonstration input only when demo mode is enabled.
 
 Output: GeoJSON FeatureCollection of 0.1-deg grid cells, each with {pm25_estimate, uncertainty_std}.
 

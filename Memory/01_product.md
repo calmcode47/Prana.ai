@@ -52,7 +52,7 @@ Selected triggers: portfolio evaluation, external satellite/AQI APIs, public Ver
 
 1. Backend scheduler runs every 15 minutes.
 2. Ingester fetches FIRMS fire hotspots, OpenAQ ground AQI, Open-Meteo wind + temperature for corridor bbox.
-3. GP Downscaler fuses TROPOMI Absorbing Aerosol Index (AAI) + CPCB ground PM2.5 into PM2.5 surface grid.
+3. GP Downscaler fuses CAMS global aerosol optical depth + ground PM2.5 into a PM2.5 surface grid.
 4. Gaussian-plume model generates t+24/48/72h affected-zone polygons.
 5. IsolationForest scans per-station NO2 time series for nighttime anomalies.
 6. WebSocket server broadcasts updated data to all subscribed clients.

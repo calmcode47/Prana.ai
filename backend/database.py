@@ -1,6 +1,6 @@
 """
 PRANA Database & CPCB AQI Utility
-PostgreSQL + PostGIS connection management, DDL definitions for all 7 tables,
+PostgreSQL + PostGIS connection management and schema definitions,
 and server-side CPCB 24h breakpoint AQI conversion per DEC-010.
 """
 
@@ -26,6 +26,9 @@ _in_memory_store: Dict[str, List[Dict[str, Any]]] = {
     "incidents": [],
     "fl_rounds": [],
     "pollutant_readings": [],
+    "legal_notices": [],
+    "enforcement_dispatches": [],
+    "cems_readings": [],
 }
 
 
@@ -256,6 +259,54 @@ MIGRATIONS = [
     "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS satellite_evidence JSONB;",
     "ALTER TABLE fire_hotspots ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'unknown';",
     "ALTER TABLE aqi_readings ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'unknown';",
+    "ALTER TABLE fl_rounds ADD COLUMN IF NOT EXISTS punjab_loss DOUBLE PRECISION;",
+    "ALTER TABLE fl_rounds ADD COLUMN IF NOT EXISTS delhi_loss DOUBLE PRECISION;",
+    "ALTER TABLE fl_rounds ADD COLUMN IF NOT EXISTS global_loss DOUBLE PRECISION;",
+    "ALTER TABLE fl_rounds ADD COLUMN IF NOT EXISTS dp_epsilon_spent DOUBLE PRECISION;",
+    "ALTER TABLE fl_rounds ADD COLUMN IF NOT EXISTS dp_delta DOUBLE PRECISION;",
+    "ALTER TABLE fl_rounds ADD COLUMN IF NOT EXISTS secure_aggregation_scheme TEXT;",
+    "ALTER TABLE fl_rounds ADD COLUMN IF NOT EXISTS secure_aggregation_key_bits INTEGER;",
+    """CREATE TABLE IF NOT EXISTS legal_notices (
+        id BIGSERIAL PRIMARY KEY,
+        notice_id TEXT UNIQUE NOT NULL,
+        incident_id TEXT NOT NULL REFERENCES incidents(incident_id),
+        issuing_authority TEXT NOT NULL,
+        authorized_officer TEXT,
+        legal_basis TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('DRAFT','AWAITING_SIGNATURE','SIGNED','VOID')),
+        document_sha256 TEXT NOT NULL,
+        signature_provider TEXT,
+        signature_reference TEXT,
+        signed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+        CREATE INDEX IF NOT EXISTS idx_legal_notices_incident ON legal_notices(incident_id, created_at DESC);""",
+    """CREATE TABLE IF NOT EXISTS enforcement_dispatches (
+        id BIGSERIAL PRIMARY KEY,
+        dispatch_id TEXT UNIQUE NOT NULL,
+        incident_id TEXT NOT NULL REFERENCES incidents(incident_id),
+        notice_id TEXT REFERENCES legal_notices(notice_id),
+        recipient_kind TEXT NOT NULL CHECK(recipient_kind IN ('district_magistrate','police','flying_squad','spcb')),
+        recipient_reference TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('PENDING_CONFIGURATION','QUEUED','SENT','FAILED','CANCELLED')),
+        external_reference TEXT,
+        requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        sent_at TIMESTAMPTZ);
+        CREATE INDEX IF NOT EXISTS idx_dispatch_status ON enforcement_dispatches(status, requested_at DESC);""",
+    """CREATE TABLE IF NOT EXISTS cems_readings (
+        id BIGSERIAL PRIMARY KEY,
+        facility_id TEXT NOT NULL,
+        measured_at TIMESTAMPTZ NOT NULL,
+        stack_velocity_ms DOUBLE PRECISION NOT NULL CHECK(stack_velocity_ms >= 0),
+        scrubber_load_kw DOUBLE PRECISION NOT NULL CHECK(scrubber_load_kw >= 0),
+        latitude DOUBLE PRECISION,
+        longitude DOUBLE PRECISION,
+        geom GEOMETRY(POINT,4326),
+        source TEXT NOT NULL,
+        UNIQUE(facility_id, measured_at));
+        CREATE INDEX IF NOT EXISTS idx_cems_facility_time ON cems_readings(facility_id, measured_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_cems_geom ON cems_readings USING GIST(geom) WHERE geom IS NOT NULL;""",
 ]
 
 

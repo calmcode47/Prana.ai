@@ -1,6 +1,6 @@
 """
 Federated Learning Router (REQ-008, SEC-006)
-Serves Flower simulation round history and global vs local model accuracy metrics.
+Serves NumPy FedAvg simulation history and measured global/local model scores.
 """
 
 import json
@@ -26,7 +26,7 @@ PRERUN_CACHE_FILE = Path(__file__).resolve().parent.parent / "data" / "cache" / 
 async def get_federated_status():
     """
     Returns FL simulation round history for the latest run_id.
-    Shows global model converging and outperforming local Punjab/Delhi models.
+    Reports measured scores without promising global superiority on every run.
     """
     pool = get_db_pool()
     if pool:
@@ -36,19 +36,32 @@ async def get_federated_status():
                 if latest_run:
                     rows = await conn.fetch(
                         """
-                        SELECT round_number, punjab_accuracy, delhi_accuracy, global_accuracy
+                        SELECT round_number, punjab_accuracy, delhi_accuracy, global_accuracy,
+                               punjab_loss, delhi_loss, global_loss, dp_epsilon_spent, dp_delta,
+                               secure_aggregation_scheme, secure_aggregation_key_bits
                         FROM fl_rounds
                         WHERE run_id = $1
                         ORDER BY round_number ASC
                         """,
                         latest_run
                     )
-                    rounds = [dict(r) for r in rows]
+                    records = [dict(r) for r in rows]
+                    rounds = [{key: row.get(key) for key in ("round_number", "punjab_accuracy",
+                               "delhi_accuracy", "global_accuracy", "punjab_loss", "delhi_loss",
+                               "global_loss", "dp_epsilon_spent")} for row in records]
+                    final = records[-1]
                     return {
                         "run_id": latest_run,
                         "total_rounds": len(rounds),
                         "status": "complete",
-                        "rounds": rounds
+                        "rounds": rounds,
+                        "privacy": {"dp_sgd": {"enabled": final.get("dp_epsilon_spent") is not None,
+                                    "epsilon_spent": final.get("dp_epsilon_spent"),
+                                    "delta": final.get("dp_delta")},
+                                    "secure_aggregation": {
+                                    "enabled": final.get("secure_aggregation_scheme") is not None,
+                                    "scheme": final.get("secure_aggregation_scheme"),
+                                    "key_bits": final.get("secure_aggregation_key_bits")}},
                     }
         except Exception:
             raise HTTPException(503, "Federated metrics storage is unavailable") from None
@@ -61,12 +74,8 @@ async def get_federated_status():
         latest_item = fl_store[-1]
         latest_run = latest_item["run_id"]
         run_rounds = [
-            {
-                "round_number": r["round_number"],
-                "punjab_accuracy": r["punjab_accuracy"],
-                "delhi_accuracy": r["delhi_accuracy"],
-                "global_accuracy": r["global_accuracy"]
-            }
+            {key: r.get(key) for key in ("round_number", "punjab_accuracy", "delhi_accuracy",
+             "global_accuracy", "punjab_loss", "delhi_loss", "global_loss", "dp_epsilon_spent")}
             for r in fl_store if r["run_id"] == latest_run
         ]
         run_rounds.sort(key=lambda x: x["round_number"])
@@ -74,7 +83,13 @@ async def get_federated_status():
             "run_id": latest_run,
             "total_rounds": len(run_rounds),
             "status": "complete",
-            "rounds": run_rounds
+            "rounds": run_rounds,
+            "privacy": {"dp_sgd": {"enabled": latest_item.get("dp_epsilon_spent") is not None,
+                        "epsilon_spent": latest_item.get("dp_epsilon_spent"),
+                        "delta": latest_item.get("dp_delta")},
+                        "secure_aggregation": {"enabled": latest_item.get("secure_aggregation_scheme") is not None,
+                        "scheme": latest_item.get("secure_aggregation_scheme"),
+                        "key_bits": latest_item.get("secure_aggregation_key_bits")}},
         }
 
     return {"run_id": "", "total_rounds": 0, "status": "idle", "rounds": []}

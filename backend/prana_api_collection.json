@@ -104,7 +104,7 @@
                 { "key": "resolution_deg", "value": "0.5", "description": "Spatial resolution in degrees (0.1 to 1.0)" }
               ]
             },
-            "description": "Fuses ground CPCB readings with TROPOMI AAI satellite aerosol data using Gaussian Process regression."
+            "description": "Fuses ground readings with Open-Meteo CAMS global aerosol optical depth using Gaussian Process regression."
           }
         }
       ]

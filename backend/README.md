@@ -55,13 +55,15 @@ Configure secrets only in the ignored environment file or hosting provider setti
 | --- | --- |
 | `FIRMS_MAP_KEY` | NASA FIRMS live fire observations |
 | `OPENAQ_API_KEY` | OpenAQ v3 station and sensor observations |
-| `GEE_SERVICE_ACCOUNT_JSON` | Earth Engine service-account JSON |
-| `GEE_PROJECT_ID` | Enabled Earth Engine project; defaults to the credential project |
 | `DATABASE_URL` | Persistent PostgreSQL/PostGIS database |
 | `CORS_ORIGINS` | Comma-separated allowed client origins |
 | `PRANA_SCHEDULER_ENABLED` | Enable startup ingestion, 15-minute refresh, and 60-second telemetry |
+| `CEMS_INGEST_API_KEY` | Shared ingestion credential issued by this backend to an approved facility feed |
+| `PRANA_FL_DP_ENABLED` | Enable record-level DP-SGD; defaults to true |
+| `PRANA_FL_DP_EPSILON` / `PRANA_FL_DP_DELTA` | Privacy budget; defaults to 0.42 and 0.00001 |
+| `PRANA_FL_PAILLIER_ENABLED` | Enable 2048-bit Paillier aggregation; defaults to true |
 
-Open-Meteo does not require credentials for this development integration. Credentials are redacted from HTTP request logs. Provider failures are not evidence of zero pollution; successful empty provider results are retained as empty results.
+Open-Meteo weather and CAMS global air-quality endpoints do not require credentials for noncommercial use within their published limits. The CAMS adapter supplies current AOD, NO₂, PM2.5, dust, SO₂, and ozone fields. Credentials are redacted from HTTP request logs. Provider failures are not evidence of zero pollution; successful empty provider results are retained as empty results.
 
 ## Backend behavior
 
@@ -70,12 +72,21 @@ Open-Meteo does not require credentials for this development integration. Creden
 - Citizen uploads are limited before multipart parsing, decoded with a pixel limit, stripped of metadata, and reduced to a hash and result. Original photos are not saved. Duplicate sanitized photos are stored once.
 - Incident creation stores the report before broadcasting. Satellite evidence is calculated from recent live observations when available; missing evidence stays null. `/alerts/latest?lang=en|hi|pa` supports English, Hindi, and Punjabi.
 - WebSockets support `/ws/delhi`, `/ws/ncr`, `/ws/punjab`, and `/ws/haryana`, with an initial snapshot, ping/pong, 60-second updates, and incident broadcasts.
-- Federated simulation uses real NumPy FedAvg training and measured scores on synthetic data. Independent local-only baselines receive the same training budget. It is not Flower and has no formal differential-privacy guarantee.
+- Federated simulation uses NumPy FedAvg, record-level clipped DP-SGD with Gaussian noise, a conservative zCDP privacy accountant, and 2048-bit Paillier homomorphic aggregation. It returns measured local/global loss and accuracy. The included run is a single-process protocol simulation on synthetic data; production privacy also requires separate client/key-holder trust domains.
+- Legal routes create review drafts, PDFs, electronic-record certificate drafts, evidence ZIP/GeoJSON exports, and internal dispatch records. They do not issue a direction, warrant, signature, or authority notification.
+- CEMS routes accept authenticated facility batches and flag deterministic scrubber-load/stack-velocity patterns for review. A flag is not proof of tampering.
+- Meteorology exposes Open-Meteo wind vectors and boundary-layer heights. It explicitly reports inversion depth as unavailable because a vertical temperature profile is required.
+- Analytics calculate stored-data fire/AQI lag correlations and regional FRP shares. Mass-emission output remains empty until an approved conversion coefficient is configured.
+- Briefing routes produce incident-derived text and RSS. Mobile release metadata returns no content until a signed application artifact and checksum are configured.
 - The SensorThings route is a read-only Things adapter, not a certified implementation of the entire OGC SensorThings standard.
 
 The dispersion and photo models are heuristics, not validated environmental measurement instruments. PM2.5 sub-indices computed from instantaneous readings or estimates are not official 24-hour, multi-pollutant AQI observations. The CPCB display range is capped at 500.
 
+See [EXTERNAL_API_REQUIREMENTS.md](EXTERNAL_API_REQUIREMENTS.md) for the exact external accounts and local validation-data format. The validation command reads only a supplied repository-local CSV and never downloads a dataset.
+
 ## Verification
+
+Current scope is local backend completion. No hosting account or deployment is required. See [BACKEND_STATUS_REPORT.md](BACKEND_STATUS_REPORT.md) for measured results and the distinction between live weather, labeled sample providers, and model estimates. Deployment reference material is retained for future use.
 
 ```powershell
 ./backend/.venv/Scripts/python.exe -m pytest backend/tests -q -m 'not integration'
@@ -92,10 +103,18 @@ $env:PRANA_TEST_DATABASE_URL = 'postgresql://prana:' + (Get-Content .local/db-pa
 ./backend/.venv/Scripts/python.exe -m pytest backend/tests -q -m 'not integration'
 ```
 
+For repository-contained temporary files, set `TEMP`, `TMP`, and `TMPDIR` to the absolute `.local/tmp` directory before testing. Production-mode behavior can also be verified locally without publishing the API:
+
+```powershell
+./backend/.venv/Scripts/python.exe -m backend.scripts.verify_production_local
+```
+
+This uses `PRANA_TEST_DATABASE_URL`, starts a temporary loopback HTTPS server, checks all four WSS channels, CORS, certificate trust, and missing-input behavior, then stops that server. Certificates, logs, and the report stay in `.local/production-verification/`. System certificate trust is unchanged. This check does not replace real provider or scientific validation.
+
 `seed_db.py --verify-only` checks the schema and counts. Other seeder modes insert demonstration data; `--clean` deletes existing rows and should only be used with disposable development databases. Synthetic seeding is refused in production. Verification and load-test commands return failure exit codes on errors.
 
 NASA's live integration test is separate: `pytest backend/tests -m integration`. A successful fallback cannot satisfy it. No cloud deployment is needed for the local backend.
 
 ## Adapter references
 
-The OpenAQ adapter joins [location sensor metadata with latest observations](https://docs.openaq.org/resources/latest). Open-Meteo requests [wind speeds in metres per second](https://open-meteo.com/en/docs). Earth Engine uses an explicit [start/end date range](https://developers.google.com/earth-engine/apidocs/ee-imagecollection-filterdate) and requests [sample geometries](https://developers.google.com/earth-engine/apidocs/ee-image-sampleregions). AQI categories follow [CPCB's National AQI explanation](https://cpcb.gov.in/displaypdf.php?id=bmF0aW9uYWwtYWlyLXF1YWxpdHktaW5kZXgvQWJvdXRfQVFJLnBkZg%3D%3D).
+The OpenAQ adapter joins [location sensor metadata with latest observations](https://docs.openaq.org/resources/latest). Open-Meteo provides [weather](https://open-meteo.com/en/docs) and [CAMS global air-quality fields](https://open-meteo.com/en/docs/air-quality-api). AOD is retained as aerosol optical depth and is never mislabeled as Sentinel-5P absorbing aerosol index. AQI categories follow [CPCB's National AQI explanation](https://cpcb.gov.in/displaypdf.php?id=bmF0aW9uYWwtYWlyLXF1YWxpdHktaW5kZXgvQWJvdXRfQVFJLnBkZg%3D%3D).

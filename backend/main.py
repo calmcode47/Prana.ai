@@ -34,7 +34,10 @@ from backend.routers import (
     citizen,
     federated,
     sensorthings,
-    websocket
+    websocket,
+    legal,
+    industrial,
+    operations,
 )
 
 # Load environment variables
@@ -53,7 +56,7 @@ class SecretFilter(logging.Filter):
         import re
         message = record.getMessage()
         message = re.sub(r"(/api/area/csv/)[^/\s]+", r"\1[REDACTED]", message)
-        for key in ("FIRMS_MAP_KEY", "OPENAQ_API_KEY", "DATABASE_URL", "GEE_SERVICE_ACCOUNT_JSON"):
+        for key in ("FIRMS_MAP_KEY", "OPENAQ_API_KEY", "DATABASE_URL"):
             secret = os.getenv(key)
             if secret:
                 message = message.replace(secret, "[REDACTED]")
@@ -81,7 +84,7 @@ async def lifespan(app: FastAPI):
 
     # Start background scheduler for 15-minute ingestion
     try:
-        if production_mode() and (not os.getenv("CORS_ORIGINS") or "*" in allowed_origins):
+        if production_mode() and (not os.getenv("CORS_ORIGINS") or not allowed_origins or "*" in allowed_origins):
             raise RuntimeError("Production requires explicit CORS_ORIGINS")
         if scheduler_enabled():
             start_scheduler()
@@ -114,7 +117,7 @@ app.add_middleware(
     allow_origins=allowed_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "X-API-Key", "Authorization"],
+    allow_headers=["Content-Type", "X-API-Key", "X-CEMS-Key", "Authorization"],
 )
 
 # Mount all Routers
@@ -127,6 +130,9 @@ app.include_router(citizen.router)
 app.include_router(federated.router)
 app.include_router(sensorthings.router)
 app.include_router(websocket.router)
+app.include_router(legal.router)
+app.include_router(industrial.router)
+app.include_router(operations.router)
 
 
 @app.get("/", tags=["General"])

@@ -111,7 +111,7 @@ Explicitly excluded: FL simulation (SESSION-003), frontend
 
 Work:
 - backend/ml/downscaler.py:
-  - GP Regression using TROPOMI AAI (from tropomi_aai.geojson or fallback) + aqi_readings (pm25_ugm3)
+  - GP Regression using Open-Meteo CAMS AOD + aqi_readings (pm25_ugm3)
   - Input features: tropomi_aai, dist_nearest_station_km, hour_sin, hour_cos, season_flag
   - Output: /api/v1/aqi/surface GeoJSON with pm25_estimate + aqi_index per grid cell
 - backend/ml/trajectory.py:

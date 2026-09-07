@@ -1,13 +1,13 @@
 from backend.config import demo_enabled
 """
 Gaussian Process Downscaler (REQ-005)
-Calibrates ground CPCB PM2.5 readings against satellite TROPOMI Absorbing Aerosol Index (AAI)
+Calibrates ground PM2.5 readings against CAMS aerosol optical depth (AOD)
 to generate a continuous PM2.5 surface grid across the Punjab/Haryana -> Delhi corridor.
 """
 
 import math
 import asyncio
-from backend.ingesters.ingest_gee import fetch_tropomi_aai
+from backend.ingesters.ingest_openmeteo_air import fetch_air_quality_grid
 from backend.ingesters.memo import cached_snapshot
 import json
 import logging
@@ -21,7 +21,7 @@ from backend.ingesters.ingest_openaq import fetch_openaq_stations
 
 logger = logging.getLogger("prana.ml.downscaler")
 
-TROPOMI_AAI_FALLBACK = Path(__file__).resolve().parent.parent / "data" / "static" / "tropomi_aai_fallback.geojson"
+AIR_QUALITY_FALLBACK = Path(__file__).resolve().parent.parent / "data" / "static" / "open_meteo_air_quality_fallback.geojson"
 
 # Corridor Bounding Box: [west, south, east, north]
 BBOX = [73.5, 28.5, 77.5, 32.5]
@@ -37,10 +37,10 @@ def haversine_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
     return r * c
 
 
-def load_tropomi_aai() -> List[Dict[str, Any]]:
-    """Loads TROPOMI AAI raster points from cached or fallback GeoJSON."""
-    cache_file = Path(__file__).resolve().parent.parent / "data" / "cache" / "tropomi_aai.geojson"
-    target_path = cache_file if cache_file.exists() else TROPOMI_AAI_FALLBACK
+def load_air_quality_aod() -> List[Dict[str, Any]]:
+    """Load cached or explicitly labelled demonstration CAMS AOD points."""
+    cache_file = Path(__file__).resolve().parent.parent / "data" / "cache" / "open_meteo_air_quality.geojson"
+    target_path = cache_file if cache_file.exists() else AIR_QUALITY_FALLBACK
     if not target_path.exists():
         return []
     try:
@@ -48,21 +48,22 @@ def load_tropomi_aai() -> List[Dict[str, Any]]:
             data = json.load(f)
             return data.get("features", [])
     except Exception as ex:
-        logger.warning(f"Error loading TROPOMI AAI data: {ex}")
+        logger.warning(f"Error loading CAMS aerosol optical depth data: {ex}")
         return []
 
 
-def get_interpolated_aai(lon: float, lat: float, aai_features: List[Dict[str, Any]]) -> float:
-    """Estimates AAI at arbitrary coordinate using inverse-distance weighting of satellite points."""
-    if not aai_features:
-        # Default representative baseline during burning season
-        return 2.15
+def get_interpolated_aod(lon: float, lat: float, aod_features: List[Dict[str, Any]]) -> float:
+    """Estimate AOD at an arbitrary coordinate using inverse-distance weighting."""
+    if not aod_features:
+        raise ValueError("Aerosol optical depth observations are required")
 
     weights = []
     values = []
-    for feat in aai_features:
+    for feat in aod_features:
         coords = feat.get("geometry", {}).get("coordinates", [lon, lat])
-        val = feat.get("properties", {}).get("aai", 2.0)
+        val = feat.get("properties", {}).get("aerosol_optical_depth")
+        if val is None:
+            continue
         dist = max(haversine_km(lon, lat, coords[0], coords[1]), 0.5)
         w = 1.0 / (dist ** 2)
         weights.append(w)
@@ -70,7 +71,7 @@ def get_interpolated_aai(lon: float, lat: float, aai_features: List[Dict[str, An
 
     total_w = sum(weights)
     if total_w == 0:
-        return 2.15
+        raise ValueError("Aerosol optical depth observations are invalid")
     return float(sum(w * v for w, v in zip(weights, values)) / total_w)
 
 
@@ -78,7 +79,7 @@ def get_interpolated_aai(lon: float, lat: float, aai_features: List[Dict[str, An
 async def run_downscaler(resolution_deg: float = 0.5) -> Dict[str, Any]:
     """
     Executes Gaussian Process downscaling over the corridor bounding box.
-    Fuses ground station PM2.5 with satellite TROPOMI AAI.
+    Fuses ground-station PM2.5 with Open-Meteo CAMS global AOD.
     Returns GeoJSON FeatureCollection matching SurfaceGridResponse.
     """
     from sklearn.gaussian_process import GaussianProcessRegressor
@@ -105,14 +106,34 @@ async def run_downscaler(resolution_deg: float = 0.5) -> Dict[str, Any]:
     if not readings:
         readings = await fetch_openaq_stations()
 
-    aai_data = await fetch_tropomi_aai()
-    aai_features = aai_data["features"]
-    if not readings or not aai_features:
+    aod_data = await fetch_air_quality_grid()
+    aod_features = aod_data["features"]
+    if not aod_features:
         raise RuntimeError("Insufficient observations for spatial interpolation")
-    return await asyncio.to_thread(_compute_surface, readings, aai_features, resolution_deg, aai_data.get("source", "unknown"))
+    if not readings:
+        return _cams_surface(aod_features, aod_data.get("source", "unknown"))
+    return await asyncio.to_thread(_compute_surface, readings, aod_features, resolution_deg, aod_data.get("source", "unknown"))
 
 
-def _compute_surface(readings, aai_features, resolution_deg, source):
+def _cams_surface(features, source):
+    """Expose the upstream CAMS PM2.5 grid when fresh ground calibration is unavailable."""
+    output = []
+    for feature in features:
+        value = feature.get("properties", {}).get("pm2_5")
+        if value is None or not math.isfinite(float(value)) or float(value) < 0:
+            continue
+        pm25 = float(value)
+        output.append({"type": "Feature", "geometry": feature["geometry"], "properties": {
+            "pm25_estimate": round(pm25, 1), "aqi_index": compute_cpcb_aqi(pm25),
+            "uncertainty_std": None}})
+    if not output:
+        raise RuntimeError("CAMS PM2.5 surface is unavailable")
+    return {"type": "FeatureCollection", "computed_at": datetime.now(timezone.utc).isoformat(),
+            "resolution_deg": 0.4, "source": f"CAMS_MODEL_SURFACE; provider={source}; ground_calibration=unavailable",
+            "features": output}
+
+
+def _compute_surface(readings, aod_features, resolution_deg, source):
     from sklearn.gaussian_process import GaussianProcessRegressor
     from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 
@@ -131,12 +152,12 @@ def _compute_surface(readings, aai_features, resolution_deg, source):
         lon = float(st.get("longitude") or 77.2)
         pm25 = float(st.get("pm25_ugm3", 150.0))
 
-        aai_val = get_interpolated_aai(lon, lat, aai_features)
+        aod_val = get_interpolated_aod(lon, lat, aod_features)
         # Distance to other nearest station
         dists = [haversine_km(lon, lat, s.get("longitude", lon), s.get("latitude", lat)) for s in readings if s != st]
         dist_nearest = min(dists) if dists else 5.0
 
-        x_train.append([lon, lat, aai_val, dist_nearest, hour_sin, hour_cos, season_flag])
+        x_train.append([lon, lat, aod_val, dist_nearest, hour_sin, hour_cos, season_flag])
         y_train.append(pm25)
 
     x_train_np = np.array(x_train)
@@ -156,10 +177,10 @@ def _compute_surface(readings, aai_features, resolution_deg, source):
 
     for lat in lats:
         for lon in lons:
-            aai_val = get_interpolated_aai(lon, lat, aai_features)
+            aod_val = get_interpolated_aod(lon, lat, aod_features)
             dists = [haversine_km(lon, lat, s.get("longitude", lon), s.get("latitude", lat)) for s in readings]
             dist_nearest = min(dists) if dists else 10.0
-            grid_points.append([lon, lat, aai_val, dist_nearest, hour_sin, hour_cos, season_flag])
+            grid_points.append([lon, lat, aod_val, dist_nearest, hour_sin, hour_cos, season_flag])
 
     grid_np = np.array(grid_points)
     preds, stds = gpr.predict(grid_np, return_std=True)

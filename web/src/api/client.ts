@@ -191,6 +191,28 @@ export interface FLRoundItem {
   punjab_accuracy: number;
   delhi_accuracy: number;
   global_accuracy: number;
+  punjab_loss?: number | null;
+  delhi_loss?: number | null;
+  global_loss?: number | null;
+  dp_epsilon_spent?: number | null;
+}
+
+export interface FLPrivacySummary {
+  dp_sgd?: {
+    enabled: boolean;
+    target_epsilon?: number | null;
+    epsilon_spent?: number | null;
+    delta?: number | null;
+    max_grad_norm?: number | null;
+    noise_multiplier?: number | null;
+    accounting?: string;
+  };
+  secure_aggregation?: {
+    enabled: boolean;
+    scheme?: string | null;
+    key_bits?: number | null;
+    scope?: string;
+  };
 }
 
 export interface FLStatusResponse {
@@ -201,6 +223,7 @@ export interface FLStatusResponse {
   implementation: string;
   dataset: string;
   metric: string;
+  privacy?: FLPrivacySummary | null;
 }
 
 export interface HealthResponse {
@@ -255,8 +278,152 @@ export interface SensorThingsResponse {
   value: SensorThingsItem[];
 }
 
+export interface MeteorologyRegion {
+  latitude: number;
+  longitude: number;
+  observed_at: string;
+  source: string;
+  wind_speed_ms: number;
+  wind: {
+    eastward_ms: number;
+    northward_ms: number;
+    direction_from_deg: number;
+    direction_toward_deg: number;
+  };
+  mixing_layer_height_m_agl: number;
+  forecast_mixing_layer_min_m_agl: number | null;
+  forecast_mixing_layer_max_m_agl: number | null;
+}
+
+export interface MeteorologyResponse {
+  fetched_at: string;
+  regions: Record<'punjab' | 'delhi', MeteorologyRegion>;
+  streamlines: { status: string; integration_method: string };
+  inversion: { status: string; reason: string };
+}
+
+export interface FireAqiLagResponse {
+  period_days: number;
+  status: 'computed' | 'insufficient_data';
+  strongest_lag: { lag_hours: number; pearson_r: number; paired_hours: number } | null;
+  correlations: Array<{ lag_hours: number; pearson_r: number; paired_hours: number }>;
+  method: string;
+  caution: string;
+}
+
+export interface BiomassRegion {
+  region: string;
+  hotspot_count: number;
+  frp_sum_mw: number;
+  frp_share_percent: number | null;
+  estimated_aerosol_kg_s: number | null;
+}
+
+export interface BiomassEmissionsResponse {
+  period_days: number;
+  regions: BiomassRegion[];
+  source: string;
+  emissions_model: 'configured' | 'not_configured';
+  coefficient_kg_s_per_mw: number | null;
+  caution: string;
+}
+
+export interface BriefingResponse {
+  status: 'empty' | 'script_ready';
+  incident_id?: string;
+  script: string | null;
+  audio_url: string | null;
+  audio_status: string;
+  feed_url?: string;
+}
+
+export interface MobileReleaseResponse {
+  version: string;
+  download_url: string;
+  sha256: string;
+  status: string;
+}
+
+export interface LegalNotice {
+  notice_id: string;
+  incident_id: string;
+  issuing_authority: string;
+  authorized_officer?: string | null;
+  legal_basis: string;
+  title: string;
+  body: string;
+  status: string;
+  document_sha256: string;
+  created_at: string;
+}
+
+export interface LegalDispatch {
+  dispatch_id: string;
+  incident_id: string;
+  notice_id?: string | null;
+  recipient_kind: 'district_magistrate' | 'police' | 'flying_squad' | 'spcb';
+  recipient_reference: string;
+  status: string;
+  external_reference?: string | null;
+  requested_at: string;
+  sent_at?: string | null;
+  message_sent?: boolean;
+  reason?: string;
+}
+
+export interface LegalRegistryResponse {
+  notices: LegalNotice[];
+  dispatches: LegalDispatch[];
+  warrants: unknown[];
+  legal_status: string;
+}
+
+export interface SignaturePackageResponse {
+  notice_id: string;
+  document_sha256: string;
+  status: 'READY_FOR_PROVIDER' | 'PROVIDER_NOT_CONFIGURED';
+  provider_call_performed: boolean;
+  requirements: string[];
+}
+
+export interface CemsForensicsResponse {
+  facility_id: string;
+  period_hours: number;
+  readings: Array<{
+    facility_id: string;
+    measured_at: string;
+    stack_velocity_ms: number;
+    scrubber_load_kw: number;
+    source: string;
+  }>;
+  review_windows: Array<{
+    measured_at: string;
+    scrubber_load_ratio: number;
+    stack_velocity_ratio: number;
+    classification: string;
+  }>;
+  status: 'REVIEW_REQUIRED' | 'NO_PATTERN_DETECTED';
+  method: string;
+}
+
 // API Config
 const API_BASE = (typeof window !== 'undefined' && (window as any).PRANA_API_URL) || 'http://127.0.0.1:8000';
+const CLIENT_DEMO_FALLBACK = typeof window !== 'undefined' && (window as any).PRANA_DEMO_MODE === true;
+
+async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, { credentials: 'omit', ...options });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const payload = await res.json();
+      detail = payload.detail || detail;
+    } catch {
+      // The response has no JSON error body.
+    }
+    throw new Error(detail);
+  }
+  return (await res.json()) as T;
+}
 
 async function safeFetch<T>(url: string, options?: RequestInit, fallback?: T): Promise<T> {
   try {
@@ -268,7 +435,7 @@ async function safeFetch<T>(url: string, options?: RequestInit, fallback?: T): P
   } catch (err) {
     // Network or CORS error — fallback smoothly
   }
-  if (fallback !== undefined) return fallback;
+  if (CLIENT_DEMO_FALLBACK && fallback !== undefined) return fallback;
   throw new Error(`Failed to fetch from ${url}`);
 }
 
@@ -550,33 +717,11 @@ export async function fetchLatestAlert(lang: 'en' | 'hi' | 'pa' = 'en'): Promise
 }
 
 export async function createIncident(data: IncidentCreate): Promise<IncidentItem> {
-  try {
-    const res = await fetch(`${API_BASE}/api/v1/alerts/incident`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch (err) {
-    // fallback simulated incident
-  }
-  return {
-    incident_id: `INC-AUTO-${Math.floor(1000 + Math.random() * 9000)}`,
-    severity: data.severity,
-    location_text: data.location_text,
-    latitude: data.latitude,
-    longitude: data.longitude,
-    pollutant: data.pollutant || 'PM2.5',
-    measured_pm25: data.measured_pm25,
-    measured_aqi: data.measured_pm25 ? Math.round(data.measured_pm25 * 1.25) : undefined,
-    satellite_ts: new Date().toISOString(),
-    satellite_source: data.satellite_source || 'SIMULATED_ALERT',
-    authority: data.authority || 'CPCB',
-    created_at: new Date().toISOString(),
-    satellite_evidence: null,
-  };
+  return requestJson<IncidentItem>('/api/v1/alerts/incident', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
 }
 
 // Citizen Science Sky Photo Estimator (backend/routers/citizen.py & backend/ml/haze_estimator.py)
@@ -592,33 +737,10 @@ export async function uploadCitizenSkyPhoto(
     formData.append('longitude', longitude.toString());
   }
 
-  try {
-    const res = await fetch(`${API_BASE}/api/v1/citizen/photo`, {
-      method: 'POST',
-      body: formData,
-    });
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch (err) {
-    // Fallback heuristic simulation when backend is offline
-  }
-
-  // Pure client-side DCP approximation matching backend formula
-  const simulatedOpticalTau = 1.18;
-  const pm25Est = Math.round(20.0 + simulatedOpticalTau * 125.0 + 1.8 * 18.0 - 0.28 * 12.0);
-  const aqiIndex = computeCpcbAqi(pm25Est);
-  const { category, color } = getAqiCategoryAndColor(aqiIndex);
-
-  return {
-    pm25_estimate: pm25Est,
-    confidence: 'high',
-    aqi_category: category,
-    aqi_index: aqiIndex,
-    aqi_color: color,
-    processing_time_ms: 28,
-    source: 'DCP_HEURISTIC_ESTIMATE_CLIENT_FALLBACK'
-  };
+  return requestJson<CitizenPhotoResponse>('/api/v1/citizen/photo', {
+    method: 'POST',
+    body: formData,
+  });
 }
 
 // Federated Learning Simulation (backend/routers/federated.py & backend/ml/federated/server.py)
@@ -648,17 +770,9 @@ export async function fetchFederatedStatus(): Promise<FLStatusResponse> {
 }
 
 export async function triggerFederatedRun(numRounds: number = 10): Promise<FLStatusResponse> {
-  try {
-    const res = await fetch(`${API_BASE}/api/v1/federated/run?num_rounds=${numRounds}`, {
-      method: 'POST',
-    });
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch (err) {
-    // fallback simulation
-  }
-  return fetchFederatedStatus();
+  return requestJson<FLStatusResponse>(`/api/v1/federated/run?num_rounds=${numRounds}`, {
+    method: 'POST',
+  });
 }
 
 // Forecast Plume Trajectories (backend/routers/forecast.py: GET /api/v1/forecast/plume)
@@ -730,6 +844,91 @@ export async function fetchSensorThings(): Promise<SensorThingsResponse> {
     ]
   };
   return safeFetch<SensorThingsResponse>(`${API_BASE}/api/v1/sensorthings/Things`, undefined, fallback);
+}
+
+export async function fetchMeteorology(): Promise<MeteorologyResponse> {
+  return requestJson<MeteorologyResponse>('/api/v1/meteorology');
+}
+
+export async function fetchFireAqiLag(days: number = 7): Promise<FireAqiLagResponse> {
+  return requestJson<FireAqiLagResponse>(`/api/v1/analytics/fire-aqi-lag?days=${days}`);
+}
+
+export async function fetchBiomassEmissions(days: number = 7): Promise<BiomassEmissionsResponse> {
+  return requestJson<BiomassEmissionsResponse>(`/api/v1/analytics/biomass-emissions?days=${days}`);
+}
+
+export async function fetchLatestBriefing(): Promise<BriefingResponse> {
+  return requestJson<BriefingResponse>('/api/v1/briefings/latest');
+}
+
+export async function fetchLatestMobileRelease(): Promise<MobileReleaseResponse | null> {
+  const res = await fetch(`${API_BASE}/api/v1/mobile/releases/latest`, { credentials: 'omit' });
+  if (res.status === 204) return null;
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return (await res.json()) as MobileReleaseResponse;
+}
+
+export async function createLegalNotice(data: {
+  incident_id: string;
+  issuing_authority: string;
+  authorized_officer?: string;
+  requested_direction: string;
+}): Promise<LegalNotice> {
+  return requestJson<LegalNotice>('/api/v1/legal/notices', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchSignaturePackage(noticeId: string): Promise<SignaturePackageResponse> {
+  return requestJson<SignaturePackageResponse>(
+    `/api/v1/legal/notices/${encodeURIComponent(noticeId)}/signature-package`
+  );
+}
+
+export async function queueLegalDispatch(data: {
+  incident_id: string;
+  notice_id?: string;
+  recipient_kind: LegalDispatch['recipient_kind'];
+  recipient_reference: string;
+}): Promise<LegalDispatch> {
+  return requestJson<LegalDispatch>('/api/v1/legal/dispatches', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchLegalRegistry(): Promise<LegalRegistryResponse> {
+  return requestJson<LegalRegistryResponse>('/api/v1/legal/registry');
+}
+
+export async function downloadLegalDossier(incidentId: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/legal/dossiers/${encodeURIComponent(incidentId)}.zip`,
+    { credentials: 'omit' }
+  );
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${incidentId}-dossier.zip`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function fetchCemsForensics(
+  facilityId: string,
+  hours: number = 24
+): Promise<CemsForensicsResponse> {
+  return requestJson<CemsForensicsResponse>(
+    `/api/v1/industrial/cems/${encodeURIComponent(facilityId)}/forensics?hours=${hours}`
+  );
 }
 
 // Real-Time WebSocket Streaming Connector (backend/routers/websocket.py: WS /ws/{city_id})

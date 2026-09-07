@@ -122,7 +122,7 @@ async def get_aqi_stations(
 async def get_aqi_surface(resolution_deg: float = Query(0.5, ge=0.1, le=1.0)):
     """
     Returns continuous PM2.5 surface grid produced by Gaussian Process Downscaler (REQ-005).
-    Fuses ground CPCB readings with satellite TROPOMI AAI.
+    Fuses ground readings with Open-Meteo CAMS global aerosol optical depth.
     """
     try:
         from backend.ml.downscaler import run_downscaler
