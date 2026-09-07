@@ -1,243 +1,563 @@
-import React, { useState } from 'react';
-import { mockForecasts } from '../data/mockData';
+import React, { useState, useEffect } from 'react';
 
 export const ForecastPage: React.FC = () => {
-  const [activeHorizon, setActiveHorizon] = useState<'Now' | '+24h' | '+48h' | '+72h'>('Now');
-  const forecast = mockForecasts[activeHorizon];
+  const [selectedHorizon, setSelectedHorizon] = useState<number>(0);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [currentHour, setCurrentHour] = useState<number>(38);
+  const [mandateTriggered, setMandateTriggered] = useState<boolean>(false);
+  const [geoJsonExported, setGeoJsonExported] = useState<boolean>(false);
 
-  const handleExportGeoJSON = () => {
-    const geojsonData = {
-      type: "FeatureCollection",
-      features: [
-        {
-          type: "Feature",
-          properties: {
-            horizon: activeHorizon,
-            lead_hours: forecast.lead_hours,
-            delhi_projected_aqi: forecast.delhi_projected_aqi,
-            boundary_layer_m: forecast.boundary_layer_height_m,
-            inversion_risk: forecast.inversion_risk
-          },
-          geometry: {
-            type: "Polygon",
-            coordinates: [
-              [
-                [75.843, 30.245],
-                [76.380, 30.340],
-                [76.990, 29.685],
-                [77.241, 28.628],
-                [77.051, 28.776],
-                [75.843, 30.245]
-              ]
-            ]
-          }
-        }
-      ]
-    };
-    const element = document.createElement("a");
-    const file = new Blob([JSON.stringify(geojsonData, null, 2)], {type: 'application/json'});
-    element.href = URL.createObjectURL(file);
-    element.download = `prana_plume_forecast_${activeHorizon}.geojson`;
-    document.body.appendChild(element);
-    element.click();
+  useEffect(() => {
+    let timer: any = null;
+    if (isPlaying) {
+      timer = setInterval(() => {
+        setCurrentHour((prev) => (prev >= 72 ? 0 : prev + 1));
+      }, 300);
+    }
+    return () => clearInterval(timer);
+  }, [isPlaying]);
+
+  const handleScrubberClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pos = (e.clientX - rect.left) / rect.width;
+    const hour = Math.round(Math.max(0, Math.min(72, pos * 72)));
+    setCurrentHour(hour);
   };
 
+  const scrubberPercent = ((currentHour / 72) * 100).toFixed(1);
+
   return (
-    <div className="w-full max-w-7xl mx-auto px-gutter-mobile lg:px-gutter-desktop py-unit-lg space-y-unit-lg animate-fade-in">
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-unit-sm pb-unit-sm border-b border-border-subtle">
-        <div className="space-y-unit-2xs">
-          <div className="flex items-center gap-unit-xs text-secondary font-label-sm text-label-sm uppercase tracking-wider font-bold">
-            <span className="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
-            <span>Gaussian-Plume Dispersion Engine</span>
-            <span className="text-outline-variant">•</span>
-            <span>HYSPLIT Ensemble</span>
+    <div className="w-full bg-canvas-cream min-h-screen relative overflow-x-hidden pt-20">
+      {/* Decorative ambient background glows */}
+      <div className="pointer-events-none absolute -top-12 -right-12 w-64 h-64 rounded-full bg-secondary-fixed/40 blur-2xl"></div>
+      <div className="pointer-events-none absolute top-1/2 -left-20 w-80 h-80 rounded-full bg-tertiary-fixed/30 blur-3xl"></div>
+
+      <div className="w-full px-gutter-desktop pt-6 pb-20 relative">
+        {/* Editorial Header Badge Deck */}
+        <div className="flex flex-wrap items-center justify-between gap-space-md mb-6">
+          <div className="flex flex-wrap items-center gap-space-sm">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-vanilla shadow-[2px_2px_0px_#18181B] text-label-md font-label-md text-ink-black border border-ink-black/20">
+              <span className="w-2 h-2 rounded-full bg-coral-watermelon-vivid"></span>
+              WRF-CHEM + HYSPLIT MODEL V4.2
+            </span>
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-surface-vanilla text-label-md font-label-md text-ink-muted shadow-[1px_1px_0px_#18181B]">
+              <span>Boundary Layer Dynamic:</span>
+              <span className="text-terracotta-deep font-bold">Severe Subsidence</span>
+            </span>
           </div>
-          <h1 className="font-headline-lg text-headline-lg text-primary tracking-tight font-editorial font-bold">
-            72-Hour Plume Trajectory Explorer
-          </h1>
-        </div>
 
-        <button
-          onClick={handleExportGeoJSON}
-          className="inline-flex items-center gap-unit-xs px-unit-md py-unit-xs rounded-full bg-surface-container-high text-on-surface hover:bg-surface-variant font-label-md text-label-md transition-all shadow-sm active:scale-95 border border-border-subtle"
-        >
-          <span className="material-symbols-outlined text-[16px]">file_download</span>
-          <span>Export Plume GeoJSON ({activeHorizon})</span>
-        </button>
-      </div>
+          {/* Quick Horizon Segmented Controls */}
+          <div className="inline-flex p-1 rounded-full bg-surface-vanilla shadow-[2px_2px_0px_#18181B] border border-ink-black/30 items-center gap-1" id="horizon-selector">
+            {[
+              { hour: 0, label: 'Now (T+0h)' },
+              { hour: 24, label: '+24h: Haryana Ingress' },
+              { hour: 48, label: '+48h: Border Peak Mass' },
+              { hour: 72, label: '+72h: Delhi Basin Trap' },
+            ].map((item) => (
+              <button
+                key={item.hour}
+                onClick={() => {
+                  setSelectedHorizon(item.hour);
+                  setCurrentHour(item.hour);
+                }}
+                className={`px-3.5 py-1.5 rounded-full text-label-md font-label-md transition-all cursor-pointer ${
+                  selectedHorizon === item.hour
+                    ? 'bg-ink-black text-canvas-cream shadow-[1px_1px_0px_#18181B] font-bold'
+                    : 'text-ink-muted hover:text-ink-black'
+                }`}
+                type="button"
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
 
-      {/* 4-Step Interactive Advection Horizon Selector */}
-      <div className="bg-surface-container-lowest p-unit-md rounded-xl border border-border-subtle shadow-sm space-y-unit-md">
-        <div className="flex items-center justify-between">
-          <span className="font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant font-bold">
-            Forward Advective Horizon
-          </span>
-          <span className="font-label-md text-label-md text-secondary font-bold font-mono">
-            {activeHorizon === 'Now' ? 'Now • Initial Plume Front' : `${activeHorizon} Ingress Forecast`}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-4 gap-unit-xs bg-surface-container p-1 rounded-full">
-          {(['Now', '+24h', '+48h', '+72h'] as const).map((horizon) => (
+          {/* Action Cluster */}
+          <div className="flex items-center gap-space-sm">
             <button
-              key={horizon}
-              onClick={() => setActiveHorizon(horizon)}
-              className={`py-unit-xs px-unit-sm rounded-full text-center transition-all ${
-                activeHorizon === horizon
-                  ? 'bg-primary text-on-primary shadow-sm font-bold'
-                  : 'text-on-surface-variant hover:bg-surface-container-high'
-              }`}
+              onClick={() => {
+                setGeoJsonExported(true);
+                setTimeout(() => setGeoJsonExported(false), 2400);
+              }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-surface-vanilla hover:bg-surface-vanilla-strong shadow-[2px_2px_0px_#18181B] border border-ink-black text-label-lg font-label-lg text-ink-black transition-transform hover:-translate-y-0.5 cursor-pointer"
+              type="button"
             >
-              <span className="block font-label-md text-label-md">{horizon}</span>
-              <span className="block text-[10px] opacity-75 font-mono">
-                {horizon === 'Now' ? 'Origin' : horizon === '+24h' ? 'Transit' : horizon === '+48h' ? 'Border' : 'Basin Trap'}
-              </span>
+              <span className="material-symbols-outlined text-[16px]">polyline</span>
+              <span>{geoJsonExported ? 'GeoJSON Exported!' : 'Export GeoJSON Polygon Envelopes'}</span>
+              <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
             </button>
-          ))}
+            <button
+              onClick={() => {
+                setMandateTriggered(true);
+                setTimeout(() => setMandateTriggered(false), 2600);
+              }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-coral-watermelon-vivid hover:opacity-90 shadow-[3px_3px_0px_#18181B] text-label-lg font-label-lg text-on-secondary transition-transform hover:-translate-y-0.5 cursor-pointer font-bold"
+              type="button"
+            >
+              <span className="material-symbols-outlined text-[18px]">warning</span>
+              <span>{mandateTriggered ? 'Inter-State Mandate Broadcast!' : 'Trigger Inter-State Emergency Mandate'}</span>
+            </button>
+          </div>
         </div>
-      </div>
 
-      {/* Hero Advective Card & Trajectory Canvas */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-unit-lg">
-        {/* Left 8 Cols: Trajectory Visualizer */}
-        <div className="lg:col-span-8 space-y-unit-lg">
-          <div className="relative rounded-xl overflow-hidden bg-surface-container-lowest border border-border-subtle shadow-sm p-unit-md">
-            {/* Visualizer Header */}
-            <div className="flex items-center justify-between pb-unit-sm mb-unit-xs border-b border-border-subtle">
-              <div className="space-y-0.5">
-                <span className="font-label-sm text-label-sm uppercase text-on-surface-variant font-bold">Simulated Dispersion Cone</span>
-                <h3 className="font-headline-sm text-headline-sm text-primary font-editorial font-bold">
-                  {forecast.description}
-                </h3>
+        {/* Main Headline with Starburst Aesthetic Sticker */}
+        <div className="relative mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 font-label-md text-label-md uppercase tracking-wider text-cobalt-deep font-bold mb-1">
+              <span>Atmospheric Advection Suite</span>
+              <span>✦</span>
+              <span>Transboundary Agro-Fire Trajectory</span>
+            </div>
+            <h1 className="font-headline-lg text-headline-lg text-ink-black tracking-tight">
+              72-Hour Plume Dispersion Trajectory Explorer
+            </h1>
+            <p className="font-body-md text-body-md text-ink-muted mt-1 max-w-2xl">
+              Tracking forward-propagating particulate mass from the Sangrur-Barnala combustion centroid via Karnal corridor into the stable thermal inversion lid of the Delhi National Capital Region.
+            </p>
+          </div>
+
+          {/* Starburst Sticker Badge */}
+          <div className="self-start md:self-auto rotate-[-4deg] hover:rotate-0 transition-transform">
+            <div className="relative bg-ink-black text-canvas-cream px-5 py-3 rounded-2xl shadow-[4px_4px_0px_#FF5376] flex items-center gap-3 border border-coral-watermelon-vivid">
+              <div className="w-7 h-7 rounded-full bg-coral-watermelon-vivid flex items-center justify-center text-on-secondary font-bold text-[12px]">
+                72h
               </div>
-              <div className="text-right">
-                <span className="font-label-sm text-label-sm uppercase text-on-surface-variant block">Delhi Basin AQI</span>
-                <span className="font-display-lg text-display-lg-mobile font-editorial font-bold text-secondary leading-none">
-                  {forecast.delhi_projected_aqi}
+              <div className="flex flex-col">
+                <span className="font-label-md text-label-md uppercase text-secondary-container font-bold">
+                  Dispersion Risk
+                </span>
+                <span className="font-title-sm text-title-sm text-canvas-cream font-bold tracking-tight leading-none">
+                  Inversion Trap Active
                 </span>
               </div>
             </div>
+          </div>
+        </div>
 
-            {/* Custom SVG Trajectory Cone */}
-            <div className="relative h-80 w-full bg-[#f6f3ee] rounded-lg overflow-hidden border border-border-subtle/50">
-              <svg className="w-full h-full" viewBox="0 0 600 320" preserveAspectRatio="xMidYMid slice">
+        {/* 500px Hero Gaussian Plume Dispersion Canvas & Audio Scrubber Controller */}
+        <div className="w-full bg-surface-vanilla rounded-2xl p-space-lg shadow-[4px_4px_0px_#18181B] border-2 border-ink-black mb-8 relative overflow-hidden">
+          {/* Top Canvas Telemetry Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-4 pb-4 mb-4 border-b border-ink-black/10">
+            <div className="flex items-center gap-3">
+              <span className="w-3 h-3 rounded-full bg-terracotta-deep animate-ping"></span>
+              <span className="font-title-md text-title-md text-ink-black font-bold">
+                Kinematic Trajectory Visualizer
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-surface-vanilla-strong font-label-md text-label-md text-ink-muted shadow-[1px_1px_0px_#18181B]">
+                ISRO INSAT-3DR 15m Refresh
+              </span>
+            </div>
+
+            {/* Mixing Layer & Boundary Metric Dual-Chips */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center rounded-full bg-canvas-cream px-3 py-1 shadow-[2px_2px_0px_#18181B] border border-ink-black text-label-md font-label-md">
+                <span className="text-ink-muted mr-1.5">Mixing Layer Depth:</span>
+                <span className="text-terracotta-deep font-bold">280m AGL</span>
+                <span className="ml-1 text-ink-muted italic">(Trapping Plumes)</span>
+              </div>
+              <div className="flex items-center rounded-full bg-canvas-cream px-3 py-1 shadow-[2px_2px_0px_#18181B] border border-ink-black text-label-md font-label-md">
+                <span className="text-ink-muted mr-1.5">Wind Speed &amp; Vector:</span>
+                <span className="text-cobalt-deep font-bold">2.4 m/s NW (310°)</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Interactive Plume Canvas Screen */}
+          <div className="relative w-full h-[460px] rounded-xl bg-canvas-cream overflow-hidden shadow-[2px_2px_0px_#18181B] border border-ink-black flex flex-col justify-between p-6 select-none">
+            {/* Grid Pattern */}
+            <div className="absolute inset-0 opacity-40 pointer-events-none">
+              <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
                 <defs>
-                  <linearGradient id="forecastPlumeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#b61b00" stopOpacity="0.85" />
-                    <stop offset="40%" stopColor="#db3417" stopOpacity="0.6" />
-                    <stop offset="80%" stopColor="#ffb074" stopOpacity="0.35" />
-                    <stop offset="100%" stopColor="#eec145" stopOpacity="0.15" />
-                  </linearGradient>
+                  <pattern height="40" id="grid-pattern" patternUnits="userSpaceOnUse" width="40">
+                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#52525B" strokeDasharray="2,3" strokeWidth="0.5" />
+                  </pattern>
+                </defs>
+                <rect fill="url(#grid-pattern)" height="100%" width="100%" />
+              </svg>
+            </div>
+
+            {/* Stylized Gaussian Plume Gradient Map Visualization */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden">
+              <svg className="w-full h-full" fill="none" viewBox="0 0 1000 460" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <radialGradient cx="180" cy="110" gradientUnits="userSpaceOnUse" id="sangrurOrigin" r="140">
+                    <stop offset="0%" stopColor="#EA580C" stopOpacity="0.9" />
+                    <stop offset="50%" stopColor="#FF5376" stopOpacity="0.65" />
+                    <stop offset="100%" stopColor="#FF5376" stopOpacity="0" />
+                  </radialGradient>
+                  <radialGradient cx="800" cy="330" gradientUnits="userSpaceOnUse" id="basinAccumulation" r="220">
+                    <stop offset="0%" stopColor="#7C2D12" stopOpacity="0.88" />
+                    <stop offset="40%" stopColor="#EA580C" stopOpacity="0.7" />
+                    <stop offset="80%" stopColor="#F97316" stopOpacity="0.3" />
+                    <stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
+                  </radialGradient>
+                  <filter height="140%" id="plumeSoft" width="140%" x="-20%" y="-20%">
+                    <feGaussianBlur result="blur" stdDeviation="12" />
+                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                  </filter>
                 </defs>
 
-                {/* Grid backdrop */}
-                <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                  <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e2dd" strokeWidth="0.5" />
-                </pattern>
-                <rect width="600" height="320" fill="url(#grid)" />
-
-                {/* State Labels */}
-                <text x="50" y="45" fill="#747878" fontSize="11" fontFamily="Newsreader" fontStyle="italic">PUNJAB SOURCE</text>
-                <text x="240" y="160" fill="#747878" fontSize="11" fontFamily="Newsreader" fontStyle="italic">HARYANA CORRIDOR</text>
-                <text x="440" y="270" fill="#1c1c19" fontSize="12" fontWeight="bold" fontFamily="DM Sans">DELHI NCR BASIN</text>
-
-                {/* Dynamic Plume Cone depending on activeHorizon */}
-                {activeHorizon === 'Now' && (
-                  <path
-                    d="M 100,60 Q 140,80 170,110 Q 150,130 90,90 Z"
-                    fill="url(#forecastPlumeGrad)"
-                    className="animate-pulse-slow"
-                  />
-                )}
-                {activeHorizon === '+24h' && (
-                  <path
-                    d="M 100,60 Q 200,120 280,180 Q 240,210 80,90 Z"
-                    fill="url(#forecastPlumeGrad)"
-                    className="animate-pulse-slow"
-                  />
-                )}
-                {activeHorizon === '+48h' && (
-                  <path
-                    d="M 100,60 Q 260,150 440,260 Q 380,300 80,90 Z"
-                    fill="url(#forecastPlumeGrad)"
-                    className="animate-pulse-slow"
-                  />
-                )}
-                {activeHorizon === '+72h' && (
-                  <path
-                    d="M 100,60 Q 280,160 520,280 Q 420,320 80,90 Z"
-                    fill="url(#forecastPlumeGrad)"
-                    className="animate-pulse-slow"
-                  />
-                )}
-
-                {/* Flow Streamline */}
+                {/* Dispersion Envelopes */}
                 <path
-                  d="M 100,60 C 220,130 350,210 470,270"
-                  fill="none"
-                  stroke="#b61b00"
-                  strokeWidth="3"
-                  strokeDasharray="8 4"
-                  className="animate-flow-plume"
+                  d="M 180 110 C 290 80, 480 140, 680 230 C 760 270, 890 270, 930 350 C 950 390, 890 440, 780 430 C 640 420, 520 330, 390 260 C 270 200, 160 160, 180 110 Z"
+                  fill="#F97316"
+                  fillOpacity="0.22"
+                  id="contour-outer"
+                  stroke="#EA580C"
+                  strokeDasharray="5,4"
+                  strokeWidth="1.5"
                 />
+                <path
+                  d="M 185 110 C 270 120, 420 180, 600 250 C 710 290, 830 290, 860 360 C 870 395, 810 415, 750 400 C 640 370, 500 290, 370 210 C 270 160, 200 130, 185 110 Z"
+                  fill="#FF5376"
+                  fillOpacity="0.45"
+                  id="contour-severe"
+                  stroke="#FF5376"
+                  strokeWidth="2"
+                />
+                <ellipse cx="785" cy="345" fill="url(#basinAccumulation)" filter="url(#plumeSoft)" id="contour-trap" rx="140" ry="85" />
+                <circle cx="180" cy="110" fill="url(#sangrurOrigin)" filter="url(#plumeSoft)" r="55" />
 
-                {/* Origin Hotspot */}
-                <circle cx="100" cy="60" r="8" fill="#b61b00" stroke="#ffffff" strokeWidth="2" />
-                <circle cx="100" cy="60" r="16" fill="#b61b00" fillOpacity="0.2" className="animate-ping" />
+                {/* Wind Streamlines */}
+                <g opacity="0.65" stroke="#18181B" strokeLinecap="round" strokeWidth="2">
+                  <path className="animate-pulse" d="M 190 100 Q 320 130 450 185 T 720 310" fill="none" strokeDasharray="6,6" />
+                  <path d="M 220 135 Q 360 180 520 230 T 780 340" fill="none" strokeDasharray="4,8" />
+                  <path d="M 160 120 Q 300 160 480 220 T 740 370" fill="none" strokeDasharray="8,6" />
+                  <polygon fill="#18181B" points="455,188 443,180 447,192" />
+                  <polygon fill="#18181B" points="725,312 713,305 717,317" />
+                </g>
 
-                {/* Receptor Target */}
-                <circle cx="470" cy="270" r="10" fill="#1c1c19" stroke="#b61b00" strokeWidth="2" />
+                {/* Geographic Landmark Anchor Pins */}
+                <g transform="translate(180, 110)">
+                  <circle fill="#EA580C" r="9" stroke="#18181B" strokeWidth="2" />
+                  <circle fill="#FAF6EE" r="3" />
+                  <text fill="#18181B" fontFamily="Plus Jakarta Sans" fontSize="12" fontWeight="700" x="14" y="4">
+                    Sangrur/Barnala (FRP 48.2GW)
+                  </text>
+                  <text fill="#52525B" fontFamily="Plus Jakarta Sans" fontSize="10" x="14" y="18">
+                    Origin Centroid: 148 Active VIIRS Pings
+                  </text>
+                </g>
+
+                <g transform="translate(470, 195)">
+                  <circle fill="#F59E0B" r="7" stroke="#18181B" strokeWidth="2" />
+                  <circle fill="#18181B" r="2.5" />
+                  <text fill="#18181B" fontFamily="Plus Jakarta Sans" fontSize="12" fontWeight="700" x="12" y="3">
+                    Panipat / Karnal Flank
+                  </text>
+                  <text fill="#52525B" fontFamily="Plus Jakarta Sans" fontSize="10" x="12" y="16">
+                    Transit Delta: T+22h • 348 µg/m³
+                  </text>
+                </g>
+
+                <g transform="translate(780, 335)">
+                  <circle fill="#7C2D12" r="11" stroke="#18181B" strokeWidth="2.5" />
+                  <circle fill="#FF5376" r="4" />
+                  <text fill="#7C2D12" fontFamily="Plus Jakarta Sans" fontSize="13" fontWeight="800" x="-120" y="-18">
+                    DELHI TERMINAL INVERSION TRAP
+                  </text>
+                  <text fill="#18181B" fontFamily="Plus Jakarta Sans" fontSize="11" fontWeight="600" x="-120" y="-4">
+                    Boundary Lid: 280m • Zero Lateral Venting
+                  </text>
+                </g>
+
+                {/* Dynamic Trajectory Particle Indicator */}
+                <circle
+                  className="shadow-sm"
+                  cx={180 + (currentHour / 72) * 600}
+                  cy={110 + (currentHour / 72) * 225}
+                  fill="#1D4ED8"
+                  id="particle-head"
+                  r="7"
+                  stroke="#FFFFFF"
+                  strokeWidth="2.5"
+                />
               </svg>
+            </div>
 
-              {/* Overlay Atmospheric Conditions */}
-              <div className="absolute bottom-3 left-3 right-3 bg-surface-container-lowest/90 backdrop-blur-md p-unit-xs rounded-lg border border-border-subtle flex flex-wrap items-center justify-between text-xs font-mono">
+            {/* Top Left Mini Floating Card: Dispersion Model Parameters */}
+            <div className="relative z-10 self-start bg-canvas-cream/90 backdrop-blur-md p-3 rounded-xl shadow-[2px_2px_0px_#18181B] border border-ink-black max-w-xs">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className="font-label-md text-label-md text-ink-black uppercase font-bold">
+                  Gaussian Dispersion Dynamics
+                </span>
+                <span className="w-2 h-2 rounded-full bg-coral-watermelon-vivid"></span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-body-sm font-body-sm">
                 <div>
-                  <span className="text-on-surface-variant">Wind Vector: </span>
-                  <span className="font-bold text-primary">{forecast.wind_direction_deg}° @ {forecast.avg_wind_speed_kmh} km/h</span>
+                  <span className="text-ink-muted block text-[10px] uppercase font-bold">Pasquill-Gifford Class</span>
+                  <span className="font-bold text-ink-black">Class F (Extremely Stable)</span>
                 </div>
                 <div>
-                  <span className="text-on-surface-variant">Mixing Height: </span>
-                  <span className="font-bold text-secondary">{forecast.boundary_layer_height_m}m</span>
+                  <span className="text-ink-muted block text-[10px] uppercase font-bold">Vertical Eddy Diff.</span>
+                  <span className="font-bold text-ink-black">Kz = 2.8 m²/s</span>
                 </div>
-                <div>
-                  <span className="text-on-surface-variant">Inversion Risk: </span>
-                  <span className="font-bold text-secondary uppercase">{forecast.inversion_risk}</span>
+              </div>
+            </div>
+
+            {/* Plume Legend */}
+            <div className="relative z-10 self-end bg-canvas-cream/95 p-3 rounded-xl shadow-[2px_2px_0px_#18181B] border border-ink-black flex items-center gap-4">
+              <div className="flex items-center gap-1.5">
+                <span className="w-3.5 h-3.5 rounded-full bg-aqi-unhealthy"></span>
+                <span className="font-label-md text-label-md text-ink-black font-semibold">&gt;300 µg/m³</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3.5 h-3.5 rounded-full bg-coral-watermelon-vivid"></span>
+                <span className="font-label-md text-label-md text-ink-black font-semibold">&gt;450 µg/m³ (Severe)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3.5 h-3.5 rounded-full bg-aqi-hazardous"></span>
+                <span className="font-label-md text-label-md text-ink-black font-semibold">Hazardous &gt;600 µg/m³</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Time-Lapse Audio Scrubber & Trajectory Playback Strip */}
+          <div className="mt-4 bg-canvas-cream rounded-xl p-4 shadow-[2px_2px_0px_#18181B] border border-ink-black flex flex-col md:flex-row items-center justify-between gap-4">
+            {/* Play / Pause & Skip Audio-Style Controls */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setCurrentHour((prev) => Math.max(0, prev - 10))}
+                className="w-9 h-9 rounded-full bg-surface-vanilla hover:bg-surface-vanilla-strong shadow-[1.5px_1.5px_0px_#18181B] border border-ink-black flex items-center justify-center text-ink-black transition-transform active:translate-y-0.5 cursor-pointer"
+                type="button"
+                aria-label="Step back 10 hours"
+              >
+                <span className="material-symbols-outlined text-[18px]">replay_10</span>
+              </button>
+              <button
+                onClick={() => setIsPlaying(!isPlaying)}
+                className="w-11 h-11 rounded-full bg-ink-black text-canvas-cream shadow-[2px_2px_0px_#1D4ED8] hover:bg-cobalt-deep flex items-center justify-center transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+                type="button"
+                aria-label="Play / Pause simulation"
+              >
+                <span className="material-symbols-outlined text-[24px]">
+                  {isPlaying ? 'pause' : 'play_arrow'}
+                </span>
+              </button>
+              <button
+                onClick={() => setCurrentHour((prev) => Math.min(72, prev + 10))}
+                className="w-9 h-9 rounded-full bg-surface-vanilla hover:bg-surface-vanilla-strong shadow-[1.5px_1.5px_0px_#18181B] border border-ink-black flex items-center justify-center text-ink-black transition-transform active:translate-y-0.5 cursor-pointer"
+                type="button"
+                aria-label="Step forward 10 hours"
+              >
+                <span className="material-symbols-outlined text-[18px]">forward_10</span>
+              </button>
+              <div className="flex flex-col ml-2">
+                <span className="font-headline-sm text-headline-sm text-ink-black leading-tight">Advection Stream</span>
+                <span className="font-label-md text-label-md text-ink-muted font-bold">Sangrur-Panipat-Delhi Vector</span>
+              </div>
+            </div>
+
+            {/* Scrubber Bar with Tactile Watermelon Handle */}
+            <div className="flex-1 w-full max-w-xl flex items-center gap-3">
+              <span className="font-telemetry-val text-body-sm font-bold text-ink-black min-w-[70px]">
+                Hour {currentHour} / 72
+              </span>
+              <div
+                className="relative w-full flex items-center py-2 cursor-pointer"
+                onClick={handleScrubberClick}
+              >
+                {/* Background Track */}
+                <div className="w-full h-2 rounded-full bg-surface-vanilla-strong overflow-hidden relative shadow-inner border border-ink-black/20">
+                  {/* Active Progress Track */}
+                  <div className="h-full bg-ink-black rounded-full" style={{ width: `${scrubberPercent}%` }}></div>
                 </div>
+                {/* Tactile Scrubber Thumb */}
+                <div
+                  className="absolute w-5 h-5 rounded-full bg-coral-watermelon-vivid shadow-[2px_2px_0px_#18181B] border border-ink-black -ml-2.5 transition-transform hover:scale-125"
+                  style={{ left: `${scrubberPercent}%` }}
+                >
+                  <div className="w-1.5 h-1.5 bg-canvas-cream rounded-full absolute inset-0 m-auto"></div>
+                </div>
+              </div>
+              <span className="font-label-md text-label-md text-ink-muted font-bold">T+72h Max</span>
+            </div>
+
+            {/* Metric Readout at Cursor */}
+            <div className="flex items-center gap-2 pl-2">
+              <div className="px-3 py-1.5 rounded-full bg-surface-vanilla text-right border border-ink-black/30 shadow-[1px_1px_0px_#18181B]">
+                <span className="block text-[10px] font-bold text-ink-muted uppercase">Terminal Peak Plume</span>
+                <span className="font-telemetry-val text-telemetry-val text-terracotta-deep font-black">512 µg/m³</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right 4 Cols: Municipal Ward Impact Ranking */}
-        <div className="lg:col-span-4 space-y-unit-lg">
-          <div className="bg-surface-container-lowest p-unit-md rounded-xl border border-border-subtle shadow-sm space-y-unit-md">
-            <div className="flex items-center justify-between pb-unit-2xs border-b border-border-subtle">
-              <h3 className="font-headline-sm text-headline-sm text-primary font-editorial font-bold">
-                Ward Vulnerability Matrix
-              </h3>
-              <span className="text-xs text-on-surface-variant font-mono">{activeHorizon} Horizon</span>
-            </div>
-
-            <div className="space-y-unit-sm">
-              {forecast.impacted_wards.map((ward, idx) => (
-                <div key={idx} className="p-unit-sm rounded-lg bg-surface-container-low border border-border-subtle/70 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-bold text-sm text-primary">{ward.ward}</h4>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-secondary-fixed text-on-secondary-fixed">
-                      {ward.risk_level}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-on-surface-variant">
-                    <span>Zone: {ward.delhi_zone}</span>
-                    <span className="font-mono font-bold text-secondary">{ward.expected_pm25} µg/m³</span>
-                  </div>
+        {/* Bottom Split Columns */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-space-lg">
+          {/* Left Column (5 Cols): 30-Day Transit Correlation Scatter */}
+          <div className="lg:col-span-5 bg-surface-vanilla rounded-2xl p-space-lg shadow-[4px_4px_0px_#18181B] border-2 border-ink-black flex flex-col justify-between">
+            <div>
+              <div className="flex items-start justify-between gap-2 mb-4">
+                <div>
+                  <span className="font-label-md text-label-md uppercase text-cobalt-deep font-bold tracking-wider">
+                    Atmospheric Regression
+                  </span>
+                  <h2 className="font-headline-sm text-headline-sm text-ink-black mt-0.5">
+                    30-Day Transit Correlation &amp; Lag Scatter
+                  </h2>
                 </div>
-              ))}
-            </div>
+                <span className="w-7 h-7 rounded-full bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black flex items-center justify-center text-ink-black">
+                  <span className="material-symbols-outlined text-[16px]">show_chart</span>
+                </span>
+              </div>
+              <p className="font-body-sm text-body-sm text-ink-muted mb-4">
+                Empirical lag correlation comparing upstream Punjab Fire Radiative Power (FRP in Megawatts) with downwind Delhi NCR particulate surge over a 36-hour transit window.
+              </p>
 
-            <div className="pt-2 text-xs text-on-surface-variant leading-relaxed border-t border-border-subtle/50">
-              <span className="font-bold text-primary">Precautionary Directive:</span> Low nocturnal boundary layer height will trap heavy aerosols over Trans-Yamuna and North-West sectors.
+              {/* Core Statistical Badges */}
+              <div className="grid grid-cols-3 gap-2 mb-5">
+                <div className="bg-canvas-cream p-3 rounded-xl shadow-[2px_2px_0px_#18181B] border border-ink-black">
+                  <span className="block font-label-md text-label-md text-ink-muted font-bold">Pearson r</span>
+                  <span className="font-telemetry-val text-telemetry-val text-cobalt-deep">0.884</span>
+                  <span className="block text-[10px] text-forest-jade font-bold">Strong Correl.</span>
+                </div>
+                <div className="bg-canvas-cream p-3 rounded-xl shadow-[2px_2px_0px_#18181B] border border-ink-black">
+                  <span className="block font-label-md text-label-md text-ink-muted font-bold">Transit Delay</span>
+                  <span className="font-telemetry-val text-telemetry-val text-ink-black">36.4h</span>
+                  <span className="block text-[10px] text-ink-muted font-bold">Mean Wind Speed</span>
+                </div>
+                <div className="bg-canvas-cream p-3 rounded-xl shadow-[2px_2px_0px_#18181B] border border-ink-black">
+                  <span className="block font-label-md text-label-md text-ink-muted font-bold">Total FRP</span>
+                  <span className="font-telemetry-val text-telemetry-val text-terracotta-deep">48.2k</span>
+                  <span className="block text-[10px] text-ink-muted font-bold">Megawatts Flux</span>
+                </div>
+              </div>
+
+              {/* Scatter Plot Visualization */}
+              <div className="w-full h-64 bg-canvas-cream rounded-xl p-3 shadow-[2px_2px_0px_#18181B] border border-ink-black relative flex flex-col justify-between">
+                <div className="flex items-center justify-between text-[11px] font-bold text-ink-muted px-1">
+                  <span>Delhi PM2.5 Peak (µg/m³) vs Lagged Upstream FRP</span>
+                  <span className="text-cobalt-deep font-bold">R² = 0.781</span>
+                </div>
+                <svg className="w-full h-44 overflow-visible" viewBox="0 0 360 160">
+                  <line stroke="#EFE9DA" strokeWidth="1" x1="40" x2="340" y1="20" y2="20" />
+                  <line stroke="#EFE9DA" strokeWidth="1" x1="40" x2="340" y1="55" y2="55" />
+                  <line stroke="#EFE9DA" strokeWidth="1" x1="40" x2="340" y1="90" y2="90" />
+                  <line stroke="#EFE9DA" strokeWidth="1" x1="40" x2="340" y1="125" y2="125" />
+                  <line stroke="#18181B" strokeWidth="1.5" x1="40" x2="340" y1="140" y2="140" />
+                  <line stroke="#18181B" strokeWidth="1.5" x1="40" x2="40" y1="10" y2="140" />
+
+                  {/* Linear Regression Line */}
+                  <line stroke="#1D4ED8" strokeDasharray="4 2" strokeWidth="2" x1="50" x2="330" y1="130" y2="25" />
+
+                  {/* Scatter Data Points */}
+                  {[
+                    { cx: 60, cy: 125, r: 4 },
+                    { cx: 75, cy: 118, r: 4.5 },
+                    { cx: 90, cy: 110, r: 3.5 },
+                    { cx: 110, cy: 105, r: 4 },
+                    { cx: 130, cy: 98, r: 5 },
+                    { cx: 155, cy: 88, r: 4 },
+                    { cx: 170, cy: 82, r: 5.5 },
+                    { cx: 195, cy: 75, r: 4.5 },
+                    { cx: 215, cy: 68, r: 5 },
+                    { cx: 235, cy: 60, r: 6 },
+                    { cx: 260, cy: 48, r: 5 },
+                    { cx: 285, cy: 40, r: 5.5 },
+                    { cx: 310, cy: 30, r: 6 },
+                  ].map((pt, i) => (
+                    <circle
+                      key={i}
+                      cx={pt.cx}
+                      cy={pt.cy}
+                      r={pt.r}
+                      fill="#FF5376"
+                      stroke="#18181B"
+                      strokeWidth="1.5"
+                    />
+                  ))}
+                </svg>
+                <div className="flex justify-between text-[10px] text-ink-muted font-bold px-4">
+                  <span>0 GW FRP</span>
+                  <span>20 GW FRP</span>
+                  <span>40 GW FRP</span>
+                  <span>60 GW FRP</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column (7 Cols): Downwind Municipal Ward Vulnerability Matrix */}
+          <div className="lg:col-span-7 bg-surface-vanilla rounded-2xl p-space-lg shadow-[4px_4px_0px_#18181B] border-2 border-ink-black flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between pb-3 mb-4 border-b border-ink-black/10">
+                <div>
+                  <span className="font-label-md text-label-md uppercase text-terracotta-deep font-bold tracking-wider">
+                    Targeted Receptor Vulnerability
+                  </span>
+                  <h2 className="font-headline-sm text-headline-sm text-ink-black mt-0.5">
+                    Downwind Municipal Ward Vulnerability Matrix
+                  </h2>
+                </div>
+                <span className="px-3 py-1 rounded-full bg-surface-vanilla-strong font-label-md text-label-md text-ink-black font-bold shadow-[1px_1px_0px_#18181B]">
+                  GRAP-IV Protocol
+                </span>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                {[
+                  {
+                    ward: 'Anand Vihar (Grid #04)',
+                    severity: 'Severe Exposure (98%)',
+                    arrival: 'T+28h',
+                    actions: ['Smog Cannons', 'Heavy Vehicle Ban'],
+                    color: 'bg-coral-watermelon-vivid',
+                    barWidth: '98%',
+                  },
+                  {
+                    ward: 'Jahangirpuri (Grid #01)',
+                    severity: 'High Exposure (86%)',
+                    arrival: 'T+22h',
+                    actions: ['Mechanized Sweeping', 'Industrial Stack Curfew'],
+                    color: 'bg-terracotta-deep',
+                    barWidth: '86%',
+                  },
+                  {
+                    ward: 'Wazirpur (Grid #02)',
+                    severity: 'High Exposure (79%)',
+                    arrival: 'T+24h',
+                    actions: ['Hotspot Patrolling', 'CEMS Tamper Audit'],
+                    color: 'bg-terracotta-deep',
+                    barWidth: '79%',
+                  },
+                  {
+                    ward: 'Okhla Phase II (Grid #08)',
+                    severity: 'Moderate Exposure (64%)',
+                    arrival: 'T+34h',
+                    actions: ['Construction Dust Stoppage'],
+                    color: 'bg-cobalt-deep',
+                    barWidth: '64%',
+                  },
+                ].map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3.5 rounded-xl bg-canvas-cream border border-ink-black/20 shadow-[2px_2px_0px_#18181B] flex flex-col gap-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-title-sm text-title-sm text-ink-black font-bold">{item.ward}</span>
+                      <span className="text-label-md font-bold text-ink-muted">Inflow Arrival: {item.arrival}</span>
+                    </div>
+                    {/* Severity bar */}
+                    <div className="w-full bg-surface-vanilla h-2 rounded-full overflow-hidden border border-ink-black/20">
+                      <div className={`h-full ${item.color} rounded-full`} style={{ width: item.barWidth }}></div>
+                    </div>
+                    <div className="flex items-center justify-between text-body-sm">
+                      <span className="text-ink-muted font-semibold">{item.severity}</span>
+                      <div className="flex items-center gap-1.5">
+                        {item.actions.map((act, i) => (
+                          <span
+                            key={i}
+                            className="px-2 py-0.5 rounded-full bg-surface-vanilla text-ink-black text-[11px] font-bold border border-ink-black/30"
+                          >
+                            {act}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
