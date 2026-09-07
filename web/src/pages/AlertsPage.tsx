@@ -829,7 +829,9 @@ export const AlertsPage: React.FC = () => {
                   className="w-full py-2.5 rounded-full bg-surface-container-lowest border-2 border-ink-black text-ink-black font-label-lg text-label-lg shadow-[2px_2px_0px_#18181B] hover:bg-surface-vanilla transition-all flex items-center justify-center gap-2 cursor-pointer font-bold"
                   type="button"
                 >
-                  <span className="material-symbols-outlined text-[16px]">edit_note</span>
+                  <span className={`material-symbols-outlined text-[16px] ${noticeGenerated ? 'animate-spin' : ''}`}>
+                    {noticeGenerated ? 'refresh' : 'edit_note'}
+                  </span>
                   <span>{noticeGenerated ? 'Notice Regenerated!' : 'Re-Generate From Telemetry'}</span>
                 </button>
 

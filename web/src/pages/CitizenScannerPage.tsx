@@ -245,6 +245,11 @@ export const CitizenScannerPage: React.FC = () => {
                 {/* Simulated Haze Particle Grain Effect */}
                 <div className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#18181b_1px,transparent_1px)] [background-size:12px_12px]"></div>
 
+                {/* Laser Scanner Sweep Beam during Dark Channel Decomposition */}
+                {isAnalyzing && (
+                  <div className="absolute left-0 right-0 h-1 bg-gradient-to-r from-transparent via-coral-watermelon-vivid to-transparent shadow-[0_0_12px_#FF5376] pointer-events-none z-20 animate-scanner-sweep"></div>
+                )}
+
                 <div className="relative z-10 flex items-center justify-between">
                   <span className="px-2.5 py-1 rounded-full bg-ink-black/80 text-canvas-cream font-mono text-xs font-bold backdrop-blur-md">
                     224 × 224 px Tensor Input

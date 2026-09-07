@@ -76,8 +76,20 @@ export const DashboardPage: React.FC = () => {
     try {
       const forecast = await fetchForecastPlume();
       setForecastData(forecast);
-      setTrajectoryHours(Math.max(...forecast.features.map((item) => item.properties.horizon_hours), 0));
-    } finally {
+      const targetHours = 36;
+      let current = 0;
+      setTrajectoryHours(0);
+      const stepInterval = setInterval(() => {
+        current += 6;
+        if (current >= targetHours) {
+          clearInterval(stepInterval);
+          setTrajectoryHours(targetHours);
+          setIsSimulating(false);
+        } else {
+          setTrajectoryHours(current);
+        }
+      }, 120);
+    } catch {
       setIsSimulating(false);
     }
   };
@@ -304,6 +316,7 @@ export const DashboardPage: React.FC = () => {
                         strokeWidth="48"
                       />
                       <path
+                        className="animate-dash-flow"
                         d="M 130,85 C 220,130 330,170 420,240 S 580,310 680,360"
                         fill="none"
                         opacity="0.8"
@@ -312,6 +325,7 @@ export const DashboardPage: React.FC = () => {
                         strokeWidth="3"
                       />
                       <path
+                        className="animate-dash-flow-fast"
                         d="M 90,110 C 200,160 310,210 400,270 S 550,330 650,380"
                         fill="none"
                         opacity="0.7"
@@ -320,6 +334,7 @@ export const DashboardPage: React.FC = () => {
                         strokeWidth="2"
                       />
                       <path
+                        className="animate-dash-flow"
                         d="M 150,60 C 270,110 390,180 480,250 S 610,320 710,360"
                         fill="none"
                         opacity="0.6"
@@ -660,7 +675,7 @@ export const DashboardPage: React.FC = () => {
                   <span className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-forest-jade text-[18px]">verified</span>
                     {squadDispatched ? (
-                      <span className="text-forest-jade font-bold">Squad Dispatch Review Queued</span>
+                      <span className="text-forest-jade font-bold animate-pulse">Squad Unit #09 Dispatched</span>
                     ) : (
                       'Queue Flying Squad Review for Dirba'
                     )}
@@ -676,7 +691,7 @@ export const DashboardPage: React.FC = () => {
                   <span className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-[18px]">warning</span>
                     {showCauseIssued ? (
-                      <span className="text-on-secondary font-bold">Section 31A Draft Created</span>
+                      <span className="text-on-secondary font-bold animate-pulse">Notice 31A Sealed &amp; Transmitted</span>
                     ) : (
                       'Create Section 31A Show-Cause Draft'
                     )}

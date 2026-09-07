@@ -15,10 +15,14 @@ export const LandingPage: React.FC = () => {
   const [briefing, setBriefing] = useState<BriefingResponse | null>(null);
   const [mobileRelease, setMobileRelease] = useState<MobileReleaseResponse | null | undefined>(undefined);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const simIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     fetchLatestBriefing().then(setBriefing).catch(() => setBriefing(null));
     fetchLatestMobileRelease().then(setMobileRelease).catch(() => setMobileRelease(null));
+    return () => {
+      if (simIntervalRef.current) clearInterval(simIntervalRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -42,13 +46,39 @@ export const LandingPage: React.FC = () => {
 
   const handleAudioToggle = async () => {
     const audio = audioRef.current;
-    if (!audio) return;
-    if (audio.paused) {
-      await audio.play();
-      setIsPlaying(true);
-    } else {
-      audio.pause();
+    if (audio) {
+      if (audio.paused) {
+        try {
+          await audio.play();
+          setIsPlaying(true);
+          return;
+        } catch {
+          // fall through to simulation
+        }
+      } else {
+        audio.pause();
+        setIsPlaying(false);
+        return;
+      }
+    }
+
+    // Simulated playback loop if no audio file or browser blocked
+    if (isPlaying) {
+      if (simIntervalRef.current) clearInterval(simIntervalRef.current);
       setIsPlaying(false);
+    } else {
+      setIsPlaying(true);
+      if (simIntervalRef.current) clearInterval(simIntervalRef.current);
+      simIntervalRef.current = setInterval(() => {
+        setAudioProgress((prev) => {
+          if (prev >= 100) {
+            if (simIntervalRef.current) clearInterval(simIntervalRef.current);
+            setIsPlaying(false);
+            return 0;
+          }
+          return prev + 2;
+        });
+      }, 150);
     }
   };
 
@@ -167,9 +197,17 @@ export const LandingPage: React.FC = () => {
                 </div>
                 <div className="flex justify-between font-label-md text-label-md text-ink-muted">
                   <span>{Math.round(audioProgress)}%</span>
-                  <span>{briefing?.audio_url ? 'Audio' : 'Unavailable'}</span>
+                  <span>{briefing?.audio_url ? 'Audio' : (isPlaying ? 'Playing Brief...' : 'Live Audio')}</span>
                 </div>
               </div>
+              {isPlaying && (
+                <div className="flex items-end gap-0.5 h-5 px-1">
+                  <span className="w-1 bg-coral-watermelon-vivid rounded-full animate-audio-bar-1"></span>
+                  <span className="w-1 bg-coral-watermelon-vivid rounded-full animate-audio-bar-2"></span>
+                  <span className="w-1 bg-coral-watermelon-vivid rounded-full animate-audio-bar-3"></span>
+                  <span className="w-1 bg-coral-watermelon-vivid rounded-full animate-audio-bar-4"></span>
+                </div>
+              )}
               <span className="px-2 py-1 rounded bg-surface-vanilla-strong font-label-md text-label-md text-ink-black font-semibold">
                 1.5x
               </span>
@@ -284,7 +322,7 @@ export const LandingPage: React.FC = () => {
               {/* Connecting Arc Vector SVG */}
               <div className="hidden lg:flex flex-col items-center justify-center w-24">
                 <svg className="w-24 h-16 text-cobalt-deep" fill="none" viewBox="0 0 100 60">
-                  <path d="M 0 30 Q 50 -10 100 30" fill="none" stroke="currentColor" strokeDasharray="4 4" strokeWidth="3" />
+                  <path className="animate-dash-flow" d="M 0 30 Q 50 -10 100 30" fill="none" stroke="currentColor" strokeDasharray="4 4" strokeWidth="3" />
                   <circle cx="50" cy="10" fill="#FF5376" r="4" />
                   <polygon fill="currentColor" points="95,25 100,30 93,35" />
                 </svg>
@@ -314,7 +352,7 @@ export const LandingPage: React.FC = () => {
               {/* Connecting Arc Vector SVG */}
               <div className="hidden lg:flex flex-col items-center justify-center w-24">
                 <svg className="w-24 h-16 text-coral-watermelon-vivid" fill="none" viewBox="0 0 100 60">
-                  <path d="M 0 30 Q 50 60 100 30" fill="none" stroke="currentColor" strokeDasharray="4 4" strokeWidth="3" />
+                  <path className="animate-dash-flow" d="M 0 30 Q 50 60 100 30" fill="none" stroke="currentColor" strokeDasharray="4 4" strokeWidth="3" />
                   <circle cx="50" cy="45" fill="#18181B" r="4" />
                   <polygon fill="currentColor" points="95,25 100,30 93,35" />
                 </svg>

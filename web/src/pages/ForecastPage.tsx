@@ -258,6 +258,7 @@ export const ForecastPage: React.FC = () => {
 
                 {/* Dispersion Envelopes */}
                 <path
+                  className="animate-dash-flow"
                   d="M 180 110 C 290 80, 480 140, 680 230 C 760 270, 890 270, 930 350 C 950 390, 890 440, 780 430 C 640 420, 520 330, 390 260 C 270 200, 160 160, 180 110 Z"
                   fill="#F97316"
                   fillOpacity="0.22"
@@ -279,9 +280,9 @@ export const ForecastPage: React.FC = () => {
 
                 {/* Wind Streamlines */}
                 <g opacity="0.65" stroke="#18181B" strokeLinecap="round" strokeWidth="2">
-                  <path className="animate-pulse" d="M 190 100 Q 320 130 450 185 T 720 310" fill="none" strokeDasharray="6,6" />
-                  <path d="M 220 135 Q 360 180 520 230 T 780 340" fill="none" strokeDasharray="4,8" />
-                  <path d="M 160 120 Q 300 160 480 220 T 740 370" fill="none" strokeDasharray="8,6" />
+                  <path className="animate-dash-flow" d="M 190 100 Q 320 130 450 185 T 720 310" fill="none" strokeDasharray="6,6" />
+                  <path className="animate-dash-flow-fast" d="M 220 135 Q 360 180 520 230 T 780 340" fill="none" strokeDasharray="4,8" />
+                  <path className="animate-dash-flow" d="M 160 120 Q 300 160 480 220 T 740 370" fill="none" strokeDasharray="8,6" />
                   <polygon fill="#18181B" points="455,188 443,180 447,192" />
                   <polygon fill="#18181B" points="725,312 713,305 717,317" />
                 </g>
@@ -321,16 +322,25 @@ export const ForecastPage: React.FC = () => {
                 </g>
 
                 {/* Dynamic Trajectory Particle Indicator */}
-                <circle
-                  className="shadow-sm"
-                  cx={180 + (currentHour / 72) * 600}
-                  cy={110 + (currentHour / 72) * 225}
-                  fill="#1D4ED8"
-                  id="particle-head"
-                  r="7"
-                  stroke="#FFFFFF"
-                  strokeWidth="2.5"
-                />
+                <g
+                  className="transition-all duration-300 ease-out"
+                  transform={`translate(${180 + (currentHour / 72) * 600}, ${110 + (currentHour / 72) * 225})`}
+                >
+                  <circle
+                    className="animate-ping"
+                    r="12"
+                    fill="#1D4ED8"
+                    opacity="0.35"
+                  />
+                  <circle
+                    className="shadow-sm"
+                    fill="#1D4ED8"
+                    id="particle-head"
+                    r="7"
+                    stroke="#FFFFFF"
+                    strokeWidth="2.5"
+                  />
+                </g>
               </svg>
             </div>
 

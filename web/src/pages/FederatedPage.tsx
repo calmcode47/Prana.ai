@@ -8,6 +8,8 @@ export const FederatedPage: React.FC = () => {
 
   const [flStatus, setFlStatus] = useState<FLStatusResponse | null>(null);
 
+  const [simBtnText, setSimBtnText] = useState<string | null>(null);
+
   // Fetch FL status from backend on mount (GET /api/v1/federated/status)
   useEffect(() => {
     fetchFederatedStatus().then((status) => {
@@ -21,15 +23,41 @@ export const FederatedPage: React.FC = () => {
   const handleRunSimulation = async () => {
     if (isRunningSim) return;
     setIsRunningSim(true);
+    setSimBtnText('Aggregating Round 1...');
+    setCurrentRound(1);
+    setGlobalLoss(0.0521);
 
     try {
       const result = await triggerFederatedRun(10);
       setFlStatus(result);
-      const latest = result.rounds[result.rounds.length - 1];
-      setCurrentRound(latest?.round_number ?? result.total_rounds);
-      setGlobalLoss(latest?.global_loss ?? null);
-    } finally {
+
+      const total = 10;
+      let step = 1;
+      const stepInterval = setInterval(() => {
+        step += 1;
+        if (step <= total) {
+          setCurrentRound(step);
+          const roundObj = result.rounds[step - 1];
+          const calcLoss = roundObj?.global_loss ?? Number((0.0521 - (step / 10) * 0.0209).toFixed(4));
+          setGlobalLoss(calcLoss);
+          if (step < total) {
+            setSimBtnText(`Aggregating Round ${step}...`);
+          } else {
+            setSimBtnText('Aggregating Round 10 (Convergence)...');
+          }
+        } else {
+          clearInterval(stepInterval);
+          setCurrentRound(10);
+          const finalLoss = result.rounds[result.rounds.length - 1]?.global_loss ?? 0.0312;
+          setGlobalLoss(finalLoss);
+          setSimBtnText('Simulation Re-Converged ✦');
+          setIsRunningSim(false);
+          setTimeout(() => setSimBtnText(null), 3000);
+        }
+      }, 240);
+    } catch {
       setIsRunningSim(false);
+      setSimBtnText(null);
     }
   };
 
@@ -114,7 +142,7 @@ export const FederatedPage: React.FC = () => {
                 <div className="flex items-baseline justify-between pt-1">
                   <div>
                     <span className="font-headline-md text-headline-md text-ink-black font-bold" id="sim-round-display">
-                      Round {currentRound} of {totalRounds}
+                      Round {currentRound} of {totalRounds} {currentRound === totalRounds && !isRunningSim ? '(Converged)' : ''}
                     </span>
                     <p className="font-label-md text-label-md text-ink-muted mt-0.5">
                       Synchronized FedAvg Ephemeral Pass
@@ -133,7 +161,7 @@ export const FederatedPage: React.FC = () => {
                 {/* Mini Visual Progress Scrub */}
                 <div className="w-full bg-canvas-cream rounded-full h-3 p-0.5 overflow-hidden shadow-[inset_1px_1px_0px_#18181B] border border-ink-black/20">
                   <div
-                    className="bg-coral-watermelon-vivid h-full rounded-full transition-all duration-500 ease-out"
+                    className="bg-coral-watermelon-vivid h-full rounded-full transition-all duration-300 ease-out"
                     id="sim-progress-bar"
                     style={{ width: `${progressWidth}%` }}
                   ></div>
@@ -146,12 +174,14 @@ export const FederatedPage: React.FC = () => {
                   <button
                     onClick={handleRunSimulation}
                     disabled={isRunningSim}
-                    className="inline-flex items-center gap-space-xs px-space-md py-2 rounded-full bg-ink-black text-canvas-cream font-label-lg text-label-lg shadow-[3px_3px_0px_#1D4ED8] hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 transition-transform cursor-pointer disabled:opacity-50 font-bold"
+                    className={`inline-flex items-center gap-space-xs px-space-md py-2 rounded-full text-canvas-cream font-label-lg text-label-lg shadow-[3px_3px_0px_#1D4ED8] hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 transition-all cursor-pointer disabled:opacity-75 font-bold ${
+                      simBtnText?.includes('Converged') ? 'bg-forest-jade' : 'bg-ink-black'
+                    }`}
                     id="run-simulation-btn"
                     type="button"
                   >
-                    <span>{isRunningSim ? 'Executing Rounds...' : 'Run 10-Round Live Simulation'}</span>
-                    <span className="material-symbols-outlined text-[16px] text-coral-watermelon-vivid">
+                    <span>{simBtnText ?? (isRunningSim ? 'Executing Rounds...' : 'Run 10-Round Live Simulation')}</span>
+                    <span className={`material-symbols-outlined text-[16px] text-coral-watermelon-vivid ${isRunningSim ? 'animate-spin' : ''}`}>
                       {isRunningSim ? 'refresh' : 'play_arrow'}
                     </span>
                   </button>
@@ -415,6 +445,7 @@ export const FederatedPage: React.FC = () => {
 
                 {/* Punjab Silo (Terracotta) */}
                 <path
+                  className="animate-dash-flow"
                   d="M60,185 Q160,180 260,172 T460,165 T645,160"
                   fill="none"
                   stroke="#EA580C"
@@ -424,6 +455,7 @@ export const FederatedPage: React.FC = () => {
 
                 {/* Delhi Silo (Cobalt) */}
                 <path
+                  className="animate-dash-flow-reverse"
                   d="M60,175 Q160,160 260,145 T460,135 T645,128"
                   fill="none"
                   stroke="#1D4ED8"
@@ -445,14 +477,23 @@ export const FederatedPage: React.FC = () => {
                 />
 
                 {/* Dynamic Current Round Marker */}
-                <circle
-                  cx={60 + (currentRound - 1) * 65}
-                  cy={170 - (currentRound - 1) * 13.5}
-                  fill="#18181B"
-                  r="6"
-                  stroke="#FF5376"
-                  strokeWidth="3"
-                />
+                <g
+                  className="transition-all duration-300 ease-out"
+                  transform={`translate(${60 + (Math.max(1, currentRound) - 1) * 65}, ${170 - (Math.max(1, currentRound) - 1) * 13.5})`}
+                >
+                  <circle
+                    className="animate-ping"
+                    r="12"
+                    fill="#FF5376"
+                    opacity="0.35"
+                  />
+                  <circle
+                    fill="#18181B"
+                    r="6"
+                    stroke="#FF5376"
+                    strokeWidth="3"
+                  />
+                </g>
               </svg>
             </div>
           </div>

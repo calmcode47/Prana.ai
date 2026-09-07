@@ -15,6 +15,15 @@ export const AirCorridorMapPage: React.FC = () => {
     cpcbBams: true,
     viirsFRP: true,
   });
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    const interval = setInterval(() => {
+      setTrajectoryHours((prev) => (prev >= 72 ? 0 : Number((prev + 1).toFixed(1))));
+    }, 100);
+    return () => clearInterval(interval);
+  }, [isPlaying]);
 
   const toggleLayer = (layer: keyof typeof layers) => {
     setLayers((prev) => ({ ...prev, [layer]: !prev[layer] }));
@@ -207,6 +216,7 @@ export const AirCorridorMapPage: React.FC = () => {
                     strokeWidth="56"
                   />
                   <path
+                    className="animate-dash-flow"
                     d="M 160,100 C 280,150 420,200 540,290 S 740,370 860,420"
                     fill="none"
                     opacity="0.85"
@@ -215,6 +225,7 @@ export const AirCorridorMapPage: React.FC = () => {
                     strokeWidth="3.5"
                   />
                   <path
+                    className="animate-dash-flow-fast"
                     d="M 110,130 C 240,180 390,240 510,320 S 710,390 820,440"
                     fill="none"
                     opacity="0.75"
@@ -236,15 +247,24 @@ export const AirCorridorMapPage: React.FC = () => {
               )}
 
               {/* Dynamic Animated Particle Head */}
-              <circle
-                cx={150 + (trajectoryHours / 72) * 690}
-                cy={110 + (trajectoryHours / 72) * 300}
-                fill="#1D4ED8"
-                r="8"
-                stroke="#FFFFFF"
-                strokeWidth="3"
-                className="shadow-md"
-              />
+              <g
+                className="transition-all duration-100 ease-out"
+                transform={`translate(${150 + (trajectoryHours / 72) * 690}, ${110 + (trajectoryHours / 72) * 300})`}
+              >
+                <circle
+                  className="animate-ping"
+                  r="14"
+                  fill="#1D4ED8"
+                  opacity="0.35"
+                />
+                <circle
+                  className="shadow-md"
+                  fill="#1D4ED8"
+                  r="8"
+                  stroke="#FFFFFF"
+                  strokeWidth="3"
+                />
+              </g>
             </svg>
 
             {/* Nodes on Map */}
@@ -307,10 +327,22 @@ export const AirCorridorMapPage: React.FC = () => {
             {/* Bottom Scrubber Strip */}
             <div className="relative z-10 w-full bg-surface-vanilla-strong rounded-xl p-space-sm shadow-[2px_2px_0px_#18181B] border border-ink-black flex flex-col gap-2">
               <div className="flex items-center justify-between text-body-sm font-semibold">
-                <span className="text-ink-black font-label-md text-label-md uppercase tracking-wider flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[16px] text-cobalt-deep">timeline</span>
-                  Forward Trajectory Transit Scrubber
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setIsPlaying(!isPlaying)}
+                    className="w-7 h-7 rounded-full bg-ink-black text-canvas-cream flex items-center justify-center shadow-[1px_1px_0px_#18181B] hover:bg-cobalt-deep cursor-pointer transition-transform"
+                    type="button"
+                    aria-label="Toggle trajectory playback"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">
+                      {isPlaying ? 'pause' : 'play_arrow'}
+                    </span>
+                  </button>
+                  <span className="text-ink-black font-label-md text-label-md uppercase tracking-wider flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[16px] text-cobalt-deep">timeline</span>
+                    Forward Trajectory Transit Scrubber
+                  </span>
+                </div>
                 <span className="font-label-lg text-label-lg text-cobalt-deep font-bold">
                   T + {trajectoryHours.toFixed(1)} Hours Forward
                 </span>
