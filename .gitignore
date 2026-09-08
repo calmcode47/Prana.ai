@@ -24,3 +24,9 @@ Thumbs.db
 
 # Local database runtime and verification artifacts
 .local/
+
+# Local assets
+frontend-essentials/
+
+# Node
+node_modules/
