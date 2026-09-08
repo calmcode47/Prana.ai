@@ -129,9 +129,10 @@ async def test_firms_error_does_not_log_key(monkeypatch, caplog):
 @pytest.mark.asyncio
 async def test_openaq_without_measurements_does_not_invent_120():
     def respond(request):
-        if "/parameters/" in request.url.path and request.url.path.endswith("/latest"):
+        if request.url.path.endswith("/locations/1/latest"):
             return httpx.Response(200, json={"results": []})
         return httpx.Response(200, json={"results": [{"id": 1, "coordinates": {"latitude": 28.6, "longitude": 77.2},
+            "datetimeLast": {"utc": datetime.now(timezone.utc).isoformat()},
             "sensors": [{"id": 2, "parameter": {"name": "pm25"}}]}]})
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         assert await fetch_openaq_stations(client=client) == []

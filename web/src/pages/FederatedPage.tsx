@@ -1,5 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { triggerFederatedRun, fetchFederatedStatus, FLStatusResponse } from '../api/client';
+import {
+  triggerFederatedRun,
+  fetchFederatedStatus,
+  FLStatusResponse,
+  formatFederatedDataset,
+  formatFederatedImplementation,
+  formatFederatedMetric,
+} from '../api/client';
 
 export const FederatedPage: React.FC = () => {
   const [currentRound, setCurrentRound] = useState<number>(0);
@@ -23,34 +30,39 @@ export const FederatedPage: React.FC = () => {
   const handleRunSimulation = async () => {
     if (isRunningSim) return;
     setIsRunningSim(true);
-    setSimBtnText('Aggregating Round 1...');
-    setCurrentRound(1);
-    setGlobalLoss(0.0521);
+    setSimBtnText('Running backend training...');
+    setCurrentRound(0);
+    setGlobalLoss(null);
 
     try {
       const result = await triggerFederatedRun(10);
       setFlStatus(result);
 
-      const total = 10;
-      let step = 1;
+      const total = result.rounds.length;
+      if (total === 0) {
+        setSimBtnText('No training rounds returned');
+        setIsRunningSim(false);
+        setTimeout(() => setSimBtnText(null), 3000);
+        return;
+      }
+      let step = 0;
       const stepInterval = setInterval(() => {
         step += 1;
         if (step <= total) {
-          setCurrentRound(step);
           const roundObj = result.rounds[step - 1];
-          const calcLoss = roundObj?.global_loss ?? Number((0.0521 - (step / 10) * 0.0209).toFixed(4));
-          setGlobalLoss(calcLoss);
+          setCurrentRound(roundObj.round_number);
+          setGlobalLoss(roundObj.global_loss ?? null);
           if (step < total) {
-            setSimBtnText(`Aggregating Round ${step}...`);
+            setSimBtnText(`Displaying Backend Round ${roundObj.round_number}...`);
           } else {
-            setSimBtnText('Aggregating Round 10 (Convergence)...');
+            setSimBtnText(`Displaying Backend Round ${roundObj.round_number}...`);
           }
         } else {
           clearInterval(stepInterval);
-          setCurrentRound(10);
-          const finalLoss = result.rounds[result.rounds.length - 1]?.global_loss ?? 0.0312;
-          setGlobalLoss(finalLoss);
-          setSimBtnText('Simulation Re-Converged ✦');
+          const latest = result.rounds[result.rounds.length - 1];
+          setCurrentRound(latest.round_number);
+          setGlobalLoss(latest.global_loss ?? null);
+          setSimBtnText('Backend Run Complete ✦');
           setIsRunningSim(false);
           setTimeout(() => setSimBtnText(null), 3000);
         }
@@ -61,10 +73,24 @@ export const FederatedPage: React.FC = () => {
     }
   };
 
-  const totalRounds = flStatus?.total_rounds || 10;
-  const progressWidth = Math.min(100, (currentRound / totalRounds) * 100);
+  const totalRounds = flStatus?.total_rounds ?? 0;
+  const progressWidth = totalRounds > 0 ? Math.min(100, (currentRound / totalRounds) * 100) : 0;
   const dp = flStatus?.privacy?.dp_sgd;
   const secureAggregation = flStatus?.privacy?.secure_aggregation;
+  const rounds = flStatus?.rounds ?? [];
+  const latestRound = rounds[rounds.length - 1];
+  const chartX = (index: number) => 60 + (index / Math.max(1, rounds.length - 1)) * 585;
+  // Accuracy is a 0–1 score. Plot the complete range so sub-50% values remain
+  // distinct instead of being collapsed onto a misleading 50% baseline.
+  const chartY = (accuracy: number) => 195 - Math.max(0, Math.min(1, accuracy)) * 165;
+  const chartPath = (field: 'punjab_accuracy' | 'delhi_accuracy' | 'global_accuracy') =>
+    rounds.map((round, index) => `${index === 0 ? 'M' : 'L'}${chartX(index).toFixed(1)},${chartY(round[field]).toFixed(1)}`).join(' ');
+  const globalAreaPath = rounds.length > 0
+    ? `${chartPath('global_accuracy')} L${chartX(rounds.length - 1).toFixed(1)},195 L60,195 Z`
+    : '';
+  const latestGain = latestRound
+    ? latestRound.global_accuracy - Math.max(latestRound.punjab_accuracy, latestRound.delhi_accuracy)
+    : null;
 
   return (
     <div className="w-full bg-canvas-cream min-h-screen relative overflow-x-hidden pt-20">
@@ -80,7 +106,7 @@ export const FederatedPage: React.FC = () => {
             <div className="flex flex-wrap items-center gap-space-xs">
               <span className="inline-flex items-center gap-space-2xs px-space-sm py-1 rounded-full bg-surface-vanilla text-ink-black font-label-md text-label-md shadow-[2px_2px_0px_#18181B] border border-ink-black/20 font-bold">
                 <span className="w-2 h-2 rounded-full bg-forest-jade animate-pulse"></span>
-                ZERO INTER-STATE RAW DATA TRANSFER
+                CLIENT FIT RESPONSES OMIT RAW RECORDS
               </span>
               <span className="inline-flex items-center gap-space-2xs px-space-sm py-1 rounded-full bg-surface-vanilla text-ink-black font-label-md text-label-md shadow-[2px_2px_0px_#18181B] border border-ink-black/20 font-bold">
                 <span className="material-symbols-outlined text-[14px] text-cobalt-deep">lock_reset</span>
@@ -98,7 +124,7 @@ export const FederatedPage: React.FC = () => {
             <div className="relative group cursor-pointer">
               <div className="rotate-3 px-space-md py-1.5 rounded-full bg-ink-black text-canvas-cream font-label-md text-label-md shadow-[3px_3px_0px_#FF5376] flex items-center gap-space-xs border border-coral-watermelon-vivid">
                 <span className="text-coral-watermelon-vivid">★</span>
-                <span className="tracking-wider uppercase font-bold">Statutory Sovereign Vault</span>
+                <span className="tracking-wider uppercase font-bold">Privacy Protocol Simulation</span>
                 <span className="text-coral-watermelon-vivid">★</span>
               </div>
             </div>
@@ -109,7 +135,7 @@ export const FederatedPage: React.FC = () => {
             <div className="lg:col-span-8 flex flex-col gap-space-xs">
               <div className="flex items-center gap-space-xs">
                 <span className="font-label-md text-label-md tracking-widest uppercase text-ink-muted font-bold">
-                  Consortium Protocol // v4.11-FL
+                  Backend Federated Protocol
                 </span>
                 <span className="w-12 h-0.5 bg-ink-black"></span>
                 <span className="text-label-md font-label-md text-cobalt-deep font-bold">NORTHERN RECEPTOR MESH</span>
@@ -122,7 +148,7 @@ export const FederatedPage: React.FC = () => {
                 Simulation
               </h1>
               <p className="font-body-lg text-body-lg text-ink-muted max-w-2xl mt-1">
-                Real-time collaborative model convergence across non-IID agrarian biomass emissions and urban canyon particulate sinks—without cross-jurisdictional leakage of raw telemetry.
+                Local federated-learning protocol demonstration across synthetic Punjab and Delhi training partitions. It tests aggregation and privacy controls without claiming a live inter-agency deployment.
               </p>
             </div>
 
@@ -142,7 +168,7 @@ export const FederatedPage: React.FC = () => {
                 <div className="flex items-baseline justify-between pt-1">
                   <div>
                     <span className="font-headline-md text-headline-md text-ink-black font-bold" id="sim-round-display">
-                      Round {currentRound} of {totalRounds} {currentRound === totalRounds && !isRunningSim ? '(Converged)' : ''}
+                      Round {currentRound} of {totalRounds} {totalRounds > 0 && currentRound === totalRounds && !isRunningSim ? '(Complete)' : ''}
                     </span>
                     <p className="font-label-md text-label-md text-ink-muted mt-0.5">
                       Synchronized FedAvg Ephemeral Pass
@@ -153,7 +179,7 @@ export const FederatedPage: React.FC = () => {
                       {globalLoss == null ? '—' : globalLoss.toFixed(4)}
                     </span>
                     <p className="font-telemetry-unit text-telemetry-unit text-ink-muted uppercase font-bold">
-                      Global Cross-Entropy Loss
+                      Global MSE Loss
                     </p>
                   </div>
                 </div>
@@ -180,7 +206,7 @@ export const FederatedPage: React.FC = () => {
                     id="run-simulation-btn"
                     type="button"
                   >
-                    <span>{simBtnText ?? (isRunningSim ? 'Executing Rounds...' : 'Run 10-Round Live Simulation')}</span>
+                    <span>{simBtnText ?? (isRunningSim ? 'Executing Rounds...' : 'Run 10-Round Backend Simulation')}</span>
                     <span className={`material-symbols-outlined text-[16px] text-coral-watermelon-vivid ${isRunningSim ? 'animate-spin' : ''}`}>
                       {isRunningSim ? 'refresh' : 'play_arrow'}
                     </span>
@@ -207,17 +233,17 @@ export const FederatedPage: React.FC = () => {
                     Federated Ephemeral Topology &amp; Gradient Shuttles
                   </h2>
                   <p className="font-body-sm text-body-sm text-ink-muted">
-                    Encrypted differential parameter vector aggregation via blind zero-knowledge proofs
+                    {formatFederatedImplementation(flStatus?.implementation)}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-space-xs">
                 <div className="hidden sm:flex items-center gap-space-2xs px-space-sm py-1 rounded-full bg-canvas-cream font-label-md text-label-md text-ink-black shadow-[2px_2px_0px_#18181B] border border-ink-black/20">
-                  <span className="text-terracotta-deep font-bold">104,230</span> Sovereign Records Protected
+                  <span className="text-terracotta-deep font-bold">{formatFederatedDataset(flStatus?.dataset)}</span>
                 </div>
                 <div className="px-space-sm py-1 rounded-full bg-forest-jade text-on-primary font-label-md text-label-md shadow-[2px_2px_0px_#18181B] font-bold">
-                  GRADIENTS QUANTIZED: 8-BIT
+                  {flStatus ? 'BACKEND SIMULATION READY' : 'BACKEND STATUS PENDING'}
                 </div>
               </div>
             </div>
@@ -228,7 +254,7 @@ export const FederatedPage: React.FC = () => {
               <div className="lg:col-span-4 flex flex-col gap-space-sm p-space-md rounded-2xl bg-canvas-cream shadow-[4px_4px_0px_#18181B] border-2 border-ink-black transition-transform hover:-translate-y-1">
                 <div className="flex items-center justify-between">
                   <span className="px-space-xs py-0.5 rounded-full bg-terracotta-deep text-on-primary font-label-md text-label-md uppercase font-bold">
-                    Edge Client A
+                    Simulated Client A
                   </span>
                   <span className="font-label-md text-label-md text-ink-muted font-bold">Node ID: PB-STUBBLE-04</span>
                 </div>
@@ -238,7 +264,7 @@ export const FederatedPage: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="font-title-sm text-title-sm text-ink-black font-bold">Punjab Agricultural Node</h3>
-                    <p className="font-body-sm text-body-sm text-ink-muted">Ludhiana &amp; Sangrur Farm Telemetry</p>
+                    <p className="font-body-sm text-body-sm text-ink-muted">Synthetic Punjab training partition</p>
                   </div>
                 </div>
 
@@ -246,22 +272,22 @@ export const FederatedPage: React.FC = () => {
                 <div className="grid grid-cols-2 gap-space-xs pt-space-xs">
                   <div className="p-space-xs rounded-lg bg-surface-vanilla border border-ink-black/20">
                     <span className="font-label-md text-label-md text-ink-muted block uppercase font-bold">Local Samples</span>
-                    <span className="font-telemetry-val text-telemetry-val text-ink-black font-bold">42,810</span>
-                    <span className="font-body-sm text-body-sm text-ink-muted block">Biomass Burns</span>
+                    <span className="font-telemetry-val text-telemetry-val text-ink-black font-bold">Not exposed</span>
+                    <span className="font-body-sm text-body-sm text-ink-muted block">Raw client records withheld</span>
                   </div>
                   <div className="p-space-xs rounded-lg bg-surface-vanilla border border-ink-black/20">
                     <span className="font-label-md text-label-md text-ink-muted block uppercase font-bold">Local Loss</span>
-                    <span className="font-telemetry-val text-telemetry-val text-terracotta-deep font-bold">0.0521</span>
-                    <span className="font-body-sm text-body-sm text-forest-jade block font-semibold">↓ -14% vs r0</span>
+                    <span className="font-telemetry-val text-telemetry-val text-terracotta-deep font-bold">{latestRound?.punjab_loss?.toFixed(4) ?? '—'}</span>
+                    <span className="font-body-sm text-body-sm text-forest-jade block font-semibold">Prediction score {latestRound ? `${(latestRound.punjab_accuracy * 100).toFixed(1)}%` : '—'}</span>
                   </div>
                 </div>
 
                 <div className="mt-space-xs p-space-xs rounded-lg bg-canvas-cream shadow-[inset_1px_1px_0px_#18181B] border border-ink-black/20 flex items-center justify-between font-label-md text-label-md">
                   <span className="text-ink-muted flex items-center gap-space-2xs font-semibold">
                     <span className="w-2 h-2 rounded-full bg-forest-jade"></span>
-                    Weight Drift: ΔW = 0.012
+                    Backend round: {latestRound?.round_number ?? '—'}
                   </span>
-                  <span className="text-cobalt-deep font-bold font-telemetry-unit">4.6 MB Outbound</span>
+                  <span className="text-cobalt-deep font-bold font-telemetry-unit">Metrics only</span>
                 </div>
               </div>
 
@@ -274,7 +300,7 @@ export const FederatedPage: React.FC = () => {
                   <div className="absolute inset-0 rounded-full border-2 border-dashed border-canvas-cream/40 animate-spin" style={{ animationDuration: '18s' }}></div>
                   <div className="w-20 h-20 rounded-full bg-cobalt-deep text-on-primary flex flex-col items-center justify-center shadow-[3px_3px_0px_#FF5376] border border-canvas-cream/40">
                     <span className="material-symbols-outlined text-[32px]">sync</span>
-                    <span className="font-label-md text-label-md uppercase font-bold tracking-tighter">CPCB / IMD</span>
+                    <span className="font-label-md text-label-md uppercase font-bold tracking-tighter">LOCAL / DEMO</span>
                   </div>
                 </div>
                 <h3 className="font-headline-sm text-headline-sm text-canvas-cream font-bold text-center">
@@ -287,16 +313,16 @@ export const FederatedPage: React.FC = () => {
                 <div className="w-full bg-surface-vanilla/10 rounded-lg p-space-xs mt-space-sm flex flex-col gap-1 text-center">
                   <div className="flex items-center justify-between text-body-sm font-body-sm px-1">
                     <span className="text-canvas-cream/70">Secure Aggregator Cycle</span>
-                    <span className="font-bold text-coral-watermelon-vivid">14.2 MB Payload</span>
+                    <span className="font-bold text-coral-watermelon-vivid">{flStatus?.run_id || 'No run'}</span>
                   </div>
                   <div className="flex items-center justify-between text-body-sm font-body-sm px-1">
-                    <span className="text-canvas-cream/70">ZKP Verification</span>
-                    <span className="text-forest-jade font-bold">100% Passed</span>
+                    <span className="text-canvas-cream/70">Secure Aggregation</span>
+                    <span className="text-forest-jade font-bold">{secureAggregation?.enabled ? 'Enabled' : 'Awaiting run'}</span>
                   </div>
                 </div>
                 <div className="mt-space-sm flex items-center gap-space-xs font-label-md text-label-md text-canvas-cream/80">
                   <span className="material-symbols-outlined text-[16px] text-forest-jade">shield_locked</span>
-                  <span>Weights Shredded Post-Consensus</span>
+                  <span>Only measured round metrics are persisted</span>
                 </div>
               </div>
 
@@ -304,7 +330,7 @@ export const FederatedPage: React.FC = () => {
               <div className="lg:col-span-4 flex flex-col gap-space-sm p-space-md rounded-2xl bg-canvas-cream shadow-[4px_4px_0px_#18181B] border-2 border-ink-black transition-transform hover:-translate-y-1">
                 <div className="flex items-center justify-between">
                   <span className="px-space-xs py-0.5 rounded-full bg-cobalt-deep text-on-primary font-label-md text-label-md uppercase font-bold">
-                    Edge Client B
+                    Simulated Client B
                   </span>
                   <span className="font-label-md text-label-md text-ink-muted font-bold">Node ID: DL-URBAN-09</span>
                 </div>
@@ -314,29 +340,29 @@ export const FederatedPage: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="font-title-sm text-title-sm text-ink-black font-bold">Delhi Receptor Node</h3>
-                    <p className="font-body-sm text-body-sm text-ink-muted">Anand Vihar &amp; ITO Sensor Sink</p>
+                    <p className="font-body-sm text-body-sm text-ink-muted">Synthetic Delhi training partition</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-space-xs pt-space-xs">
                   <div className="p-space-xs rounded-lg bg-surface-vanilla border border-ink-black/20">
                     <span className="font-label-md text-label-md text-ink-muted block uppercase font-bold">Local Samples</span>
-                    <span className="font-telemetry-val text-telemetry-val text-ink-black font-bold">61,420</span>
-                    <span className="font-body-sm text-body-sm text-ink-muted block">Urban Canyons</span>
+                    <span className="font-telemetry-val text-telemetry-val text-ink-black font-bold">Not exposed</span>
+                    <span className="font-body-sm text-body-sm text-ink-muted block">Raw client records withheld</span>
                   </div>
                   <div className="p-space-xs rounded-lg bg-surface-vanilla border border-ink-black/20">
                     <span className="font-label-md text-label-md text-ink-muted block uppercase font-bold">Local Loss</span>
-                    <span className="font-telemetry-val text-telemetry-val text-cobalt-deep font-bold">0.0418</span>
-                    <span className="font-body-sm text-body-sm text-forest-jade block font-semibold">↓ -19% vs r0</span>
+                    <span className="font-telemetry-val text-telemetry-val text-cobalt-deep font-bold">{latestRound?.delhi_loss?.toFixed(4) ?? '—'}</span>
+                    <span className="font-body-sm text-body-sm text-forest-jade block font-semibold">Prediction score {latestRound ? `${(latestRound.delhi_accuracy * 100).toFixed(1)}%` : '—'}</span>
                   </div>
                 </div>
 
                 <div className="mt-space-xs p-space-xs rounded-lg bg-canvas-cream shadow-[inset_1px_1px_0px_#18181B] border border-ink-black/20 flex items-center justify-between font-label-md text-label-md">
                   <span className="text-ink-muted flex items-center gap-space-2xs font-semibold">
                     <span className="w-2 h-2 rounded-full bg-forest-jade"></span>
-                    Weight Drift: ΔW = 0.009
+                    Backend round: {latestRound?.round_number ?? '—'}
                   </span>
-                  <span className="text-cobalt-deep font-bold font-telemetry-unit">9.6 MB Outbound</span>
+                  <span className="text-cobalt-deep font-bold font-telemetry-unit">Metrics only</span>
                 </div>
               </div>
             </div>
@@ -350,7 +376,7 @@ export const FederatedPage: React.FC = () => {
               </div>
               <div className="flex items-center gap-space-xs font-bold text-ink-black">
                 <span className="material-symbols-outlined text-[16px] text-cobalt-deep">verified_user</span>
-                <span>No Cross-Border Raw Database Queries Permitted</span>
+                <span>Client fit calls return weights without local metrics</span>
               </div>
               <div className="flex items-center gap-space-xs">
                 <span className="text-ink-black font-bold">➔ Downlink Broadcast (Global Model r{currentRound}) ➔</span>
@@ -362,38 +388,38 @@ export const FederatedPage: React.FC = () => {
         </div>
       </section>
 
-      {/* Editorial Split: Collaborative Model Accuracy Lift Chart & Statutory Guarantee Box */}
+      {/* Editorial Split: Federated Model Accuracy Comparison & Privacy Controls */}
       <section className="w-full px-gutter-desktop py-space-lg">
         <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-space-lg">
-          {/* Left 7-Cols: Collaborative Model Accuracy Lift Curve */}
+          {/* Left 7-Cols: Federated Model Accuracy Comparison */}
           <div className="lg:col-span-7 flex flex-col gap-space-md p-space-lg rounded-2xl bg-surface-vanilla shadow-[4px_4px_0px_#18181B] border-2 border-ink-black">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-space-xs pb-2 border-b border-ink-black/10">
               <div>
                 <div className="flex items-center gap-space-2xs">
                   <span className="font-headline-sm text-headline-sm text-ink-black font-bold">
-                    Collaborative Model Accuracy Lift
+                    Federated Model Prediction Score
                   </span>
                   <span className="px-2 py-0.5 rounded-full bg-coral-watermelon-vivid text-on-secondary text-label-md font-label-md font-bold shadow-[1px_1px_0px_#18181B]">
-                    +44h Lead
+                    {formatFederatedMetric(flStatus?.metric)}
                   </span>
                 </div>
                 <p className="font-body-sm text-body-sm text-ink-muted mt-0.5">
-                  Convergence validation across 10 global synchrony epochs (AUC-ROC &amp; R² Combined)
+                  Normalized backend prediction scores across {totalRounds} completed federated round{totalRounds === 1 ? '' : 's'}
                 </p>
               </div>
               {/* Custom Legend Badges */}
               <div className="flex flex-wrap items-center gap-space-xs">
                 <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
                   <span className="w-3 h-1.5 rounded-sm bg-coral-watermelon-vivid"></span>
-                  <span className="font-bold text-ink-black">Global FL (91.4%)</span>
+                    <span className="font-bold text-ink-black">Global FL ({latestRound ? `${(latestRound.global_accuracy * 100).toFixed(1)}%` : '—'})</span>
                 </div>
                 <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
                   <span className="w-3 h-1.5 rounded-sm bg-cobalt-deep"></span>
-                  <span className="text-ink-muted font-semibold">Delhi Silo (69.1%)</span>
+                    <span className="text-ink-muted font-semibold">Delhi Silo ({latestRound ? `${(latestRound.delhi_accuracy * 100).toFixed(1)}%` : '—'})</span>
                 </div>
                 <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
                   <span className="w-3 h-1.5 rounded-sm bg-terracotta-deep"></span>
-                  <span className="text-ink-muted font-semibold">Punjab Silo (63.0%)</span>
+                    <span className="text-ink-muted font-semibold">Punjab Silo ({latestRound ? `${(latestRound.punjab_accuracy * 100).toFixed(1)}%` : '—'})</span>
                 </div>
               </div>
             </div>
@@ -402,11 +428,13 @@ export const FederatedPage: React.FC = () => {
             <div className="w-full bg-canvas-cream rounded-xl p-space-md shadow-[2px_2px_0px_#18181B] border border-ink-black/20 relative flex flex-col justify-end min-h-[320px]">
               {/* Floating Accolade */}
               <div className="absolute top-4 right-4 p-space-xs rounded-xl bg-surface-vanilla shadow-[2px_2px_0px_#18181B] border border-ink-black flex items-center gap-space-xs max-w-xs">
-                <span className="material-symbols-outlined text-[20px] text-forest-jade">trending_up</span>
+                  <span className={`material-symbols-outlined text-[20px] ${latestGain != null && latestGain < 0 ? 'text-terracotta-deep' : 'text-forest-jade'}`}>
+                    {latestGain != null && latestGain < 0 ? 'trending_down' : 'trending_up'}
+                  </span>
                 <div>
-                  <span className="font-label-md text-label-md font-bold text-ink-black block">+22.3% Accuracy Gain</span>
+                  <span className="font-label-md text-label-md font-bold text-ink-black block">{latestGain == null ? 'Awaiting backend run' : `${latestGain >= 0 ? '+' : ''}${(latestGain * 100).toFixed(1)} points vs best local`}</span>
                   <span className="font-body-sm text-body-sm text-ink-muted block text-xs">
-                    Eliminates Punjab-Delhi meteorological edge blindness
+                    {formatFederatedMetric(flStatus?.metric)}
                   </span>
                 </div>
               </div>
@@ -420,33 +448,35 @@ export const FederatedPage: React.FC = () => {
                   </linearGradient>
                 </defs>
                 <line stroke="#E4E1E6" strokeDasharray="4 4" strokeWidth="1.5" x1="40" x2="680" y1="30" y2="30" />
-                <text fill="#737686" fontFamily="Plus Jakarta Sans" fontSize="10" textAnchor="end" x="32" y="34">95%</text>
-                <line stroke="#E4E1E6" strokeDasharray="4 4" strokeWidth="1.5" x1="40" x2="680" y1="85" y2="85" />
-                <text fill="#737686" fontFamily="Plus Jakarta Sans" fontSize="10" textAnchor="end" x="32" y="89">80%</text>
-                <line stroke="#E4E1E6" strokeDasharray="4 4" strokeWidth="1.5" x1="40" x2="680" y1="140" y2="140" />
-                <text fill="#737686" fontFamily="Plus Jakarta Sans" fontSize="10" textAnchor="end" x="32" y="144">65%</text>
+                <text fill="#737686" fontFamily="Plus Jakarta Sans" fontSize="10" textAnchor="end" x="32" y="34">100%</text>
+                <line stroke="#E4E1E6" strokeDasharray="4 4" strokeWidth="1.5" x1="40" x2="680" y1="71.25" y2="71.25" />
+                <text fill="#737686" fontFamily="Plus Jakarta Sans" fontSize="10" textAnchor="end" x="32" y="75.25">75%</text>
+                <line stroke="#E4E1E6" strokeDasharray="4 4" strokeWidth="1.5" x1="40" x2="680" y1="112.5" y2="112.5" />
+                <text fill="#737686" fontFamily="Plus Jakarta Sans" fontSize="10" textAnchor="end" x="32" y="116.5">50%</text>
+                <line stroke="#E4E1E6" strokeDasharray="4 4" strokeWidth="1.5" x1="40" x2="680" y1="153.75" y2="153.75" />
+                <text fill="#737686" fontFamily="Plus Jakarta Sans" fontSize="10" textAnchor="end" x="32" y="157.75">25%</text>
                 <line stroke="#18181B" strokeWidth="1.5" x1="40" x2="680" y1="195" y2="195" />
-                <text fill="#737686" fontFamily="Plus Jakarta Sans" fontSize="10" textAnchor="end" x="32" y="199">50%</text>
+                <text fill="#737686" fontFamily="Plus Jakarta Sans" fontSize="10" textAnchor="end" x="32" y="199">0%</text>
 
                 {/* X Axis Labels */}
-                {['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'R9', 'R10'].map((roundLabel, idx) => (
+                {rounds.map((round, idx) => (
                   <text
-                    key={roundLabel}
+                    key={round.round_number}
                     fill="#52525B"
                     fontFamily="Plus Jakarta Sans"
                     fontSize="11"
                     fontWeight="700"
-                    x={60 + idx * 65}
+                    x={chartX(idx)}
                     y="215"
                   >
-                    {roundLabel}
+                    R{round.round_number}
                   </text>
                 ))}
 
                 {/* Punjab Silo (Terracotta) */}
                 <path
                   className="animate-dash-flow"
-                  d="M60,185 Q160,180 260,172 T460,165 T645,160"
+                  d={chartPath('punjab_accuracy')}
                   fill="none"
                   stroke="#EA580C"
                   strokeDasharray="5 3"
@@ -456,7 +486,7 @@ export const FederatedPage: React.FC = () => {
                 {/* Delhi Silo (Cobalt) */}
                 <path
                   className="animate-dash-flow-reverse"
-                  d="M60,175 Q160,160 260,145 T460,135 T645,128"
+                  d={chartPath('delhi_accuracy')}
                   fill="none"
                   stroke="#1D4ED8"
                   strokeDasharray="5 3"
@@ -465,11 +495,11 @@ export const FederatedPage: React.FC = () => {
 
                 {/* Global FL Area Fill & Line (Watermelon) */}
                 <path
-                  d="M60,170 Q160,130 260,95 T460,55 T645,45 L645,195 L60,195 Z"
+                  d={globalAreaPath}
                   fill="url(#flGlow)"
                 />
                 <path
-                  d="M60,170 Q160,130 260,95 T460,55 T645,45"
+                  d={chartPath('global_accuracy')}
                   fill="none"
                   stroke="#FF5376"
                   strokeWidth="4"
@@ -477,9 +507,9 @@ export const FederatedPage: React.FC = () => {
                 />
 
                 {/* Dynamic Current Round Marker */}
-                <g
+                {latestRound && <g
                   className="transition-all duration-300 ease-out"
-                  transform={`translate(${60 + (Math.max(1, currentRound) - 1) * 65}, ${170 - (Math.max(1, currentRound) - 1) * 13.5})`}
+                  transform={`translate(${chartX(Math.max(0, rounds.findIndex((round) => round.round_number === currentRound)))}, ${chartY((rounds.find((round) => round.round_number === currentRound) ?? latestRound).global_accuracy)})`}
                 >
                   <circle
                     className="animate-ping"
@@ -493,21 +523,21 @@ export const FederatedPage: React.FC = () => {
                     stroke="#FF5376"
                     strokeWidth="3"
                   />
-                </g>
+                </g>}
               </svg>
             </div>
           </div>
 
-          {/* Right 5-Cols: Statutory Privacy Guarantees */}
+          {/* Right 5-Cols: Configured Privacy Controls */}
           <div className="lg:col-span-5 flex flex-col gap-space-md">
             <div className="p-space-lg rounded-2xl bg-surface-vanilla border-2 border-ink-black shadow-[4px_4px_0px_#18181B] space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-ink-black/10">
                 <div>
                   <span className="font-label-md text-label-md uppercase text-forest-jade font-bold">
-                    Cryptographic Integrity
+                    Protocol Configuration
                   </span>
                   <h3 className="font-headline-sm text-headline-sm text-ink-black font-bold mt-0.5">
-                    Statutory Privacy Guarantees
+                    Configured Privacy Controls
                   </h3>
                 </div>
                 <span className="material-symbols-outlined text-forest-jade text-[24px]">verified_user</span>
@@ -524,7 +554,7 @@ export const FederatedPage: React.FC = () => {
                     </span>
                   </div>
                   <p className="font-body-sm text-body-sm text-ink-muted mt-1">
-                    Calibrated Gaussian noise perturbing gradient updates prevents reconstruction of individual factory emissions or specific farm coordinates.
+                    Calibrated Gaussian noise reduces information exposure from individual training records. The displayed privacy budget applies to this completed local simulation.
                   </p>
                 </div>
 
@@ -538,7 +568,7 @@ export const FederatedPage: React.FC = () => {
                     </span>
                   </div>
                   <p className="font-body-sm text-body-sm text-ink-muted mt-1">
-                    Central server performs additions directly on ciphertexts without ever obtaining decryption keys, preventing cross-state espionage.
+                    This simulator encrypts client updates, adds the ciphertexts, and decrypts only the aggregate inside one backend process. A production deployment requires separate clients and an independent key holder.
                   </p>
                 </div>
 
@@ -548,11 +578,11 @@ export const FederatedPage: React.FC = () => {
                       03. Non-IID Dirichlet Partitioning
                     </span>
                     <span className="px-2 py-0.5 rounded bg-terracotta-deep/10 text-terracotta-deep text-xs font-bold">
-                      α = 0.2
+                      {formatFederatedDataset(flStatus?.dataset)}
                     </span>
                   </div>
                   <p className="font-body-sm text-body-sm text-ink-muted mt-1">
-                    Accounts for extreme domain shift between rural biomass combustion spikes and urban canyon NO₂ advection traps without catastrophic forgetting.
+                    The current run partitions a synthetic corridor dataset to exercise non-identically distributed client training. It is not live agency telemetry.
                   </p>
                 </div>
 
@@ -562,11 +592,11 @@ export const FederatedPage: React.FC = () => {
                       04. Zero Client Metric Leakage (SEC-006)
                     </span>
                     <span className="px-2 py-0.5 rounded bg-forest-jade/20 text-forest-jade text-xs font-bold font-mono">
-                      4→32→16→1 tanh
+                      {flStatus ? 'Client metrics withheld' : 'Awaiting run'}
                     </span>
                   </div>
                   <p className="font-body-sm text-body-sm text-ink-muted mt-1">
-                    CorridorPredictor 2-layer neural regressor. Client fit() strictly returns an empty metrics dictionary, ensuring no local batch loss or training statistics can be reconstructed by the central FedAvg aggregator.
+                    Client training responses return model weights without local metrics. This limits what the aggregation response exposes; it does not by itself prove that every reconstruction attack is impossible.
                   </p>
                 </div>
               </div>
@@ -576,7 +606,7 @@ export const FederatedPage: React.FC = () => {
             <div className="p-space-lg rounded-2xl bg-ink-black border-2 border-ink-black shadow-[4px_4px_0px_#1D4ED8] space-y-3">
               <div className="flex items-center justify-between pb-3 border-b border-white/10">
                 <div>
-                  <span className="font-label-md text-label-md uppercase text-cobalt-deep font-bold">Live Backend State</span>
+                  <span className="font-label-md text-label-md uppercase text-cobalt-deep font-bold">Backend Simulation State</span>
                   <h3 className="font-headline-sm text-headline-sm text-canvas-cream font-bold mt-0.5">FL Run Registry</h3>
                 </div>
                 <span className="material-symbols-outlined text-cobalt-deep text-[24px]">sync</span>

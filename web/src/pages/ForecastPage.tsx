@@ -2,29 +2,44 @@ import React, { useState, useEffect } from 'react';
 import {
   BiomassEmissionsResponse,
   FireAqiLagResponse,
+  MeteorologyResponse,
   PlumeResponse,
+  SurfaceGridResponse,
   createIncident,
+  fetchAqiSurface,
   fetchBiomassEmissions,
   fetchFireAqiLag,
   fetchForecastPlume,
+  fetchMeteorology,
+  formatDataSource,
+  getAqiCategoryAndColor,
   queueLegalDispatch,
 } from '../api/client';
+
+const formatWindDirection = (degrees: number): string => {
+  const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  return directions[Math.round((((degrees % 360) + 360) % 360) / 45) % 8];
+};
 
 export const ForecastPage: React.FC = () => {
   const [selectedHorizon, setSelectedHorizon] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [currentHour, setCurrentHour] = useState<number>(38);
+  const [currentHour, setCurrentHour] = useState<number>(0);
   const [mandateTriggered, setMandateTriggered] = useState<boolean>(false);
   const [geoJsonExported, setGeoJsonExported] = useState<boolean>(false);
   const [plumeData, setPlumeData] = useState<PlumeResponse | null>(null);
   const [lagData, setLagData] = useState<FireAqiLagResponse | null>(null);
   const [biomassData, setBiomassData] = useState<BiomassEmissionsResponse | null>(null);
+  const [surfaceData, setSurfaceData] = useState<SurfaceGridResponse | null>(null);
+  const [meteorologyData, setMeteorologyData] = useState<MeteorologyResponse | null>(null);
 
   // Fetch real plume data from backend (GET /api/v1/forecast/plume)
   useEffect(() => {
     fetchForecastPlume().then(setPlumeData).catch(() => {});
     fetchFireAqiLag(7).then(setLagData).catch(() => {});
     fetchBiomassEmissions(7).then(setBiomassData).catch(() => {});
+    fetchAqiSurface().then(setSurfaceData).catch(() => {});
+    fetchMeteorology().then(setMeteorologyData).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -51,11 +66,52 @@ export const ForecastPage: React.FC = () => {
   , plumeData.features[0]);
   const strongestLag = lagData?.strongest_lag;
   const totalFrp = biomassData?.regions.reduce((sum, region) => sum + region.frp_sum_mw, 0) ?? null;
+  const hotspotCount = biomassData?.regions.reduce((sum, region) => sum + region.hotspot_count, 0) ?? null;
+  const closestSurface = (longitude: number, latitude: number) => surfaceData?.features.reduce((closest, feature) => {
+    const [featureLongitude, featureLatitude] = feature.geometry.coordinates;
+    const distance = ((featureLongitude - longitude) ** 2) + ((featureLatitude - latitude) ** 2);
+    if (!closest) return feature;
+    const [closestLongitude, closestLatitude] = closest.geometry.coordinates;
+    const closestDistance = ((closestLongitude - longitude) ** 2) + ((closestLatitude - latitude) ** 2);
+    return distance < closestDistance ? feature : closest;
+  }, undefined as SurfaceGridResponse['features'][number] | undefined);
+  const transitSurface = closestSurface(76.96, 29.39);
+  const delhiSurface = closestSurface(77.21, 28.61);
+  const delhiMeteo = meteorologyData?.regions.delhi;
+  const receptorRows = [...(surfaceData?.features ?? [])]
+    .sort((a, b) => b.properties.aqi_index - a.properties.aqi_index)
+    .slice(0, 4)
+    .map((feature, index) => {
+      const [longitude, latitude] = feature.geometry.coordinates;
+      const { category } = getAqiCategoryAndColor(feature.properties.aqi_index);
+      return {
+        ward: `CAMS Grid ${latitude.toFixed(2)}°N, ${longitude.toFixed(2)}°E`,
+        severity: `${category} • AQI ${feature.properties.aqi_index}`,
+        arrival: selectedPlume ? `T+${selectedPlume.properties.horizon_hours}h` : 'No active plume',
+        actions: [`PM2.5 ${feature.properties.pm25_estimate.toFixed(1)} µg/m³`],
+        color: feature.properties.aqi_index > 300 ? 'bg-coral-watermelon-vivid' : feature.properties.aqi_index > 200 ? 'bg-terracotta-deep' : 'bg-cobalt-deep',
+        barWidth: `${Math.min(100, feature.properties.aqi_index / 5)}%`,
+        key: `${longitude}-${latitude}-${index}`,
+      };
+    });
   const correlationPoints = (lagData?.correlations ?? []).map((item) => ({
     cx: 40 + (item.lag_hours / 72) * 300,
     cy: 75 - item.pearson_r * 60,
     r: 4,
   }));
+  const correlationPath = correlationPoints.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.cx},${point.cy}`).join(' ');
+  const plumeCoordinates = selectedPlume?.geometry.coordinates[0] ?? [];
+  const plumeLongitudes = plumeCoordinates.map(([longitude]) => longitude);
+  const plumeLatitudes = plumeCoordinates.map(([, latitude]) => latitude);
+  const minPlumeLongitude = plumeLongitudes.length ? Math.min(...plumeLongitudes) : 0;
+  const maxPlumeLongitude = plumeLongitudes.length ? Math.max(...plumeLongitudes) : 0;
+  const minPlumeLatitude = plumeLatitudes.length ? Math.min(...plumeLatitudes) : 0;
+  const maxPlumeLatitude = plumeLatitudes.length ? Math.max(...plumeLatitudes) : 0;
+  const selectedPlumePath = plumeCoordinates.map(([longitude, latitude], index) => {
+    const x = 120 + ((longitude - minPlumeLongitude) / Math.max(maxPlumeLongitude - minPlumeLongitude, 0.0001)) * 760;
+    const y = 70 + ((maxPlumeLatitude - latitude) / Math.max(maxPlumeLatitude - minPlumeLatitude, 0.0001)) * 330;
+    return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ') + (plumeCoordinates.length ? ' Z' : '');
 
   const handleGeoJsonExport = () => {
     if (!plumeData) return;
@@ -74,8 +130,11 @@ export const ForecastPage: React.FC = () => {
 
   const handleMandateQueue = async () => {
     if (!selectedPlume) return;
+    const severity = selectedPlume.properties.max_aqi_est > 400
+      ? 'emergency'
+      : selectedPlume.properties.max_aqi_est > 300 ? 'warning' : 'watch';
     const incident = await createIncident({
-      severity: 'emergency',
+      severity,
       location_text: `Forecast plume ${selectedPlume.properties.cluster_id} at T+${selectedPlume.properties.horizon_hours}h`,
       pollutant: 'PM2.5',
       measured_pm25: selectedPlume.properties.max_pm25_est,
@@ -103,11 +162,11 @@ export const ForecastPage: React.FC = () => {
           <div className="flex flex-wrap items-center gap-space-sm">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-vanilla shadow-[2px_2px_0px_#18181B] text-label-md font-label-md text-ink-black border border-ink-black/20">
               <span className="w-2 h-2 rounded-full bg-coral-watermelon-vivid"></span>
-              {plumeData?.source ?? 'LOADING FORECAST MODEL'}
+              {formatDataSource(plumeData?.source, 'Loading forecast model')}
             </span>
             <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-surface-vanilla text-label-md font-label-md text-ink-muted shadow-[1px_1px_0px_#18181B]">
               <span>Boundary Layer Dynamic:</span>
-              <span className="text-terracotta-deep font-bold">Severe Subsidence</span>
+              <span className="text-terracotta-deep font-bold">{delhiMeteo ? `${delhiMeteo.mixing_layer_height_m_agl.toFixed(0)}m AGL` : 'Unavailable'}</span>
             </span>
           </div>
 
@@ -115,9 +174,9 @@ export const ForecastPage: React.FC = () => {
           <div className="inline-flex p-1 rounded-full bg-surface-vanilla shadow-[2px_2px_0px_#18181B] border border-ink-black/30 items-center gap-1" id="horizon-selector">
             {[
               { hour: 0, label: 'Now (T+0h)' },
-              { hour: 24, label: '+24h: Haryana Ingress' },
-              { hour: 48, label: '+48h: Border Peak Mass' },
-              { hour: 72, label: '+72h: Delhi Basin Trap' },
+              { hour: 24, label: '+24h Forecast' },
+              { hour: 48, label: '+48h Forecast' },
+              { hour: 72, label: '+72h Forecast' },
             ].map((item) => (
               <button
                 key={item.hour}
@@ -171,7 +230,9 @@ export const ForecastPage: React.FC = () => {
               72-Hour Plume Dispersion Trajectory Explorer
             </h1>
             <p className="font-body-md text-body-md text-ink-muted mt-1 max-w-2xl">
-              Tracking forward-propagating particulate mass from the Sangrur-Barnala combustion centroid via Karnal corridor into the stable thermal inversion lid of the Delhi National Capital Region.
+              {plumeData?.features.length
+                ? `Displaying ${plumeData.features.length} backend plume envelopes across the Punjab–Delhi corridor.`
+                : 'No active plume envelopes are available from the current fire and meteorology feeds.'}
             </p>
           </div>
 
@@ -186,7 +247,7 @@ export const ForecastPage: React.FC = () => {
                   Dispersion Risk
                 </span>
                 <span className="font-title-sm text-title-sm text-canvas-cream font-bold tracking-tight leading-none">
-                  Inversion Trap Active
+                  {meteorologyData?.inversion.status === 'measured' ? 'Inversion Measured' : 'Inversion Not Measured'}
                 </span>
               </div>
             </div>
@@ -203,7 +264,7 @@ export const ForecastPage: React.FC = () => {
                 Kinematic Trajectory Visualizer
               </span>
               <span className="px-2 py-0.5 rounded-full bg-surface-vanilla-strong font-label-md text-label-md text-ink-muted shadow-[1px_1px_0px_#18181B]">
-                ISRO INSAT-3DR 15m Refresh
+                {formatDataSource(plumeData?.source, 'Forecast source unavailable')}
               </span>
             </div>
 
@@ -211,12 +272,12 @@ export const ForecastPage: React.FC = () => {
             <div className="flex items-center gap-2 flex-wrap">
               <div className="flex items-center rounded-full bg-canvas-cream px-3 py-1 shadow-[2px_2px_0px_#18181B] border border-ink-black text-label-md font-label-md">
                 <span className="text-ink-muted mr-1.5">Mixing Layer Depth:</span>
-                <span className="text-terracotta-deep font-bold">{selectedPlume?.properties.mixing_height_m == null ? 'N/A' : `${selectedPlume.properties.mixing_height_m}m AGL`}</span>
-                <span className="ml-1 text-ink-muted italic">(Trapping Plumes)</span>
+                <span className="text-terracotta-deep font-bold">{selectedPlume?.properties.mixing_height_m == null ? 'No active plume' : `${selectedPlume.properties.mixing_height_m}m AGL`}</span>
+                <span className="ml-1 text-ink-muted italic">(Backend forecast input)</span>
               </div>
               <div className="flex items-center rounded-full bg-canvas-cream px-3 py-1 shadow-[2px_2px_0px_#18181B] border border-ink-black text-label-md font-label-md">
                 <span className="text-ink-muted mr-1.5">Wind Speed &amp; Vector:</span>
-                <span className="text-cobalt-deep font-bold">{selectedPlume?.properties.wind_speed_ms == null ? 'N/A' : `${selectedPlume.properties.wind_speed_ms.toFixed(1)} m/s (${selectedPlume.properties.wind_dir_deg ?? 'N/A'}°)`}</span>
+                <span className="text-cobalt-deep font-bold">{selectedPlume?.properties.wind_speed_ms == null ? 'No forecast wind' : `${selectedPlume.properties.wind_speed_ms.toFixed(1)} m/s${selectedPlume.properties.wind_dir_deg == null ? '' : ` (${selectedPlume.properties.wind_dir_deg}° ${formatWindDirection(selectedPlume.properties.wind_dir_deg)})`}`}</span>
               </div>
             </div>
           </div>
@@ -257,9 +318,10 @@ export const ForecastPage: React.FC = () => {
                 </defs>
 
                 {/* Dispersion Envelopes */}
+                {selectedPlumePath && <>
                 <path
                   className="animate-dash-flow"
-                  d="M 180 110 C 290 80, 480 140, 680 230 C 760 270, 890 270, 930 350 C 950 390, 890 440, 780 430 C 640 420, 520 330, 390 260 C 270 200, 160 160, 180 110 Z"
+                  d={selectedPlumePath}
                   fill="#F97316"
                   fillOpacity="0.22"
                   id="contour-outer"
@@ -268,7 +330,7 @@ export const ForecastPage: React.FC = () => {
                   strokeWidth="1.5"
                 />
                 <path
-                  d="M 185 110 C 270 120, 420 180, 600 250 C 710 290, 830 290, 860 360 C 870 395, 810 415, 750 400 C 640 370, 500 290, 370 210 C 270 160, 200 130, 185 110 Z"
+                  d={selectedPlumePath}
                   fill="#FF5376"
                   fillOpacity="0.45"
                   id="contour-severe"
@@ -277,6 +339,7 @@ export const ForecastPage: React.FC = () => {
                 />
                 <ellipse cx="785" cy="345" fill="url(#basinAccumulation)" filter="url(#plumeSoft)" id="contour-trap" rx="140" ry="85" />
                 <circle cx="180" cy="110" fill="url(#sangrurOrigin)" filter="url(#plumeSoft)" r="55" />
+                </>}
 
                 {/* Wind Streamlines */}
                 <g opacity="0.65" stroke="#18181B" strokeLinecap="round" strokeWidth="2">
@@ -292,10 +355,10 @@ export const ForecastPage: React.FC = () => {
                   <circle fill="#EA580C" r="9" stroke="#18181B" strokeWidth="2" />
                   <circle fill="#FAF6EE" r="3" />
                   <text fill="#18181B" fontFamily="Plus Jakarta Sans" fontSize="12" fontWeight="700" x="14" y="4">
-                    Sangrur/Barnala (FRP 48.2GW)
+                    Punjab Source ({totalFrp == null ? 'FRP feed unavailable' : `FRP ${totalFrp.toFixed(1)}MW`})
                   </text>
                   <text fill="#52525B" fontFamily="Plus Jakarta Sans" fontSize="10" x="14" y="18">
-                    Origin Centroid: 148 Active VIIRS Pings
+                    Current Hotspots: {hotspotCount ?? 'Feed unavailable'}
                   </text>
                 </g>
 
@@ -306,7 +369,7 @@ export const ForecastPage: React.FC = () => {
                     Panipat / Karnal Flank
                   </text>
                   <text fill="#52525B" fontFamily="Plus Jakarta Sans" fontSize="10" x="12" y="16">
-                    Transit Delta: T+22h • 348 µg/m³
+                    Transit Surface: {transitSurface ? `${transitSurface.properties.pm25_estimate.toFixed(1)} µg/m³` : 'Model point unavailable'}
                   </text>
                 </g>
 
@@ -314,15 +377,15 @@ export const ForecastPage: React.FC = () => {
                   <circle fill="#7C2D12" r="11" stroke="#18181B" strokeWidth="2.5" />
                   <circle fill="#FF5376" r="4" />
                   <text fill="#7C2D12" fontFamily="Plus Jakarta Sans" fontSize="13" fontWeight="800" x="-120" y="-18">
-                    DELHI TERMINAL INVERSION TRAP
+                    DELHI RECEPTOR BASIN
                   </text>
                   <text fill="#18181B" fontFamily="Plus Jakarta Sans" fontSize="11" fontWeight="600" x="-120" y="-4">
-                    Boundary Lid: 280m • Zero Lateral Venting
+                    Boundary Layer: {delhiMeteo ? `${delhiMeteo.mixing_layer_height_m_agl.toFixed(0)}m` : 'Weather unavailable'} • Wind {delhiMeteo ? `${delhiMeteo.wind_speed_ms.toFixed(1)} m/s` : 'Weather unavailable'}
                   </text>
                 </g>
 
                 {/* Dynamic Trajectory Particle Indicator */}
-                <g
+                {selectedPlume && <g
                   className="transition-all duration-300 ease-out"
                   transform={`translate(${180 + (currentHour / 72) * 600}, ${110 + (currentHour / 72) * 225})`}
                 >
@@ -340,7 +403,7 @@ export const ForecastPage: React.FC = () => {
                     stroke="#FFFFFF"
                     strokeWidth="2.5"
                   />
-                </g>
+                </g>}
               </svg>
             </div>
 
@@ -355,11 +418,11 @@ export const ForecastPage: React.FC = () => {
               <div className="grid grid-cols-2 gap-2 text-body-sm font-body-sm">
                 <div>
                   <span className="text-ink-muted block text-[10px] uppercase font-bold">Pasquill-Gifford Class</span>
-                  <span className="font-bold text-ink-black">Class F (Extremely Stable)</span>
+                  <span className="font-bold text-ink-black">{selectedPlume ? `T+${selectedPlume.properties.horizon_hours}h envelope` : 'No active envelope'}</span>
                 </div>
                 <div>
                   <span className="text-ink-muted block text-[10px] uppercase font-bold">Vertical Eddy Diff.</span>
-                  <span className="font-bold text-ink-black">Kz = 2.8 m²/s</span>
+                  <span className="font-bold text-ink-black">{plumeData ? `${plumeData.features.length} backend envelope${plumeData.features.length === 1 ? '' : 's'}` : 'Unavailable'}</span>
                 </div>
               </div>
             </div>
@@ -368,15 +431,15 @@ export const ForecastPage: React.FC = () => {
             <div className="relative z-10 self-end bg-canvas-cream/95 p-3 rounded-xl shadow-[2px_2px_0px_#18181B] border border-ink-black flex items-center gap-4">
               <div className="flex items-center gap-1.5">
                 <span className="w-3.5 h-3.5 rounded-full bg-aqi-unhealthy"></span>
-                <span className="font-label-md text-label-md text-ink-black font-semibold">&gt;300 µg/m³</span>
+                <span className="font-label-md text-label-md text-ink-black font-semibold">Outer envelope</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-3.5 h-3.5 rounded-full bg-coral-watermelon-vivid"></span>
-                <span className="font-label-md text-label-md text-ink-black font-semibold">&gt;450 µg/m³ (Severe)</span>
+                <span className="font-label-md text-label-md text-ink-black font-semibold">Modeled envelope</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-3.5 h-3.5 rounded-full bg-aqi-hazardous"></span>
-                <span className="font-label-md text-label-md text-ink-black font-semibold">Hazardous &gt;600 µg/m³</span>
+                <span className="font-label-md text-label-md text-ink-black font-semibold">Peak model zone</span>
               </div>
             </div>
           </div>
@@ -446,7 +509,7 @@ export const ForecastPage: React.FC = () => {
             <div className="flex items-center gap-2 pl-2">
               <div className="px-3 py-1.5 rounded-full bg-surface-vanilla text-right border border-ink-black/30 shadow-[1px_1px_0px_#18181B]">
                 <span className="block text-[10px] font-bold text-ink-muted uppercase">Terminal Peak Plume</span>
-                <span className="font-telemetry-val text-telemetry-val text-terracotta-deep font-black">512 µg/m³</span>
+                <span className="font-telemetry-val text-telemetry-val text-terracotta-deep font-black">{selectedPlume ? `${selectedPlume.properties.max_pm25_est.toFixed(1)} µg/m³` : delhiSurface ? `${delhiSurface.properties.pm25_estimate.toFixed(1)} µg/m³` : 'Model estimate unavailable'}</span>
               </div>
             </div>
           </div>
@@ -478,17 +541,17 @@ export const ForecastPage: React.FC = () => {
               <div className="grid grid-cols-3 gap-2 mb-5">
                 <div className="bg-canvas-cream p-3 rounded-xl shadow-[2px_2px_0px_#18181B] border border-ink-black">
                   <span className="block font-label-md text-label-md text-ink-muted font-bold">Pearson r</span>
-                  <span className="font-telemetry-val text-telemetry-val text-cobalt-deep">{strongestLag?.pearson_r.toFixed(3) ?? 'N/A'}</span>
+                  <span className="font-telemetry-val text-telemetry-val text-cobalt-deep">{strongestLag?.pearson_r.toFixed(3) ?? '—'}</span>
                   <span className="block text-[10px] text-forest-jade font-bold">{lagData?.status === 'computed' ? 'Computed' : 'Insufficient data'}</span>
                 </div>
                 <div className="bg-canvas-cream p-3 rounded-xl shadow-[2px_2px_0px_#18181B] border border-ink-black">
                   <span className="block font-label-md text-label-md text-ink-muted font-bold">Transit Delay</span>
-                  <span className="font-telemetry-val text-telemetry-val text-ink-black">{strongestLag ? `${strongestLag.lag_hours}h` : 'N/A'}</span>
+                  <span className="font-telemetry-val text-telemetry-val text-ink-black">{strongestLag ? `${strongestLag.lag_hours}h` : 'Insufficient history'}</span>
                   <span className="block text-[10px] text-ink-muted font-bold">Strongest measured lag</span>
                 </div>
                 <div className="bg-canvas-cream p-3 rounded-xl shadow-[2px_2px_0px_#18181B] border border-ink-black">
                   <span className="block font-label-md text-label-md text-ink-muted font-bold">Total FRP</span>
-                  <span className="font-telemetry-val text-telemetry-val text-terracotta-deep">{totalFrp == null ? 'N/A' : totalFrp.toFixed(1)}</span>
+                  <span className="font-telemetry-val text-telemetry-val text-terracotta-deep">{totalFrp == null ? 'Feed unavailable' : totalFrp.toFixed(1)}</span>
                   <span className="block text-[10px] text-ink-muted font-bold">Megawatts Flux</span>
                 </div>
               </div>
@@ -497,7 +560,7 @@ export const ForecastPage: React.FC = () => {
               <div className="w-full h-64 bg-canvas-cream rounded-xl p-3 shadow-[2px_2px_0px_#18181B] border border-ink-black relative flex flex-col justify-between">
                 <div className="flex items-center justify-between text-[11px] font-bold text-ink-muted px-1">
                   <span>Pearson correlation by candidate lag hour</span>
-                  <span className="text-cobalt-deep font-bold">R² = {strongestLag ? (strongestLag.pearson_r ** 2).toFixed(3) : 'N/A'}</span>
+                  <span className="text-cobalt-deep font-bold">{strongestLag ? `R² = ${(strongestLag.pearson_r ** 2).toFixed(3)}` : 'R² requires paired historical observations'}</span>
                 </div>
                 <svg className="w-full h-44 overflow-visible" viewBox="0 0 360 160">
                   <line stroke="#EFE9DA" strokeWidth="1" x1="40" x2="340" y1="20" y2="20" />
@@ -507,9 +570,9 @@ export const ForecastPage: React.FC = () => {
                   <line stroke="#18181B" strokeWidth="1.5" x1="40" x2="340" y1="140" y2="140" />
                   <line stroke="#18181B" strokeWidth="1.5" x1="40" x2="40" y1="10" y2="140" />
 
-                  {/* Linear Regression Line */}
-                  {lagData?.status === 'computed' && (
-                    <line stroke="#1D4ED8" strokeDasharray="4 2" strokeWidth="2" x1="50" x2="330" y1="130" y2="25" />
+                  {/* Measured correlation series */}
+                  {lagData?.status === 'computed' && correlationPath && (
+                    <path d={correlationPath} fill="none" stroke="#1D4ED8" strokeDasharray="4 2" strokeWidth="2" />
                   )}
 
                   {/* Scatter Data Points */}
@@ -548,47 +611,14 @@ export const ForecastPage: React.FC = () => {
                   </h2>
                 </div>
                 <span className="px-3 py-1 rounded-full bg-surface-vanilla-strong font-label-md text-label-md text-ink-black font-bold shadow-[1px_1px_0px_#18181B]">
-                  GRAP-IV Protocol
+                  {formatDataSource(surfaceData?.source, 'AQI surface unavailable')}
                 </span>
               </div>
 
               <div className="flex flex-col gap-3">
-                {[
-                  {
-                    ward: 'Anand Vihar (Grid #04)',
-                    severity: 'Severe Exposure (98%)',
-                    arrival: 'T+28h',
-                    actions: ['Smog Cannons', 'Heavy Vehicle Ban'],
-                    color: 'bg-coral-watermelon-vivid',
-                    barWidth: '98%',
-                  },
-                  {
-                    ward: 'Jahangirpuri (Grid #01)',
-                    severity: 'High Exposure (86%)',
-                    arrival: 'T+22h',
-                    actions: ['Mechanized Sweeping', 'Industrial Stack Curfew'],
-                    color: 'bg-terracotta-deep',
-                    barWidth: '86%',
-                  },
-                  {
-                    ward: 'Wazirpur (Grid #02)',
-                    severity: 'High Exposure (79%)',
-                    arrival: 'T+24h',
-                    actions: ['Hotspot Patrolling', 'CEMS Tamper Audit'],
-                    color: 'bg-terracotta-deep',
-                    barWidth: '79%',
-                  },
-                  {
-                    ward: 'Okhla Phase II (Grid #08)',
-                    severity: 'Moderate Exposure (64%)',
-                    arrival: 'T+34h',
-                    actions: ['Construction Dust Stoppage'],
-                    color: 'bg-cobalt-deep',
-                    barWidth: '64%',
-                  },
-                ].map((item, idx) => (
+                {receptorRows.map((item) => (
                   <div
-                    key={idx}
+                    key={item.key}
                     className="p-3.5 rounded-xl bg-canvas-cream border border-ink-black/20 shadow-[2px_2px_0px_#18181B] flex flex-col gap-2"
                   >
                     <div className="flex items-center justify-between">
@@ -614,6 +644,11 @@ export const ForecastPage: React.FC = () => {
                     </div>
                   </div>
                 ))}
+                {surfaceData && receptorRows.length === 0 && (
+                  <div className="p-3.5 rounded-xl bg-canvas-cream border border-ink-black/20 shadow-[2px_2px_0px_#18181B] text-body-sm text-ink-muted">
+                    No live model surface points are available.
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -627,7 +662,7 @@ export const ForecastPage: React.FC = () => {
             <div>
               <div className="flex items-center gap-2 font-label-md text-label-md uppercase tracking-wider text-cobalt-deep font-bold mb-1">
                 <span className="material-symbols-outlined text-[16px]">air</span>
-                <span>{plumeData?.source ?? 'Loading forecast source'}</span>
+                <span>{formatDataSource(plumeData?.source, 'Loading forecast source')}</span>
                 <span className="px-2 py-0.5 rounded-full bg-cobalt-deep/10 text-cobalt-deep text-label-md font-bold">
                   {plumeData ? `${plumeData.features.length} Horizon Envelopes` : 'Loading...'}
                 </span>
@@ -636,12 +671,12 @@ export const ForecastPage: React.FC = () => {
                 Gaussian Plume Model Output
               </h2>
               <p className="font-body-sm text-body-sm text-ink-muted mt-1">
-                Source: {plumeData?.source ?? 'Unavailable'} &bull; Computed: {plumeData ? new Date(plumeData.computed_at).toLocaleString() : '...'}
+                Source: {formatDataSource(plumeData?.source, 'Forecast unavailable')} &bull; Computed: {plumeData ? new Date(plumeData.computed_at).toLocaleString() : 'Pending'}
               </p>
             </div>
             <div className="bg-ink-black text-canvas-cream px-4 py-2 rounded-xl rotate-2 shadow-[3px_3px_0px_#1D4ED8] flex items-center gap-2 flex-shrink-0">
               <span className="material-symbols-outlined text-cobalt-deep text-[18px]">track_changes</span>
-              <span className="font-label-md text-label-md uppercase font-bold">72h Ensemble</span>
+              <span className="font-label-md text-label-md uppercase font-bold">72h Model Outlook</span>
             </div>
           </div>
 
@@ -685,7 +720,7 @@ export const ForecastPage: React.FC = () => {
                     <div className="bg-surface-vanilla rounded-xl p-2.5 border border-ink-black/10">
                       <div className="font-label-md text-label-md text-ink-muted uppercase font-bold text-[10px]">Wind Speed</div>
                       <div className="font-title-sm text-title-sm text-ink-black font-bold mt-0.5">
-                        {p.wind_speed_ms != null ? `${p.wind_speed_ms.toFixed(1)} m/s` : 'N/A'}
+                        {p.wind_speed_ms != null ? `${p.wind_speed_ms.toFixed(1)} m/s` : 'Weather unavailable'}
                       </div>
                     </div>
                     <div className="bg-surface-vanilla rounded-xl p-2.5 border border-ink-black/10">
@@ -693,9 +728,9 @@ export const ForecastPage: React.FC = () => {
                       <div className="font-title-sm text-title-sm text-ink-black font-bold mt-0.5">
                         {p.wind_dir_deg != null ? (
                           <>{p.wind_dir_deg}&deg; <span className="font-body-sm text-ink-muted font-normal">
-                            ({p.wind_dir_deg >= 315 || p.wind_dir_deg < 45 ? 'N' : p.wind_dir_deg >= 45 && p.wind_dir_deg < 135 ? 'E' : p.wind_dir_deg >= 135 && p.wind_dir_deg < 225 ? 'S' : 'NW'})
+                            ({formatWindDirection(p.wind_dir_deg)})
                           </span></>
-                        ) : 'N/A'}
+                        ) : 'Weather unavailable'}
                       </div>
                     </div>
                     <div className="bg-surface-vanilla rounded-xl p-2.5 border border-ink-black/10 col-span-2">
@@ -703,7 +738,7 @@ export const ForecastPage: React.FC = () => {
                       <div className="font-title-sm text-title-sm text-ink-black font-bold mt-0.5">
                         {p.mixing_height_m != null ? (
                           <>{p.mixing_height_m}m <span className="font-body-sm text-ink-muted font-normal">AGL inversion lid</span></>
-                        ) : 'N/A'}
+                        ) : 'Mixing height unavailable'}
                       </div>
                       <div className="mt-1.5 w-full bg-surface-vanilla-strong h-1.5 rounded-full overflow-hidden">
                         <div

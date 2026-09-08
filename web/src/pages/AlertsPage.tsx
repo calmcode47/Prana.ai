@@ -3,25 +3,27 @@ import {
   AlertsResponse,
   AnomalyItem,
   CemsForensicsResponse,
+  HotspotsResponse,
   IncidentItem,
   LatestAlertResponse,
   LegalNotice,
   LegalRegistryResponse,
-  createIncident,
   createLegalNotice,
   fetchAlerts,
   fetchAnomalies,
   fetchCemsForensics,
+  fetchHotspots,
   fetchLatestAlert,
   fetchLegalRegistry,
   fetchSignaturePackage,
+  formatDataSource,
   queueLegalDispatch,
 } from '../api/client';
 
 export const AlertsPage: React.FC = () => {
   const [filter, setFilter] = useState<'all' | 'emergency' | 'nighttime' | 'stubble'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedIncident, setSelectedIncident] = useState('INC-NCR-8902');
+  const [selectedIncident, setSelectedIncident] = useState('');
   const [selectedLang, setSelectedLang] = useState<'en' | 'hi' | 'pa'>('en');
   const [bulletin, setBulletin] = useState<LatestAlertResponse | null>(null);
 
@@ -39,6 +41,7 @@ export const AlertsPage: React.FC = () => {
   const [currentNotice, setCurrentNotice] = useState<LegalNotice | null>(null);
   const [legalRegistry, setLegalRegistry] = useState<LegalRegistryResponse | null>(null);
   const [cemsData, setCemsData] = useState<CemsForensicsResponse | null>(null);
+  const [hotspotsData, setHotspotsData] = useState<HotspotsResponse | null>(null);
 
   // Live alerts from backend (GET /api/v1/alerts)
   const [alertsData, setAlertsData] = useState<AlertsResponse | null>(null);
@@ -47,17 +50,12 @@ export const AlertsPage: React.FC = () => {
     fetchAlerts(undefined, 10).then(setAlertsData).catch(() => {});
     fetchLegalRegistry().then(setLegalRegistry).catch(() => {});
     fetchCemsForensics('CEMS-FLUE-MAN8', 24).then(setCemsData).catch(() => {});
+    fetchHotspots(24).then(setHotspotsData).catch(() => {});
   }, [filter]);
-  const [noticeText, setNoticeText] = useState(
-    `FORM 1: NOTICE UNDER SECTION 31A OF THE AIR (PREVENTION AND CONTROL OF POLLUTION) ACT, 1981.\n\n` +
-    `WHEREAS telemetry stream INC-NCR-8902 confirms that particulate matter mass concentration at Anand Vihar Airshed Grid #04 ` +
-    `has reached 342.6 µg/m³ (AQI 412), exceeding statutory limits by 284%;\n\n` +
-    `AND WHEREAS nocturnal thermal inversion depth at 180m constitutes an immediate public health emergency;\n\n` +
-    `NOW THEREFORE, under powers conferred by Section 31A of the Air Act 1981, you are hereby directed to cease all unmitigated industrial operations and enforce heavy vehicular advection diversion immediately.`
-  );
+  const [noticeText, setNoticeText] = useState('Select a current backend incident to prepare a statutory notice.');
 
   useEffect(() => {
-    fetchLatestAlert(selectedLang).then((data) => setBulletin(data));
+    fetchLatestAlert(selectedLang).then(setBulletin).catch(() => setBulletin(null));
   }, [selectedLang]);
 
   useEffect(() => {
@@ -66,24 +64,18 @@ export const AlertsPage: React.FC = () => {
 
   const refreshRegistry = () => fetchLegalRegistry().then(setLegalRegistry).catch(() => {});
 
-  const createDraftFromSelection = async (): Promise<LegalNotice> => {
+  const createDraftFromSelection = async (): Promise<LegalNotice | null> => {
     const selectedAlert = alertsData?.items.find((item) => item.incident_id === selectedIncident);
-    const isCems = selectedIncident.includes('CEMS');
-    const measuredPm25 = selectedAlert?.measured_pm25 ?? (isCems ? 180 : 342.6);
-    const incident = selectedAlert ?? await createIncident({
-      severity: isCems ? 'warning' : 'emergency',
-      location_text: isCems ? 'Manesar Sector 8 industrial CEMS' : selectedIncident,
-      pollutant: 'PM2.5',
-      measured_pm25: measuredPm25,
-      satellite_source: isCems ? 'CEMS_TELEMETRY' : 'FIRMS_VIIRS',
-      authority: 'SPCB Legal Review',
-    });
+    if (!selectedAlert) {
+      setNoticeText('No current backend incident is selected. A notice cannot be created without measured incident telemetry.');
+      return null;
+    }
     const notice = await createLegalNotice({
-      incident_id: incident.incident_id,
+      incident_id: selectedAlert.incident_id,
       issuing_authority: 'State Pollution Control Board Review Desk',
       requested_direction: noticeText,
     });
-    setSelectedIncident(incident.incident_id);
+    setSelectedIncident(selectedAlert.incident_id);
     setCurrentNotice(notice);
     setNoticeText(notice.body);
     refreshRegistry();
@@ -91,13 +83,15 @@ export const AlertsPage: React.FC = () => {
   };
 
   const handleGenerateNotice = async () => {
-    await createDraftFromSelection();
+    const notice = await createDraftFromSelection();
+    if (!notice) return;
     setNoticeGenerated(true);
     setTimeout(() => setNoticeGenerated(false), 2000);
   };
 
   const handleSignPramaan = async () => {
     const notice = currentNotice ?? await createDraftFromSelection();
+    if (!notice) return;
     const signature = await fetchSignaturePackage(notice.notice_id);
     setSignatureStatus(signature.status);
     setSealedPramaan(signature.provider_call_performed);
@@ -109,6 +103,7 @@ export const AlertsPage: React.FC = () => {
 
   const handleTransmitDM = async () => {
     const notice = currentNotice ?? await createDraftFromSelection();
+    if (!notice) return;
     const dispatch = await queueLegalDispatch({
       incident_id: notice.incident_id,
       notice_id: notice.notice_id,
@@ -144,7 +139,7 @@ export const AlertsPage: React.FC = () => {
   const handleLoadCemsDossier = async () => {
     const data = await fetchCemsForensics('CEMS-FLUE-MAN8', 24);
     setCemsData(data);
-    setSelectedIncident(data.facility_id);
+    setSelectedIncident('');
     setCurrentNotice(null);
     setNoticeText(
       data.status === 'REVIEW_REQUIRED'
@@ -167,6 +162,11 @@ export const AlertsPage: React.FC = () => {
   };
   const cemsStackPath = cemsPath('stack_velocity_ms');
   const cemsLoadPath = cemsPath('scrubber_load_kw');
+  const primaryAlert = alertsData?.items.find((item) => item.incident_id === selectedIncident) ?? alertsData?.items[0];
+  const primaryHotspot = hotspotsData?.features[0];
+  const emergencyCount = alertsData?.items.filter((item) => item.severity === 'emergency').length ?? 0;
+  const latestFeedTime = primaryAlert?.created_at ?? hotspotsData?.fetched_at;
+  const maxAnomalyScore = anomaliesList.length ? Math.max(...anomaliesList.map((item) => item.anomaly_score)) : null;
 
   return (
     <div className="w-full bg-canvas-cream min-h-screen relative overflow-x-hidden pt-20">
@@ -190,10 +190,10 @@ export const AlertsPage: React.FC = () => {
                 </span>
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-vanilla-strong text-ink-black font-label-md text-label-md shadow-[2px_2px_0px_#18181B] border border-ink-black font-bold">
                   <span className="w-2 h-2 rounded-full bg-forest-jade animate-pulse"></span>
-                  Node: SPCB-DL-HQ-09
+                  Backend Legal Registry
                 </span>
                 <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-terracotta-deep/10 text-terracotta-deep font-label-md text-label-md font-bold">
-                  GRAP-IV Statutory Mode Active
+                  {legalRegistry?.legal_status ?? 'Legal registry loading'}
                 </span>
               </div>
 
@@ -201,7 +201,7 @@ export const AlertsPage: React.FC = () => {
                 <h1 className="font-headline-lg text-headline-lg text-ink-black font-serif italic tracking-tight">
                   SPCB Incident Command &amp; Regulatory Enforcement
                 </h1>
-                <span className="font-headline-sm text-headline-sm text-ink-muted">/ Vol. 24 Legal Dispatch</span>
+                <span className="font-headline-sm text-headline-sm text-ink-muted">/ {legalRegistry?.dispatches.length ?? 0} Recorded Dispatches</span>
               </div>
 
               <p className="font-body-md text-body-md text-ink-muted max-w-3xl">
@@ -278,7 +278,7 @@ export const AlertsPage: React.FC = () => {
                 }`}
                 type="button"
               >
-                <span>✦ All Incidents (18)</span>
+                <span>✦ All Incidents ({alertsData?.count ?? 0})</span>
               </button>
               <button
                 onClick={() => setFilter('emergency')}
@@ -290,7 +290,7 @@ export const AlertsPage: React.FC = () => {
                 type="button"
               >
                 <span className="w-2 h-2 rounded-full bg-aqi-severe"></span>
-                <span>Emergency Breaches (3)</span>
+                <span>Emergency Breaches ({emergencyCount})</span>
               </button>
               <button
                 onClick={() => setFilter('nighttime')}
@@ -302,7 +302,7 @@ export const AlertsPage: React.FC = () => {
                 type="button"
               >
                 <span className="material-symbols-outlined text-[14px]">bedtime</span>
-                <span>Nighttime Anomalies (5)</span>
+                <span>Nighttime Anomalies ({anomaliesList.length})</span>
               </button>
               <button
                 onClick={() => setFilter('stubble')}
@@ -314,7 +314,7 @@ export const AlertsPage: React.FC = () => {
                 type="button"
               >
                 <span className="material-symbols-outlined text-[14px] text-terracotta-deep">local_fire_department</span>
-                <span>Stubble Clusters (10)</span>
+                <span>Stubble Hotspots ({hotspotsData?.count ?? 0})</span>
               </button>
             </div>
 
@@ -348,7 +348,7 @@ export const AlertsPage: React.FC = () => {
                   Live Intercept
                 </span>
               </div>
-              <span className="font-body-sm text-body-sm text-ink-muted">Updated 12s ago via SPCB-MESH-RT</span>
+              <span className="font-body-sm text-body-sm text-ink-muted">{latestFeedTime ? `Updated ${new Date(latestFeedTime).toLocaleString()}` : 'Awaiting backend feed'}</span>
             </div>
 
             {/* Live SPCB Incident Registry (GET /api/v1/alerts) */}
@@ -371,7 +371,11 @@ export const AlertsPage: React.FC = () => {
                     <div
                       key={item.incident_id}
                       className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2 border border-white/10 hover:bg-white/10 transition-colors cursor-pointer"
-                      onClick={() => setSelectedIncident(item.incident_id)}
+                      onClick={() => {
+                        setSelectedIncident(item.incident_id);
+                        setCurrentNotice(null);
+                        setNoticeText(`Review incident ${item.incident_id} at ${item.location_text || 'unspecified location'} using the measured ${item.pollutant || 'PM2.5'} value ${item.measured_pm25 == null ? 'recorded by the backend' : `${item.measured_pm25.toFixed(1)} µg/m³`}.`);
+                      }}
                     >
                       <div className="flex items-center gap-2">
                         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
@@ -414,25 +418,25 @@ export const AlertsPage: React.FC = () => {
                       <span className="px-2 py-0.5 rounded-full bg-aqi-hazardous text-canvas-cream font-label-md text-label-md font-bold uppercase tracking-wider shadow-[1px_1px_0px_#18181B]">
                         Breach Alert
                       </span>
-                      <span className="font-label-md text-label-md text-ink-muted font-bold">INC-NCR-8902</span>
+                      <span className="font-label-md text-label-md text-ink-muted font-bold">{primaryAlert?.incident_id ?? 'No current incident'}</span>
                       <span className="text-outline-variant">•</span>
-                      <span className="font-body-sm text-body-sm text-ink-muted">Anand Vihar Airshed Grid #04</span>
+                      <span className="font-body-sm text-body-sm text-ink-muted">{primaryAlert?.location_text ?? 'Backend incident feed is empty'}</span>
                     </div>
                     <h2 className="font-title-md text-title-md text-ink-black font-sans font-bold flex items-center gap-2">
-                      Anand Vihar Acute Airshed Spike (AQI 412)
+                      {primaryAlert ? `${primaryAlert.location_text || primaryAlert.incident_id} (${primaryAlert.severity.toUpperCase()})` : 'No Current Airshed Breach'}
                       <span className="material-symbols-outlined text-coral-watermelon-vivid text-[20px]">warning</span>
                     </h2>
                   </div>
 
                   {/* Dual-Unit Telemetry Chip */}
                   <div className="inline-flex items-center rounded-full bg-surface-container-lowest border-2 border-ink-black px-3 py-1 shadow-[2px_2px_0px_#18181B] self-start">
-                    <span className="font-telemetry-val text-telemetry-val text-terracotta-deep pr-2 font-bold">342.6</span>
+                    <span className="font-telemetry-val text-telemetry-val text-terracotta-deep pr-2 font-bold">{primaryAlert?.measured_pm25?.toFixed(1) ?? '—'}</span>
                     <span className="font-telemetry-unit text-telemetry-unit text-ink-muted pr-3 border-r border-ink-black/30 font-semibold">
                       µg/m³ PM2.5
                     </span>
                     <span className="font-telemetry-val text-telemetry-val text-ink-black pl-3 flex items-center gap-1 font-bold">
                       <span className="w-2.5 h-2.5 rounded-full bg-aqi-hazardous"></span>
-                      412 <span className="font-telemetry-unit text-telemetry-unit text-ink-muted font-normal">AQI</span>
+                      {primaryAlert?.measured_aqi ?? '—'} <span className="font-telemetry-unit text-telemetry-unit text-ink-muted font-normal">AQI</span>
                     </span>
                   </div>
                 </div>
@@ -444,9 +448,9 @@ export const AlertsPage: React.FC = () => {
                     <div className="flex items-center justify-between text-ink-muted font-label-md text-label-md mb-2">
                       <span className="flex items-center gap-1 font-bold text-ink-black">
                         <span className="material-symbols-outlined text-[14px] text-terracotta-deep">satellite_alt</span>
-                        VIIRS Thermal Band
+                        {primaryHotspot?.properties.sensor ?? 'Thermal Feed'}
                       </span>
-                      <span className="px-1.5 py-0.5 rounded bg-surface-vanilla text-ink-black font-bold">1.2km res</span>
+                      <span className="px-1.5 py-0.5 rounded bg-surface-vanilla text-ink-black font-bold">{formatDataSource(hotspotsData?.source, 'Thermal feed unavailable')}</span>
                     </div>
 
                     <div className="w-full h-32 rounded-xl bg-ink-black relative overflow-hidden flex items-center justify-center">
@@ -455,18 +459,18 @@ export const AlertsPage: React.FC = () => {
                       <div className="absolute w-12 h-12 rounded-full bg-coral-watermelon-vivid blur-md top-8 left-10 animate-pulse"></div>
                       <div className="relative z-10 flex flex-col items-center justify-center p-2 text-center text-canvas-cream font-mono text-[11px] leading-tight">
                         <span className="bg-ink-black/80 px-2 py-0.5 rounded border border-canvas-cream/20 mb-1 font-sans font-bold text-coral-watermelon-vivid">
-                          ΔT: +4.8°C Hotspot
+                          {primaryHotspot ? `${primaryHotspot.properties.sensor} hotspot` : 'No current hotspot'}
                         </span>
-                        <span>28.647°N, 77.315°E</span>
+                        <span>{primaryHotspot ? `${primaryHotspot.geometry.coordinates[1].toFixed(3)}°N, ${primaryHotspot.geometry.coordinates[0].toFixed(3)}°E` : 'Coordinates unavailable'}</span>
                       </div>
                       <div className="absolute bottom-2 right-2 text-[9px] text-canvas-cream/70 font-label-md">
-                        NASA FIRMS PASS: 01:24 IST
+                        {primaryHotspot ? new Date(primaryHotspot.properties.acq_datetime).toLocaleString() : 'Awaiting FIRMS feed'}
                       </div>
                     </div>
 
                     <div className="mt-2 flex items-center justify-between font-label-md text-label-md text-ink-muted">
-                      <span>FRP Radiative: <strong className="text-ink-black">44.8 MW</strong></span>
-                      <span className="text-coral-watermelon-vivid font-bold">Confidence: 98%</span>
+                      <span>FRP Radiative: <strong className="text-ink-black">{primaryHotspot ? (primaryHotspot.properties.frp == null ? 'Not reported' : `${primaryHotspot.properties.frp.toFixed(1)} MW`) : 'No current detection'}</strong></span>
+                      <span className="text-coral-watermelon-vivid font-bold">Confidence: {primaryHotspot?.properties.confidence ?? 'No current detection'}</span>
                     </div>
                   </div>
 
@@ -478,28 +482,30 @@ export const AlertsPage: React.FC = () => {
                         Trajectory Convergence
                       </span>
                       <span className="px-2 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed font-label-md text-label-md font-bold">
-                        {alertsData?.items[0]?.satellite_source ?? 'Source unavailable'}
+                        {formatDataSource(alertsData?.items[0]?.satellite_source, 'Source unavailable')}
                       </span>
                     </div>
                     <p className="font-body-sm text-body-sm text-ink-muted">
-                      Boundary layer inversion at 180m trapped transboundary stubble plume from North-West vector (294° az), compounding with ISBT bus corridor idle particulates.
+                      {primaryAlert
+                        ? `Backend incident evidence reports ${primaryAlert.satellite_evidence?.fire_count_50km ?? 0} fires within 50 km${primaryAlert.satellite_evidence?.nearest_fire_km == null ? '' : `; nearest fire ${primaryAlert.satellite_evidence.nearest_fire_km.toFixed(1)} km away`}.`
+                        : 'No current incident trajectory evidence is available.'}
                     </p>
 
                     <div className="mt-3 space-y-2">
                       <div className="flex justify-between font-label-md text-label-md">
-                        <span className="text-ink-muted">Wind Vector: 2.1 m/s NW</span>
-                        <span className="text-ink-black font-bold">Inversion Trapping: 89%</span>
+                        <span className="text-ink-muted">Satellite: {formatDataSource(primaryAlert?.satellite_source, 'No active incident')}</span>
+                        <span className="text-ink-black font-bold">PM2.5: {primaryAlert?.measured_pm25 == null ? 'No active incident' : `${primaryAlert.measured_pm25.toFixed(1)} µg/m³`}</span>
                       </div>
                       <div className="w-full h-3 bg-surface-vanilla rounded-full border border-ink-black overflow-hidden relative">
-                        <div className="h-full bg-gradient-to-r from-aqi-moderate via-aqi-unhealthy to-coral-watermelon-vivid w-[89%] rounded-full"></div>
+                        <div className="h-full bg-gradient-to-r from-aqi-moderate via-aqi-unhealthy to-coral-watermelon-vivid rounded-full" style={{ width: `${Math.min(100, (primaryAlert?.measured_pm25 ?? 0) / 5)}%` }}></div>
                       </div>
                     </div>
                     <div className="mt-3 pt-3 border-t border-ink-black/10 flex items-center justify-between">
                       <span className="font-body-sm text-body-sm text-ink-black font-medium">
-                        Statutory Threshold exceeded by <strong className="text-coral-watermelon-vivid font-bold">+284%</strong>
+                        Statutory PM2.5 threshold variance: <strong className="text-coral-watermelon-vivid font-bold">{primaryAlert?.measured_pm25 == null ? 'No active incident' : `${(((primaryAlert.measured_pm25 - 60) / 60) * 100).toFixed(0)}%`}</strong>
                       </span>
                       <span className="font-label-md text-label-md text-ink-muted uppercase tracking-wider font-bold">
-                        Tier IV Event
+                        {primaryAlert?.severity ?? 'No event'}
                       </span>
                     </div>
                   </div>
@@ -509,10 +515,15 @@ export const AlertsPage: React.FC = () => {
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                   <div className="flex items-center gap-2 font-body-sm text-body-sm text-ink-muted">
                     <span className="material-symbols-outlined text-[18px] text-forest-jade">shield</span>
-                    <span>Evidence automatically locked into forensic ledger #DL-2025-081</span>
+                    <span>{primaryAlert ? `Backend incident recorded at ${new Date(primaryAlert.created_at).toLocaleString()}` : 'No incident evidence is currently recorded'}</span>
                   </div>
                   <button
-                    onClick={() => setSelectedIncident('INC-NCR-8902')}
+                    onClick={() => {
+                      if (!primaryAlert) return;
+                      setSelectedIncident(primaryAlert.incident_id);
+                      setCurrentNotice(null);
+                      setNoticeText(`Review incident ${primaryAlert.incident_id} at ${primaryAlert.location_text || 'unspecified location'} using its measured backend telemetry.`);
+                    }}
                     className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-ink-black text-canvas-cream font-label-lg text-label-lg shadow-[3px_3px_0px_#1D4ED8] hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all cursor-pointer"
                     type="button"
                   >
@@ -532,14 +543,14 @@ export const AlertsPage: React.FC = () => {
                       <span className="px-2 py-0.5 rounded-full bg-coral-watermelon-vivid text-on-secondary font-label-md text-label-md font-bold uppercase tracking-wider shadow-[1px_1px_0px_#18181B]">
                         Tamper Detection
                       </span>
-                      <span className="font-label-md text-label-md text-ink-muted font-bold">CEMS-FLUE-MAN8</span>
+                      <span className="font-label-md text-label-md text-ink-muted font-bold">{cemsData?.facility_id ?? 'CEMS feed pending'}</span>
                       <span className="text-outline-variant">•</span>
-                      <span className="font-body-sm text-body-sm text-ink-muted">Precision Auto Forgings Pvt. Ltd</span>
+                      <span className="font-body-sm text-body-sm text-ink-muted">Backend industrial telemetry</span>
                     </div>
                     <h2 className="font-title-md text-title-md text-ink-black font-sans font-bold flex items-center gap-2">
-                      Manesar Sector 8 Wet Scrubber Bypass
+                      {cemsData?.status === 'REVIEW_REQUIRED' ? 'CEMS Scrubber Pattern Requires Review' : 'CEMS Scrubber Forensic Review'}
                       <span className="px-2 py-0.5 rounded-full bg-surface-container-highest font-label-md text-label-md text-ink-black font-bold">
-                        IsolationForest Anomaly: 0.89
+                        Max anomaly: {maxAnomalyScore == null ? 'None' : maxAnomalyScore.toFixed(2)}
                       </span>
                     </h2>
                   </div>
@@ -547,7 +558,7 @@ export const AlertsPage: React.FC = () => {
                   <div className="inline-flex items-center rounded-full bg-surface-container-lowest border-2 border-ink-black px-3 py-1 shadow-[2px_2px_0px_#18181B]">
                     <span className="material-symbols-outlined text-[16px] text-terracotta-deep mr-1">bolt</span>
                     <span className="font-label-lg text-label-lg text-ink-black">
-                      Bypass Probability: <strong className="text-coral-watermelon-vivid">96.4%</strong>
+                      Review Windows: <strong className="text-coral-watermelon-vivid">{cemsData?.review_windows.length ?? 0}</strong>
                     </span>
                   </div>
                 </div>
@@ -619,7 +630,8 @@ export const AlertsPage: React.FC = () => {
                         <div
                           key={idx}
                           onClick={() => {
-                            setSelectedIncident(`ANOMALY-${anomaly.station_id}-${idx}`);
+                            setSelectedIncident('');
+                            setCurrentNotice(null);
                             setNoticeText(
                               `FORM 2: NOTICE UNDER SECTION 31A - INDUSTRIAL ANOMALY DETECTED.\n\n` +
                               `STATION: ${anomaly.station_name || anomaly.station_id}\n` +
@@ -712,7 +724,7 @@ export const AlertsPage: React.FC = () => {
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                   <div className="flex items-center gap-2 font-body-sm text-body-sm text-ink-muted">
                     <span className="material-symbols-outlined text-[18px] text-terracotta-deep">policy</span>
-                    <span>Offense: Wilful bypass of Air Pollution Control Equipment (APCE)</span>
+                    <span>{cemsData?.status === 'REVIEW_REQUIRED' ? 'Backend pattern requires compliance review' : 'No bypass pattern detected in current readings'}</span>
                   </div>
                   <button
                     onClick={handleLoadCemsDossier}
@@ -733,13 +745,15 @@ export const AlertsPage: React.FC = () => {
                     <span className="px-2 py-0.5 rounded-full bg-aqi-unhealthy text-canvas-cream font-label-md text-label-md font-bold uppercase shadow-[1px_1px_0px_#18181B]">
                       Thermal Cluster
                     </span>
-                    <span className="font-body-sm text-body-sm text-ink-muted font-bold">Sangrur-Patiala Transboundary Border</span>
+                    <span className="font-body-sm text-body-sm text-ink-muted font-bold">{formatDataSource(hotspotsData?.source, 'FIRMS feed unavailable')}</span>
                   </div>
                   <h3 className="font-title-sm text-title-sm text-ink-black font-sans font-bold">
-                    14 Farm Fire Ignitions Cluster within 6km² Sector
+                    {hotspotsData ? `${hotspotsData.count} Current Fire Hotspot${hotspotsData.count === 1 ? '' : 's'}` : 'Loading Current Fire Hotspots'}
                   </h3>
                   <p className="font-body-sm text-body-sm text-ink-muted">
-                    Estimated carbon mass load: 142 tonnes PM2.5 in transit towards Karnal corridor.
+                    {primaryHotspot
+                      ? `${primaryHotspot.properties.sensor} detection at ${primaryHotspot.geometry.coordinates[1].toFixed(3)}°N, ${primaryHotspot.geometry.coordinates[0].toFixed(3)}°E; FRP ${primaryHotspot.properties.frp == null ? 'unavailable' : `${primaryHotspot.properties.frp.toFixed(1)} MW`}.`
+                      : 'No current hotspot is available for enforcement review.'}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -750,14 +764,9 @@ export const AlertsPage: React.FC = () => {
                     Geo-Tag Ward
                   </button>
                   <button
-                    onClick={() => {
-                      setSelectedIncident('VIIRS-SANGRUR-14');
-                      setNoticeText(
-                        `NOTICE TO DISTRICT MAGISTRATE / SUB-DIVISIONAL MAGISTRATE (SANGRUR).\n\n` +
-                        `High-density stubble cluster (14 active ignitions) verified at 30.245°N, 75.842°E.\n` +
-                        `Immediate dispatch of field flying squads mandated under GRAP-IV enforcement protocol.`
-                      );
-                    }}
+                    onClick={() => setNoticeText(primaryHotspot
+                      ? `A live hotspot was detected at ${primaryHotspot.geometry.coordinates[1].toFixed(5)}°N, ${primaryHotspot.geometry.coordinates[0].toFixed(5)}°E by ${primaryHotspot.properties.sensor}. Create a measured PM2.5 incident before issuing a statutory notice.`
+                      : 'No current hotspot is available for a statutory notice.')}
                     className="px-4 py-2 rounded-full bg-coral-watermelon-vivid text-canvas-cream font-label-lg text-label-lg shadow-[2px_2px_0px_#18181B] hover:-translate-y-0.5 transition-all cursor-pointer font-bold"
                     type="button"
                   >
@@ -802,11 +811,22 @@ export const AlertsPage: React.FC = () => {
                 <select
                   className="w-full px-3 py-2 text-sm bg-canvas-cream rounded-xl border border-ink-black font-semibold text-ink-black shadow-[2px_2px_0px_#18181B] focus:outline-none"
                   value={selectedIncident}
-                  onChange={(e) => setSelectedIncident(e.target.value)}
+                  onChange={(e) => {
+                    const incidentId = e.target.value;
+                    setSelectedIncident(incidentId);
+                    setCurrentNotice(null);
+                    const incident = alertsData?.items.find((item) => item.incident_id === incidentId);
+                    setNoticeText(incident
+                      ? `Review incident ${incident.incident_id} at ${incident.location_text || 'unspecified location'} using the measured ${incident.pollutant || 'PM2.5'} value ${incident.measured_pm25 == null ? 'recorded by the backend' : `${incident.measured_pm25.toFixed(1)} µg/m³`}.`
+                      : 'Select a current backend incident to prepare a statutory notice.');
+                  }}
                 >
-                  <option value="INC-NCR-8902">INC-NCR-8902 (Anand Vihar Spike AQI 412)</option>
-                  <option value="CEMS-FLUE-MAN8">CEMS-FLUE-MAN8 (Manesar Scrubber Bypass)</option>
-                  <option value="VIIRS-SANGRUR-14">VIIRS-SANGRUR-14 (14 Farm Fires Cluster)</option>
+                  <option value="">Select current backend incident</option>
+                  {(alertsData?.items ?? []).map((item) => (
+                    <option key={item.incident_id} value={item.incident_id}>
+                      {item.incident_id} ({item.location_text || item.severity})
+                    </option>
+                  ))}
                 </select>
               </div>
 

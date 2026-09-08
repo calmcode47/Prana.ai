@@ -62,18 +62,21 @@ async def test_firms_live():
 @pytest.mark.asyncio
 async def test_openaq_fetch_mocked(openaq_locations_json):
     """Verifies OpenAQ ingestion using mocked HTTP response."""
+    stamp = datetime.now(timezone.utc).isoformat()
+    for location in openaq_locations_json["results"]:
+        location["datetimeLast"] = {"utc": stamp}
     with respx.mock(base_url="https://api.openaq.org/v3") as respx_mock:
         respx_mock.get("/locations").mock(
             return_value=httpx.Response(200, json=openaq_locations_json)
         )
-        pm25 = [{"locationsId": location["id"], "sensorsId": location["sensors"][0]["id"],
-                 "value": location["sensors"][0]["latest"]["value"],
-                 "coordinates": location["coordinates"],
-                 "datetime": {"utc": datetime.now(timezone.utc).isoformat()}}
-                for location in openaq_locations_json["results"]]
-        respx_mock.get("/parameters/2/latest").mock(return_value=httpx.Response(200, json={"results": pm25}))
-        respx_mock.get("/parameters/5/latest").mock(return_value=httpx.Response(200, json={"results": []}))
-        respx_mock.get("/parameters/6/latest").mock(return_value=httpx.Response(200, json={"results": []}))
+        for location in openaq_locations_json["results"]:
+            sensor = location["sensors"][0]
+            latest = {"locationsId": location["id"], "sensorsId": sensor["id"],
+                      "value": sensor["latest"]["value"], "coordinates": location["coordinates"],
+                      "datetime": {"utc": stamp}}
+            respx_mock.get(f"/locations/{location['id']}/latest").mock(
+                return_value=httpx.Response(200, json={"results": [latest]})
+            )
         async with httpx.AsyncClient() as client:
             readings = await fetch_openaq_stations(client=client)
             assert len(readings) >= 10

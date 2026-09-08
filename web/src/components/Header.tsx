@@ -4,9 +4,11 @@ import {
   connectCorridorWebSocket,
   downloadLegalDossier,
   fetchAlerts,
+  fetchAqiSurface,
   fetchHotspots,
   fetchReady,
   fetchStations,
+  formatDataSource,
 } from '../api/client';
 
 export const Header: React.FC = () => {
@@ -20,6 +22,7 @@ export const Header: React.FC = () => {
   const [latestPm25, setLatestPm25] = useState<number | null>(null);
   const [latestAqi, setLatestAqi] = useState<number | null>(null);
   const [firmsSource, setFirmsSource] = useState('Checking feed');
+  const [lastSync, setLastSync] = useState<string | null>(null);
   const [wsStatus, setWsStatus] = useState<'connecting' | 'open' | 'closed'>('connecting');
 
   useEffect(() => {
@@ -29,7 +32,7 @@ export const Header: React.FC = () => {
         setIsDemoMode(res.demo_mode);
       })
       .catch(() => {
-        setDbStatus('In-Memory Store Fallback');
+        setDbStatus('Backend Unavailable');
       });
   }, []);
 
@@ -37,9 +40,10 @@ export const Header: React.FC = () => {
     fetchHotspots(24, 'nominal').then((data) => {
       setFireCount(data.count);
       setFirmsSource(data.source);
+      setLastSync(data.fetched_at);
     }).catch(() => setFirmsSource('Feed unavailable'));
 
-    fetchStations('pm25').then((data) => {
+    Promise.all([fetchStations('pm25'), fetchAqiSurface(0.5)]).then(([data, surface]) => {
       setStationCount(data['@iot.count']);
       const observations = data.value.flatMap((station) =>
         station.Datastreams.flatMap((stream) => stream.Observations)
@@ -47,8 +51,14 @@ export const Header: React.FC = () => {
       const latest = observations.sort((a, b) =>
         Date.parse(b.phenomenonTime) - Date.parse(a.phenomenonTime)
       )[0];
-      setLatestPm25(latest?.pm25_ugm3 ?? null);
-      setLatestAqi(latest?.aqi_index ?? null);
+      const delhiSurface = surface.features.reduce((closest, feature) => {
+        const [longitude, latitude] = feature.geometry.coordinates;
+        const [closestLongitude, closestLatitude] = closest.geometry.coordinates;
+        return Math.hypot(longitude - 77.2, latitude - 28.6) < Math.hypot(closestLongitude - 77.2, closestLatitude - 28.6)
+          ? feature : closest;
+      }, surface.features[0]);
+      setLatestPm25(latest?.pm25_ugm3 ?? delhiSurface?.properties.pm25_estimate ?? null);
+      setLatestAqi(latest?.aqi_index ?? delhiSurface?.properties.aqi_index ?? null);
     }).catch(() => setStationCount(null));
 
     return connectCorridorWebSocket('ncr', () => undefined, setWsStatus);
@@ -97,7 +107,8 @@ export const Header: React.FC = () => {
         <div className="flex items-center gap-space-md">
           <span className="flex items-center gap-space-2xs">
             <span className="w-2 h-2 rounded-full bg-forest-jade animate-pulse"></span>
-            <span className="text-ink-black font-semibold">AQ Station Synchrony:</span> {stationCount == null ? 'Unavailable' : `${stationCount} stations`}
+            <span className="text-ink-black font-semibold">AQ Station Synchrony:</span>{' '}
+            {stationCount == null ? 'Station feed unavailable' : stationCount === 0 ? 'No live stations reporting' : `${stationCount} stations`}
           </span>
           <span className="text-outline-variant">|</span>
           <span className="flex items-center gap-space-2xs">
@@ -105,7 +116,7 @@ export const Header: React.FC = () => {
           </span>
           <span className="text-outline-variant">|</span>
           <span className="flex items-center gap-space-2xs">
-            <span className="text-terracotta-deep font-semibold">NASA FIRMS</span> {firmsSource}
+            <span className="text-terracotta-deep font-semibold">NASA FIRMS</span> {formatDataSource(firmsSource, 'Checking feed')}
           </span>
           <span className="text-outline-variant">|</span>
           <span className="flex items-center gap-space-2xs">
@@ -114,9 +125,9 @@ export const Header: React.FC = () => {
         </div>
         <div className="flex items-center gap-space-sm">
           <span className="px-2 py-0.5 rounded-full bg-canvas-cream text-ink-black font-bold shadow-[1px_1px_0px_#18181B]">
-            {isDemoMode ? 'IN-NCR GRID 09 (DEMO MODE)' : 'IN-NCR GRID 09 (LIVE DATA MODE)'}
+            {isDemoMode ? 'PRANA LOCAL (DEMO MODE)' : 'PRANA LOCAL (LIVE DATA MODE)'}
           </span>
-          <span className="text-ink-muted">Sync T+0.04s UTC</span>
+          <span className="text-ink-muted">{lastSync ? `Sync ${new Date(lastSync).toLocaleTimeString()}` : 'Sync pending'}</span>
         </div>
       </div>
 
@@ -134,9 +145,9 @@ export const Header: React.FC = () => {
               <span className="text-outline-variant">/</span>
               <span className="text-terracotta-deep font-bold">{fireCount == null ? 'Fire Feed Unavailable' : `${fireCount} Active Fires`}</span>
               <span className="text-outline-variant">/</span>
-              <span className="px-2 py-0.5 rounded-full bg-aqi-hazardous text-on-tertiary font-bold">Delhi AQI {latestAqi ?? 'N/A'}</span>
+              <span className="px-2 py-0.5 rounded-full bg-aqi-hazardous text-on-tertiary font-bold">{latestAqi == null ? 'Delhi AQI pending' : `Delhi AQI ${latestAqi}`}</span>
               <span className="text-outline-variant">/</span>
-              <span className="font-telemetry-val text-body-sm font-bold text-ink-black">PM2.5: {latestPm25 == null ? 'N/A' : `${latestPm25.toFixed(1)} µg/m³`}</span>
+              <span className="font-telemetry-val text-body-sm font-bold text-ink-black">{latestPm25 == null ? 'PM2.5 pending' : `PM2.5: ${latestPm25.toFixed(1)} µg/m³`}</span>
             </div>
           </div>
         </div>

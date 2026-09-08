@@ -4,6 +4,7 @@ Fetches ground station PM2.5 readings for Delhi-NCR and Punjab/Haryana.
 Stores raw readings as pm25_ugm3, calculates aqi_index server-side using CPCB breakpoints.
 """
 
+import asyncio
 import os
 import math
 from backend.config import demo_enabled
@@ -56,48 +57,86 @@ async def fetch_openaq_stations(client: Optional[httpx.AsyncClient] = None) -> L
                 params={"parameters_id": 2, "bbox": BBOX_STR, "limit": 1000}, headers=headers)
             response.raise_for_status()
             locations = response.json()["results"]
-            location_by_id = {item["id"]: item for item in locations}
-            latest_by_parameter = {}
-            for parameter_id, parameter in ((2, "pm25"), (5, "no2"), (6, "so2")):
-                latest = await client.get(f"{OPENAQ_BASE_URL}/parameters/{parameter_id}/latest",
-                    params={"bbox": BBOX_STR, "limit": 1000}, headers=headers)
-                latest.raise_for_status()
-                latest_by_parameter[parameter] = latest.json().get("results", [])
+            now = datetime.now(timezone.utc)
+            cutoff = now - timedelta(hours=24)
 
-            for parameter in ("no2", "so2"):
-                for obs in latest_by_parameter[parameter]:
-                    value = obs.get("value")
-                    stamp = (obs.get("datetime") or {}).get("utc")
-                    location = location_by_id.get(obs.get("locationsId"), {})
-                    if value is None or not math.isfinite(float(value)) or float(value) < 0 or not stamp:
-                        continue
+            # OpenAQ's parameter-level /latest endpoint is global and does not
+            # apply a bounding box. Query the location-scoped endpoint for a
+            # bounded set of recently reporting corridor stations instead.
+            recent_locations = []
+            for item in locations:
+                stamp = (item.get("datetimeLast") or {}).get("utc")
+                if not stamp:
+                    continue
+                try:
                     observed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-                    age = datetime.now(timezone.utc) - observed
-                    if age < -timedelta(hours=1) or age > timedelta(hours=24):
-                        continue
-                    pollutant_readings.append({"station_id": f"IN-OPENAQ-{obs.get('locationsId')}",
-                        "station_name": location.get("name"), "parameter": parameter,
-                        "value": float(value), "unit": "ug/m3", "measured_at": stamp,
-                        "source": "OPENAQ_LIVE"})
+                except ValueError:
+                    continue
+                age = now - observed
+                if -timedelta(hours=1) <= age <= timedelta(hours=24):
+                    recent_locations.append((observed, item))
+            recent_locations.sort(key=lambda pair: pair[0], reverse=True)
+            max_locations = max(1, min(100, int(os.getenv("OPENAQ_MAX_LOCATIONS", "40"))))
+            selected_locations = [item for _, item in recent_locations[:max_locations]]
+
+            semaphore = asyncio.Semaphore(8)
+
+            async def fetch_location_latest(item):
+                async with semaphore:
+                    latest = await client.get(
+                        f"{OPENAQ_BASE_URL}/locations/{item['id']}/latest",
+                        params={"limit": 100, "datetime_min": cutoff.isoformat()},
+                        headers=headers,
+                    )
+                    latest.raise_for_status()
+                    return item, latest.json().get("results", [])
+
+            batches = await asyncio.gather(
+                *(fetch_location_latest(item) for item in selected_locations),
+                return_exceptions=True,
+            )
+            successful_batches = 0
+            latest_by_location = []
+            for batch in batches:
+                if isinstance(batch, Exception):
+                    logger.warning("OpenAQ location latest request failed (%s)", type(batch).__name__)
+                    continue
+                successful_batches += 1
+                latest_by_location.append(batch)
+
+            if selected_locations and successful_batches == 0:
+                raise RuntimeError("OpenAQ returned no usable location-level responses")
 
             newest_by_location = {}
-            for obs in latest_by_parameter["pm25"]:
-                item = location_by_id.get(obs.get("locationsId"))
-                coords = obs.get("coordinates") or (item or {}).get("coordinates") or {}
-                value = obs.get("value")
-                stamp = (obs.get("datetime") or {}).get("utc")
-                if item is None or coords.get("latitude") is None or coords.get("longitude") is None:
-                    continue
-                if value is None or not math.isfinite(float(value)) or float(value) < 0 or not stamp:
-                    continue
-                dt = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-                age = datetime.now(timezone.utc) - dt
-                if age < -timedelta(hours=1) or age > timedelta(hours=24):
-                    continue
-                previous = newest_by_location.get(item["id"])
-                if previous is not None and previous[0] >= dt:
-                    continue
-                newest_by_location[item["id"]] = (dt, float(value), coords, item)
+            for item, observations in latest_by_location:
+                parameters_by_sensor = {
+                    sensor.get("id"): (sensor.get("parameter") or {}).get("name")
+                    for sensor in item.get("sensors", [])
+                }
+                for obs in observations:
+                    parameter = parameters_by_sensor.get(obs.get("sensorsId"))
+                    if parameter not in ("pm25", "no2", "so2"):
+                        continue
+                    coords = obs.get("coordinates") or item.get("coordinates") or {}
+                    value = obs.get("value")
+                    stamp = (obs.get("datetime") or {}).get("utc")
+                    if coords.get("latitude") is None or coords.get("longitude") is None:
+                        continue
+                    if value is None or not math.isfinite(float(value)) or float(value) < 0 or not stamp:
+                        continue
+                    dt = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                    age = now - dt
+                    if age < -timedelta(hours=1) or age > timedelta(hours=24):
+                        continue
+                    if parameter == "pm25":
+                        previous = newest_by_location.get(item["id"])
+                        if previous is None or previous[0] < dt:
+                            newest_by_location[item["id"]] = (dt, float(value), coords, item)
+                    else:
+                        pollutant_readings.append({"station_id": f"IN-OPENAQ-{item['id']}",
+                            "station_name": item.get("name"), "parameter": parameter,
+                            "value": float(value), "unit": "ug/m3", "measured_at": stamp,
+                            "source": "OPENAQ_LIVE"})
 
             for measured_at, value, coords, item in newest_by_location.values():
                 locality = item.get("locality") or ""

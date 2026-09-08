@@ -2,9 +2,29 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
   BriefingResponse,
+  AlertsResponse,
+  BiomassEmissionsResponse,
+  HotspotsResponse,
+  FLStatusResponse,
+  MeteorologyResponse,
   MobileReleaseResponse,
+  PlumeResponse,
+  StationsResponse,
+  SurfaceGridResponse,
+  fetchAlerts,
+  fetchAqiSurface,
+  fetchBiomassEmissions,
+  fetchForecastPlume,
+  fetchFederatedStatus,
+  fetchHotspots,
   fetchLatestBriefing,
   fetchLatestMobileRelease,
+  fetchMeteorology,
+  fetchStations,
+  formatDataSource,
+  formatFederatedDataset,
+  formatFederatedImplementation,
+  getAqiCategoryAndColor,
 } from '../api/client';
 
 export const LandingPage: React.FC = () => {
@@ -14,14 +34,30 @@ export const LandingPage: React.FC = () => {
   const [mobileAlertModal, setMobileAlertModal] = useState(false);
   const [briefing, setBriefing] = useState<BriefingResponse | null>(null);
   const [mobileRelease, setMobileRelease] = useState<MobileReleaseResponse | null | undefined>(undefined);
+  const [hotspots, setHotspots] = useState<HotspotsResponse | null>(null);
+  const [stations, setStations] = useState<StationsResponse | null>(null);
+  const [surface, setSurface] = useState<SurfaceGridResponse | null>(null);
+  const [meteorology, setMeteorology] = useState<MeteorologyResponse | null>(null);
+  const [biomass, setBiomass] = useState<BiomassEmissionsResponse | null>(null);
+  const [forecast, setForecast] = useState<PlumeResponse | null>(null);
+  const [alerts, setAlerts] = useState<AlertsResponse | null>(null);
+  const [federated, setFederated] = useState<FLStatusResponse | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const simIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
     fetchLatestBriefing().then(setBriefing).catch(() => setBriefing(null));
     fetchLatestMobileRelease().then(setMobileRelease).catch(() => setMobileRelease(null));
+    fetchHotspots(24, 'nominal').then(setHotspots).catch(() => setHotspots(null));
+    fetchStations('pm25').then(setStations).catch(() => setStations(null));
+    fetchAqiSurface(0.5).then(setSurface).catch(() => setSurface(null));
+    fetchMeteorology().then(setMeteorology).catch(() => setMeteorology(null));
+    fetchBiomassEmissions(7).then(setBiomass).catch(() => setBiomass(null));
+    fetchForecastPlume().then(setForecast).catch(() => setForecast(null));
+    fetchAlerts(undefined, 20).then(setAlerts).catch(() => setAlerts(null));
+    fetchFederatedStatus().then(setFederated).catch(() => setFederated(null));
     return () => {
-      if (simIntervalRef.current) clearInterval(simIntervalRef.current);
+      window.speechSynthesis?.cancel();
     };
   }, []);
 
@@ -53,7 +89,7 @@ export const LandingPage: React.FC = () => {
           setIsPlaying(true);
           return;
         } catch {
-          // fall through to simulation
+          // Fall through to browser speech for the live briefing script.
         }
       } else {
         audio.pause();
@@ -62,23 +98,25 @@ export const LandingPage: React.FC = () => {
       }
     }
 
-    // Simulated playback loop if no audio file or browser blocked
+    const script = briefing?.script;
+    if (!script || !('speechSynthesis' in window)) return;
     if (isPlaying) {
-      if (simIntervalRef.current) clearInterval(simIntervalRef.current);
+      window.speechSynthesis.cancel();
       setIsPlaying(false);
     } else {
+      const utterance = new SpeechSynthesisUtterance(script);
+      utterance.rate = 1.5;
+      utterance.onboundary = (event) => {
+        setAudioProgress(Math.min(100, (event.charIndex / script.length) * 100));
+      };
+      utterance.onend = () => {
+        setAudioProgress(100);
+        setIsPlaying(false);
+      };
+      utterance.onerror = () => setIsPlaying(false);
+      speechRef.current = utterance;
       setIsPlaying(true);
-      if (simIntervalRef.current) clearInterval(simIntervalRef.current);
-      simIntervalRef.current = setInterval(() => {
-        setAudioProgress((prev) => {
-          if (prev >= 100) {
-            if (simIntervalRef.current) clearInterval(simIntervalRef.current);
-            setIsPlaying(false);
-            return 0;
-          }
-          return prev + 2;
-        });
-      }, 150);
+      window.speechSynthesis.speak(utterance);
     }
   };
 
@@ -92,6 +130,25 @@ export const LandingPage: React.FC = () => {
       }
     }
   };
+
+  const closestSurface = (longitude: number, latitude: number) => surface?.features.reduce((closest, feature) => {
+    const [lon, lat] = feature.geometry.coordinates;
+    const [closestLon, closestLat] = closest.geometry.coordinates;
+    return Math.hypot(lon - longitude, lat - latitude) < Math.hypot(closestLon - longitude, closestLat - latitude)
+      ? feature : closest;
+  }, surface.features[0]);
+  const delhiSurface = closestSurface(77.2, 28.6);
+  const transitSurface = closestSurface(76.99, 29.69);
+  const delhiAqi = delhiSurface?.properties.aqi_index;
+  const delhiPm25 = delhiSurface?.properties.pm25_estimate;
+  const delhiCategory = delhiAqi == null ? null : getAqiCategoryAndColor(delhiAqi).category;
+  const totalFrp = biomass?.regions.reduce((sum, region) => sum + region.frp_sum_mw, 0);
+  const punjabMeteo = meteorology?.regions.punjab;
+  const delhiMeteo = meteorology?.regions.delhi;
+  const forecastHorizon = forecast?.features.length
+    ? Math.max(...forecast.features.map((feature) => feature.properties.horizon_hours))
+    : null;
+  const dp = federated?.privacy?.dp_sgd;
 
   return (
     <div className="w-full bg-canvas-cream min-h-screen relative overflow-x-hidden pt-20">
@@ -109,11 +166,11 @@ export const LandingPage: React.FC = () => {
               <span className="material-symbols-outlined text-[16px]">bolt</span>
               <span className="font-label-md text-label-md uppercase tracking-wider">72H Advance Warning</span>
               <span className="text-on-secondary/70">•</span>
-              <span className="font-label-md text-label-md uppercase tracking-wider">Zero Raw Data Crosses Borders</span>
+              <span className="font-label-md text-label-md uppercase tracking-wider">Client Fit Metrics Withheld</span>
             </div>
             <div className="hidden sm:inline-flex items-center gap-space-2xs px-space-sm py-1 rounded-full bg-surface-vanilla text-ink-black shadow-[2px_2px_0px_#18181B] rotate-1">
               <span className="w-2 h-2 rounded-full bg-forest-jade animate-pulse"></span>
-              <span className="font-label-md text-label-md">GRAP Stage-IV Sync Active</span>
+              <span className="font-label-md text-label-md">{delhiCategory ? `${delhiCategory} Delhi AQI Conditions` : 'AQI Feed Loading'}</span>
             </div>
           </div>
 
@@ -132,8 +189,8 @@ export const LandingPage: React.FC = () => {
 
           {/* Subtitle */}
           <p className="mt-space-lg max-w-2xl mx-auto font-body-lg text-body-lg text-ink-muted leading-relaxed">
-            Tracking <strong className="text-ink-black font-semibold">35M tonnes</strong> of seasonal agricultural
-            residue burning from Punjab &amp; Haryana to the Delhi Inversion Trap with 72-hour Gaussian plume physics and
+            Tracking <strong className="text-ink-black font-semibold">{hotspots?.count ?? 'live'}</strong> current fire detections
+            from Punjab &amp; Haryana to the Delhi receptor basin with 72-hour Gaussian plume physics and
             privacy-preserving federated machine learning.
           </p>
 
@@ -197,7 +254,7 @@ export const LandingPage: React.FC = () => {
                 </div>
                 <div className="flex justify-between font-label-md text-label-md text-ink-muted">
                   <span>{Math.round(audioProgress)}%</span>
-                  <span>{briefing?.audio_url ? 'Audio' : (isPlaying ? 'Playing Brief...' : 'Live Audio')}</span>
+                  <span>{briefing?.audio_url ? 'Audio' : briefing?.script ? (isPlaying ? 'Narrating Brief...' : 'Browser Narration') : 'Unavailable'}</span>
                 </div>
               </div>
               {isPlaying && (
@@ -229,7 +286,7 @@ export const LandingPage: React.FC = () => {
               <div className="flex items-center justify-between lg:justify-start gap-space-sm px-space-md py-space-xs rounded-lg bg-surface-vanilla shadow-[2px_2px_0px_#18181B]">
                 <span className="text-xl">🔥</span>
                 <div>
-                  <div className="font-telemetry-val text-telemetry-val text-terracotta-deep">247</div>
+                  <div className="font-telemetry-val text-telemetry-val text-terracotta-deep">{hotspots?.count ?? '—'}</div>
                   <div className="font-label-md text-label-md text-ink-muted">Active Stubble Fires (VIIRS)</div>
                 </div>
               </div>
@@ -237,7 +294,7 @@ export const LandingPage: React.FC = () => {
               <div className="flex items-center justify-between lg:justify-start gap-space-sm px-space-md py-space-xs rounded-lg bg-surface-vanilla shadow-[2px_2px_0px_#18181B]">
                 <span className="text-xl">📡</span>
                 <div>
-                  <div className="font-telemetry-val text-telemetry-val text-cobalt-deep">312</div>
+                  <div className="font-telemetry-val text-telemetry-val text-cobalt-deep">{stations?.['@iot.count'] ?? '—'}</div>
                   <div className="font-label-md text-label-md text-ink-muted">CAAQMS Stations Online</div>
                 </div>
               </div>
@@ -246,17 +303,17 @@ export const LandingPage: React.FC = () => {
                 <span className="text-xl">🌫️</span>
                 <div>
                   <div className="flex items-center gap-space-2xs">
-                    <span className="font-telemetry-val text-telemetry-val text-aqi-hazardous">178.4</span>
+                    <span className="font-telemetry-val text-telemetry-val text-aqi-hazardous">{delhiPm25 == null ? '—' : delhiPm25.toFixed(1)}</span>
                     <span className="font-telemetry-unit text-telemetry-unit text-ink-muted">µg/m³ PM2.5</span>
                   </div>
                   <div className="font-label-md text-label-md font-bold text-aqi-hazardous">
-                    AQI 287 Hazardous (Delhi NCR)
+                    {delhiAqi == null ? 'AQI unavailable (Delhi NCR)' : `AQI ${delhiAqi} ${delhiCategory} (Delhi NCR)`}
                   </div>
                 </div>
               </div>
             </div>
             <div className="px-space-sm py-1 font-label-md text-label-md text-ink-muted hidden 2xl:block">
-              Synced 4s ago • Sentinel-5P + Ground BAM
+              {surface ? `Updated ${new Date(surface.computed_at).toLocaleTimeString()} • ${formatDataSource(surface.source)}` : 'Loading backend surface'}
             </div>
           </div>
         </section>
@@ -269,7 +326,7 @@ export const LandingPage: React.FC = () => {
                 <span className="px-2 py-0.5 rounded-full bg-cobalt-deep text-on-primary font-label-md text-label-md uppercase font-bold">
                   Physics Pipeline
                 </span>
-                <span className="font-label-md text-label-md text-ink-muted">Spatial Advection • T+72h</span>
+                <span className="font-label-md text-label-md text-ink-muted">Spatial Advection • T+{activeTimeTab}h</span>
               </div>
               <h2 className="font-headline-lg text-headline-lg text-ink-black">
                 The Trans-Indo-Gangetic Air Corridor
@@ -281,7 +338,7 @@ export const LandingPage: React.FC = () => {
               <div>
                 <div className="font-label-md text-label-md text-ink-muted">Boundary Mixing Height</div>
                 <div className="font-telemetry-val text-title-md text-ink-black font-extrabold">
-                  185m <span className="font-body-sm text-body-sm font-normal text-terracotta-deep">(Severe Inversion Trap)</span>
+                  {delhiMeteo ? `${delhiMeteo.mixing_layer_height_m_agl.toFixed(0)}m` : '—'} <span className="font-body-sm text-body-sm font-normal text-terracotta-deep">(Live Boundary Layer)</span>
                 </div>
               </div>
             </div>
@@ -310,12 +367,12 @@ export const LandingPage: React.FC = () => {
                     <span className="text-2xl">🔥</span>
                   </div>
                   <p className="font-body-sm text-body-sm text-ink-muted mt-space-2xs">
-                    Rapid thermal emissive bursts detected by NASA VIIRS. High-energy stubble burn release at 350°C-500°C.
+                    {hotspots ? `${hotspots.count} current detections from ${formatDataSource(hotspots.source)}.` : 'Waiting for the current thermal hotspot feed.'}
                   </p>
                 </div>
                 <div className="mt-space-md pt-space-xs border-t border-dashed border-outline-variant flex justify-between font-label-md text-label-md">
                   <span className="text-ink-muted">Thermal Radiative Power:</span>
-                  <span className="font-bold text-terracotta-deep">1,420 MW</span>
+                  <span className="font-bold text-terracotta-deep">{totalFrp == null ? '—' : `${totalFrp.toFixed(1)} MW`}</span>
                 </div>
               </div>
 
@@ -326,7 +383,7 @@ export const LandingPage: React.FC = () => {
                   <circle cx="50" cy="10" fill="#FF5376" r="4" />
                   <polygon fill="currentColor" points="95,25 100,30 93,35" />
                 </svg>
-                <span className="font-label-md text-label-md text-cobalt-deep font-bold -mt-2">NW Winds 4.2m/s</span>
+                <span className="font-label-md text-label-md text-cobalt-deep font-bold -mt-2">{punjabMeteo ? `${punjabMeteo.wind_speed_ms.toFixed(2)}m/s from ${punjabMeteo.wind.direction_from_deg.toFixed(0)}°` : 'Wind unavailable'}</span>
               </div>
 
               {/* Step 2: Transit & Chemical Aging */}
@@ -345,7 +402,7 @@ export const LandingPage: React.FC = () => {
                 </div>
                 <div className="mt-space-md pt-space-xs border-t border-dashed border-outline-variant flex justify-between font-label-md text-label-md">
                   <span className="text-ink-muted">Photochemical Aging:</span>
-                  <span className="font-bold text-cobalt-deep">+42% fine mass</span>
+                  <span className="font-bold text-cobalt-deep">{transitSurface ? `${transitSurface.properties.pm25_estimate.toFixed(1)} µg/m³ PM2.5` : 'Unavailable'}</span>
                 </div>
               </div>
 
@@ -356,7 +413,7 @@ export const LandingPage: React.FC = () => {
                   <circle cx="50" cy="45" fill="#18181B" r="4" />
                   <polygon fill="currentColor" points="95,25 100,30 93,35" />
                 </svg>
-                <span className="font-label-md text-label-md text-coral-watermelon-vivid font-bold -mt-2">Subsidence Zone</span>
+                <span className="font-label-md text-label-md text-coral-watermelon-vivid font-bold -mt-2">Receptor Zone</span>
               </div>
 
               {/* Step 3: Terminal Inversion Trap */}
@@ -366,16 +423,16 @@ export const LandingPage: React.FC = () => {
                 </div>
                 <div className="pt-space-xs">
                   <div className="flex items-center justify-between">
-                    <span className="font-title-sm text-title-sm text-ink-black font-bold">03. Nocturnal Trapping</span>
+                    <span className="font-title-sm text-title-sm text-ink-black font-bold">03. Delhi Receptor Conditions</span>
                     <span className="text-2xl">⚠️</span>
                   </div>
                   <p className="font-body-sm text-body-sm text-ink-muted mt-space-2xs">
-                    Mixing depth plummets to 185m after sunset. High topography &amp; heat island lock the plume at ground level.
+                    The backend reports a {delhiMeteo ? `${delhiMeteo.mixing_layer_height_m_agl.toFixed(0)}m` : 'currently unavailable'} boundary layer. Inversion depth requires a vertical temperature profile.
                   </p>
                 </div>
                 <div className="mt-space-md pt-space-xs border-t border-dashed border-outline-variant flex justify-between font-label-md text-label-md">
                   <span className="text-ink-muted">Inversion Severity:</span>
-                  <span className="font-bold text-aqi-hazardous">Severe (GRAP-IV)</span>
+                  <span className="font-bold text-aqi-hazardous">{meteorology?.inversion.status === 'not_measured' ? 'Not measured' : meteorology?.inversion.status ?? 'Unavailable'}</span>
                 </div>
               </div>
             </div>
@@ -428,21 +485,22 @@ export const LandingPage: React.FC = () => {
                     01
                   </span>
                   <span className="px-space-sm py-1 rounded-full bg-canvas-cream text-cobalt-deep font-label-md text-label-md uppercase font-bold shadow-[1px_1px_0px_#18181B]">
-                    GPR Downscaler
+                    Live AQI Surface
                   </span>
                 </div>
                 <h3 className="font-headline-md text-headline-md text-ink-black mb-space-xs">FUSE</h3>
                 <div className="font-title-sm text-title-sm text-cobalt-deep font-bold mb-space-sm">
-                  Continuous 0.1° Blended Surface
+                  {surface ? `${surface.resolution_deg}° Backend Surface` : 'Surface Feed Loading'}
                 </div>
                 <p className="font-body-md text-body-md text-ink-muted leading-relaxed">
-                  Gaussian Process Regression seamlessly fuses orbital Sentinel-5P Absorbing Aerosol Index (AAI) with
-                  terrestrial CPCB BAM-1020 beta-attenuation gauges, eradicating rural monitor blackouts.
+                  {surface
+                    ? `${formatDataSource(surface.source)}. The current response contains ${surface.features.length} model points and ${stations?.['@iot.count'] ?? 0} ground-station observations.`
+                    : 'Waiting for the backend AQI surface response.'}
                 </p>
               </div>
               <div className="mt-space-lg pt-space-sm border-t border-outline-variant flex items-center justify-between font-label-md text-label-md">
                 <span className="text-ink-muted">Resolution:</span>
-                <span className="font-bold text-ink-black">1.1km² Multi-Sensor Grid</span>
+                <span className="font-bold text-ink-black">{surface ? `${surface.resolution_deg}° grid` : 'Unavailable'}</span>
               </div>
             </div>
 
@@ -459,16 +517,17 @@ export const LandingPage: React.FC = () => {
                 </div>
                 <h3 className="font-headline-md text-headline-md text-ink-black mb-space-xs">PREDICT</h3>
                 <div className="font-title-sm text-title-sm text-secondary font-bold mb-space-sm">
-                  72h Gaussian Plume Physics
+                  {forecastHorizon == null ? 'No Active Plume Forecast' : `${forecastHorizon}h Gaussian Plume Forecast`}
                 </div>
                 <p className="font-body-md text-body-md text-ink-muted leading-relaxed">
-                  Dynamical advection models simulated against diurnal planetary boundary layer (PBL) compressions.
-                  Predicts localized smoke wavefront arrival with sub-district precision down to block level.
+                  {forecast
+                    ? `${formatDataSource(forecast.source)}. The backend currently returns ${forecast.features.length} computed plume envelope${forecast.features.length === 1 ? '' : 's'} from live fire and meteorology inputs.`
+                    : 'Waiting for the backend plume response.'}
                 </p>
               </div>
               <div className="mt-space-lg pt-space-sm border-t border-outline-variant flex items-center justify-between font-label-md text-label-md">
                 <span className="text-ink-muted">Forecast Horizon:</span>
-                <span className="font-bold text-ink-black">72 Hours Forward Lead</span>
+                <span className="font-bold text-ink-black">{forecastHorizon == null ? 'No current envelope' : `${forecastHorizon} hours`}</span>
               </div>
             </div>
 
@@ -480,21 +539,22 @@ export const LandingPage: React.FC = () => {
                     03
                   </span>
                   <span className="px-space-sm py-1 rounded-full bg-canvas-cream text-forest-jade font-label-md text-label-md uppercase font-bold shadow-[1px_1px_0px_#18181B]">
-                    Flower FL Protocol
+                    Backend FL Protocol
                   </span>
                 </div>
                 <h3 className="font-headline-md text-headline-md text-ink-black mb-space-xs">FEDERATE</h3>
                 <div className="font-title-sm text-title-sm text-forest-jade font-bold mb-space-sm">
-                  Zero Raw Data Exfiltration
+                  {formatFederatedImplementation(federated?.implementation)}
                 </div>
                 <p className="font-body-md text-body-md text-ink-muted leading-relaxed">
-                  Punjab, Haryana, and Delhi SPCB nodes execute decentralized on-premise LSTM weights optimization.
-                  Model gradients synchronize over zero-trust secure aggregators without jurisdictional friction.
+                  {federated
+                    ? `The current backend run uses a ${formatFederatedDataset(federated.dataset).toLowerCase()}. It is a local protocol demonstration and does not represent live participating agencies.`
+                    : 'Waiting for the federated backend status.'}
                 </p>
               </div>
               <div className="mt-space-lg pt-space-sm border-t border-outline-variant flex items-center justify-between font-label-md text-label-md">
-                <span className="text-ink-muted">Privacy Guarantees:</span>
-                <span className="font-bold text-ink-black">Differential Privacy (ε=0.8)</span>
+                <span className="text-ink-muted">Configured Privacy:</span>
+                <span className="font-bold text-ink-black">{dp?.enabled ? `Differential privacy ε=${dp.epsilon_spent ?? dp.target_epsilon ?? 'pending'}` : 'Awaiting backend run'}</span>
               </div>
             </div>
           </div>
@@ -507,34 +567,33 @@ export const LandingPage: React.FC = () => {
             <div className="inline-flex items-center gap-space-xs">
               <span className="w-3 h-3 rounded-full bg-terracotta-deep"></span>
               <span className="font-label-md text-label-md uppercase tracking-wider font-bold text-ink-black">
-                Airshed Case Study: 03 November 2024
+                Live Airshed Snapshot: {surface ? new Date(surface.computed_at).toLocaleDateString() : 'Loading'}
               </span>
             </div>
             <h2 className="font-headline-lg text-headline-lg text-ink-black">
-              When the Winds Shifted 14° Clockwise: How PRANA Gave 38-Hour Notice
+              Current Punjab-to-Delhi Corridor Conditions
             </h2>
             <p className="font-body-lg text-body-lg text-ink-muted">
-              Traditional meteorological models failed to catch the shallow thermal inversion collapse over the Yamuna
-              floodplain. By federating telemetry from 48 rural farmer cooperative sensors with Sentinel-5P tropospheric
-              NO₂, PRANA triggered automatic GRAP-IV enforcement flags.
+              Open-Meteo reports {punjabMeteo ? `${punjabMeteo.wind_speed_ms.toFixed(2)} m/s winds from ${punjabMeteo.wind.direction_from_deg.toFixed(0)}° over Punjab` : 'wind data is loading'}.
+              NASA FIRMS currently reports {hotspots?.count ?? '—'} matching fire detections, while the CAMS surface provides {surface?.features.length ?? '—'} current model grid points.
             </p>
 
             {/* Mini-stats row */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-space-sm mt-space-sm">
               <div className="p-space-sm rounded-xl bg-surface-vanilla shadow-[2px_2px_0px_#18181B]">
-                <div className="font-label-md text-label-md text-ink-muted">Advance Alert Lead</div>
-                <div className="font-telemetry-val text-telemetry-val text-cobalt-deep mt-1">38.4 hrs</div>
-                <div className="font-label-md text-label-md text-forest-jade font-semibold">vs 6h baseline</div>
+                <div className="font-label-md text-label-md text-ink-muted">Plume Envelopes</div>
+                <div className="font-telemetry-val text-telemetry-val text-cobalt-deep mt-1">{forecast?.features.length ?? '—'}</div>
+                <div className="font-label-md text-label-md text-forest-jade font-semibold">current backend forecast</div>
               </div>
               <div className="p-space-sm rounded-xl bg-surface-vanilla shadow-[2px_2px_0px_#18181B]">
-                <div className="font-label-md text-label-md text-ink-muted">Prevented Influx</div>
-                <div className="font-telemetry-val text-telemetry-val text-terracotta-deep mt-1">-28% PM</div>
-                <div className="font-label-md text-label-md text-ink-muted">via targeted bans</div>
+                <div className="font-label-md text-label-md text-ink-muted">Surface Grid</div>
+                <div className="font-telemetry-val text-telemetry-val text-terracotta-deep mt-1">{surface?.features.length ?? '—'}</div>
+                <div className="font-label-md text-label-md text-ink-muted">current model points</div>
               </div>
               <div className="p-space-sm rounded-xl bg-surface-vanilla shadow-[2px_2px_0px_#18181B] col-span-2 sm:col-span-1">
-                <div className="font-label-md text-label-md text-ink-muted">SPCB Interventions</div>
-                <div className="font-telemetry-val text-telemetry-val text-ink-black mt-1">1,820</div>
-                <div className="font-label-md text-label-md text-secondary font-semibold">Sprinkler deployments</div>
+                <div className="font-label-md text-label-md text-ink-muted">Backend Incidents</div>
+                <div className="font-telemetry-val text-telemetry-val text-ink-black mt-1">{alerts?.count ?? '—'}</div>
+                <div className="font-label-md text-label-md text-secondary font-semibold">currently recorded</div>
               </div>
             </div>
 
@@ -569,7 +628,7 @@ export const LandingPage: React.FC = () => {
                 <div className="w-28 h-28 rounded-full bg-secondary-fixed flex items-center justify-center relative my-space-xs shadow-[2px_2px_0px_#18181B]">
                   <span className="text-5xl select-none">🫁</span>
                   <div className="absolute -top-1 -right-1 px-2 py-0.5 rounded-full bg-coral-watermelon-vivid text-on-secondary font-label-md text-label-md font-bold rotate-6">
-                    POOR
+                    {delhiCategory?.toUpperCase() ?? 'DATA PENDING'}
                   </div>
                 </div>
 
@@ -577,19 +636,19 @@ export const LandingPage: React.FC = () => {
                   Daily Breath Forecast
                 </div>
                 <p className="font-body-sm text-body-sm text-ink-muted mb-space-sm">
-                  Rohini Sector 16 • Outdoor exercise unadvised between 18:00 and 09:00.
+                  Delhi NCR model grid • Review current local public-health advisories before outdoor activity.
                 </p>
 
                 {/* Dual-Unit Telemetry Chip inside Device */}
                 <div className="w-full flex items-center justify-between p-space-xs rounded-full bg-surface-vanilla shadow-[2px_2px_0px_#18181B] text-ink-black">
                   <div className="flex items-center gap-space-2xs pl-space-sm">
-                    <span className="font-telemetry-val text-body-lg font-bold">142.8</span>
+                    <span className="font-telemetry-val text-body-lg font-bold">{delhiPm25 == null ? '—' : delhiPm25.toFixed(1)}</span>
                     <span className="font-telemetry-unit text-label-md text-ink-muted">µg/m³</span>
                   </div>
                   <div className="w-px h-6 bg-outline-variant"></div>
                   <div className="flex items-center gap-space-2xs pr-space-sm">
                     <span className="w-2 h-2 rounded-full bg-aqi-hazardous"></span>
-                    <span className="font-label-md text-label-md font-extrabold text-aqi-hazardous">AQI 294</span>
+                    <span className="font-label-md text-label-md font-extrabold text-aqi-hazardous">{delhiAqi == null ? 'AQI pending' : `AQI ${delhiAqi}`}</span>
                   </div>
                 </div>
               </div>

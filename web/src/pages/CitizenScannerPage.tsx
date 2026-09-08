@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { uploadCitizenSkyPhoto, CitizenPhotoResponse } from '../api/client';
 
 export const CitizenScannerPage: React.FC = () => {
@@ -7,17 +7,12 @@ export const CitizenScannerPage: React.FC = () => {
   const [longitude, setLongitude] = useState<string>('77.3160');
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [reportSubmitted, setReportSubmitted] = useState<boolean>(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Result state
-  const [result, setResult] = useState<CitizenPhotoResponse>({
-    pm25_estimate: 312.4,
-    confidence: 'high',
-    aqi_category: 'Severe',
-    aqi_index: 387,
-    aqi_color: '#8F3F97',
-    processing_time_ms: 24,
-    source: 'DCP_HEURISTIC_ESTIMATE',
-  });
+  const [result, setResult] = useState<CitizenPhotoResponse | null>(null);
 
   const presets = {
     clear: {
@@ -25,12 +20,7 @@ export const CitizenScannerPage: React.FC = () => {
       desc: 'High sky patch visibility, minimal light extinction',
       lat: '30.2450',
       lon: '75.8420',
-      pm25: 42.6,
-      aqi: 71,
-      cat: 'Satisfactory',
       color: '#92D050',
-      opticalDepth: 0.22,
-      confidence: 'high' as const,
       previewGradient: 'from-[#60A5FA] via-[#93C5FD] to-[#E0F2FE]',
     },
     haze: {
@@ -38,12 +28,7 @@ export const CitizenScannerPage: React.FC = () => {
       desc: 'Diffuse boundary layer, moderate particulate scattering',
       lat: '29.3909',
       lon: '76.9635',
-      pm25: 168.2,
-      aqi: 337,
-      cat: 'Very Poor',
       color: '#FF0000',
-      opticalDepth: 0.76,
-      confidence: 'high' as const,
       previewGradient: 'from-[#FDBA74] via-[#FDE68A] to-[#FEF3C7]',
     },
     smog: {
@@ -51,12 +36,7 @@ export const CitizenScannerPage: React.FC = () => {
       desc: 'Heavy nocturnal subsidence inversion trap, severe scattering',
       lat: '28.6472',
       lon: '77.3160',
-      pm25: 312.4,
-      aqi: 387,
-      cat: 'Severe',
       color: '#8F3F97',
-      opticalDepth: 1.34,
-      confidence: 'high' as const,
       previewGradient: 'from-[#9CA3AF] via-[#D1D5DB] to-[#F3F4F6]',
     },
   };
@@ -66,32 +46,27 @@ export const CitizenScannerPage: React.FC = () => {
     const p = presets[key];
     setLatitude(p.lat);
     setLongitude(p.lon);
-    setResult({
-      pm25_estimate: p.pm25,
-      confidence: p.confidence,
-      aqi_category: p.cat,
-      aqi_index: p.aqi,
-      aqi_color: p.color,
-      processing_time_ms: 22,
-      source: 'DCP_HEURISTIC_ESTIMATE',
-    });
+    setResult(null);
   };
 
+  useEffect(() => {
+    if (!selectedFile) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(selectedFile);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [selectedFile]);
+
   const handleRunScan = async () => {
+    if (!selectedFile) {
+      fileInputRef.current?.click();
+      return;
+    }
     setIsAnalyzing(true);
     try {
-      // Create small synthetic image blob for live API upload
-      const canvas = document.createElement('canvas');
-      canvas.width = 224;
-      canvas.height = 224;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = selectedPreset === 'clear' ? '#87CEEB' : selectedPreset === 'haze' ? '#E6D7B8' : '#B0A898';
-        ctx.fillRect(0, 0, 224, 224);
-      }
-      const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), 'image/jpeg'));
-
-      const res = await uploadCitizenSkyPhoto(blob, parseFloat(latitude), parseFloat(longitude));
+      const res = await uploadCitizenSkyPhoto(selectedFile, parseFloat(latitude), parseFloat(longitude));
       setResult(res);
       setReportSubmitted(true);
       setTimeout(() => setReportSubmitted(false), 3500);
@@ -111,17 +86,8 @@ export const CitizenScannerPage: React.FC = () => {
       return;
     }
 
-    setIsAnalyzing(true);
-    try {
-      const res = await uploadCitizenSkyPhoto(file, parseFloat(latitude), parseFloat(longitude));
-      setResult(res);
-      setReportSubmitted(true);
-      setTimeout(() => setReportSubmitted(false), 3500);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsAnalyzing(false);
-    }
+    setSelectedFile(file);
+    setResult(null);
   };
 
   return (
@@ -231,7 +197,7 @@ export const CitizenScannerPage: React.FC = () => {
                           ></span>
                         </div>
                         <div className="text-xs font-semibold text-ink-black truncate">{p.name.split(' ')[0]}</div>
-                        <div className="text-[11px] text-ink-muted mt-0.5">PM2.5: ~{p.pm25} µg/m³</div>
+                        <div className="text-[11px] text-ink-muted mt-0.5">Location preset</div>
                       </button>
                     );
                   })}
@@ -241,6 +207,7 @@ export const CitizenScannerPage: React.FC = () => {
               {/* Interactive Sky Preview Frame */}
               <div
                 className={`w-full h-64 rounded-xl bg-gradient-to-b ${presets[selectedPreset].previewGradient} p-4 flex flex-col justify-between border-2 border-ink-black shadow-[inset_2px_2px_0px_rgba(0,0,0,0.1)] relative overflow-hidden`}
+                style={previewUrl ? { backgroundImage: `url(${previewUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
               >
                 {/* Simulated Haze Particle Grain Effect */}
                 <div className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#18181b_1px,transparent_1px)] [background-size:12px_12px]"></div>
@@ -255,14 +222,14 @@ export const CitizenScannerPage: React.FC = () => {
                     224 × 224 px Tensor Input
                   </span>
                   <span className="px-2.5 py-1 rounded-full bg-surface-vanilla text-ink-black font-label-md text-label-md font-bold shadow-[2px_2px_0px_#18181B] border border-ink-black">
-                    Optical Depth &tau;: {presets[selectedPreset].opticalDepth}
+                    {selectedFile ? 'Uploaded Sky Frame' : 'Photo Required'}
                   </span>
                 </div>
 
                 <div className="relative z-10 bg-ink-black/80 backdrop-blur-md p-3 rounded-lg text-canvas-cream flex items-center justify-between">
                   <div>
                     <div className="text-xs font-bold uppercase text-primary-fixed-dim">Sample Region</div>
-                    <div className="text-sm font-semibold">{presets[selectedPreset].name}</div>
+                    <div className="text-sm font-semibold">{selectedFile?.name ?? presets[selectedPreset].name}</div>
                   </div>
                   <div className="text-right">
                     <div className="text-xs font-mono text-coral-watermelon-vivid font-bold">
@@ -278,6 +245,7 @@ export const CitizenScannerPage: React.FC = () => {
                   <span className="material-symbols-outlined text-[18px]">upload_file</span>
                   <span>Choose Local Sky Photo</span>
                   <input
+                    ref={fileInputRef}
                     type="file"
                     accept="image/jpeg,image/png"
                     onChange={handleFileUpload}
@@ -328,7 +296,7 @@ export const CitizenScannerPage: React.FC = () => {
                 <span className={`material-symbols-outlined text-[20px] ${isAnalyzing ? 'animate-spin' : ''}`}>
                   {isAnalyzing ? 'refresh' : 'lens_blur'}
                 </span>
-                <span>{isAnalyzing ? 'Executing Dark Channel Decomposition...' : 'Trigger DCP Atmospheric Haze Inference'}</span>
+                <span>{isAnalyzing ? 'Executing Dark Channel Decomposition...' : selectedFile ? 'Trigger DCP Atmospheric Haze Inference' : 'Choose a Sky Photo to Analyze'}</span>
               </button>
             </div>
           </div>
@@ -342,14 +310,14 @@ export const CitizenScannerPage: React.FC = () => {
                   GROUND RECEPTOR ESTIMATION
                 </span>
                 <span className="font-mono text-xs px-2 py-0.5 rounded bg-canvas-cream text-ink-black border border-ink-black/20 font-bold">
-                  Latency: {result.processing_time_ms}ms
+                  Latency: {result ? `${result.processing_time_ms}ms` : 'Awaiting photo'}
                 </span>
               </div>
 
               <div className="flex items-baseline justify-between pt-2">
                 <div>
                   <div className="font-telemetry-val text-[48px] leading-none font-extrabold text-ink-black tracking-tight">
-                    {result.pm25_estimate}
+                    {result?.pm25_estimate ?? '—'}
                   </div>
                   <div className="font-telemetry-unit text-telemetry-unit text-ink-muted uppercase font-bold mt-1">
                     PM2.5 Mass Concentration (µg/m³)
@@ -359,12 +327,12 @@ export const CitizenScannerPage: React.FC = () => {
                 <div className="text-right">
                   <div
                     className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-white font-label-lg text-label-lg font-bold shadow-[2px_2px_0px_#18181B]"
-                    style={{ backgroundColor: result.aqi_color }}
+                    style={{ backgroundColor: result?.aqi_color ?? '#52525B' }}
                   >
-                    <span>AQI {result.aqi_index}</span>
+                    <span>AQI {result?.aqi_index ?? '—'}</span>
                   </div>
                   <div className="font-label-md text-label-md text-ink-black font-bold mt-1 uppercase">
-                    {result.aqi_category} Tier
+                    {result ? `${result.aqi_category} Tier` : 'Awaiting Analysis'}
                   </div>
                 </div>
               </div>
@@ -374,13 +342,13 @@ export const CitizenScannerPage: React.FC = () => {
                 <div className="flex items-center justify-between font-label-md text-label-md">
                   <span className="text-ink-muted uppercase font-bold">Monte-Carlo Confidence:</span>
                   <span className="font-bold uppercase text-forest-jade">
-                    {result.confidence.toUpperCase()} CONFIDENCE (&sigma; &lt; 12.0)
+                    {result ? `${result.confidence.toUpperCase()} CONFIDENCE` : 'AWAITING ANALYSIS'}
                   </span>
                 </div>
                 <div className="w-full bg-surface-vanilla rounded-full h-2 overflow-hidden border border-ink-black/20">
                   <div
                     className="h-full bg-forest-jade rounded-full"
-                    style={{ width: result.confidence === 'high' ? '92%' : result.confidence === 'medium' ? '68%' : '40%' }}
+                    style={{ width: result ? (result.confidence === 'high' ? '92%' : result.confidence === 'medium' ? '68%' : '40%') : '0%' }}
                   ></div>
                 </div>
               </div>

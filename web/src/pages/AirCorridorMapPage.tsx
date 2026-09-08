@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  fetchAqiSurface, fetchSensorThings, fetchHotspots, fetchMeteorology, fetchBiomassEmissions,
-  BiomassEmissionsResponse, MeteorologyResponse, SurfaceGridResponse, SensorThingsResponse, HotspotsResponse,
+  fetchAqiSurface, fetchSensorThings, fetchHotspots, fetchMeteorology, fetchBiomassEmissions, fetchForecastPlume,
+  BiomassEmissionsResponse, MeteorologyResponse, SurfaceGridResponse, SensorThingsResponse, HotspotsResponse, PlumeResponse,
+  formatBackendStatus,
+  formatDataSource,
   getAqiCategoryAndColor,
 } from '../api/client';
 
 export const AirCorridorMapPage: React.FC = () => {
-  const [trajectoryHours, setTrajectoryHours] = useState<number>(28);
+  const [trajectoryHours, setTrajectoryHours] = useState<number>(0);
   const [selectedNode, setSelectedNode] = useState<'origin' | 'transit' | 'sink'>('sink');
   const [layers, setLayers] = useState({
     plume: true,
@@ -34,6 +36,7 @@ export const AirCorridorMapPage: React.FC = () => {
   const [hotspotsData, setHotspotsData] = useState<HotspotsResponse | null>(null);
   const [meteorologyData, setMeteorologyData] = useState<MeteorologyResponse | null>(null);
   const [biomassData, setBiomassData] = useState<BiomassEmissionsResponse | null>(null);
+  const [plumeData, setPlumeData] = useState<PlumeResponse | null>(null);
 
   useEffect(() => {
     fetchAqiSurface(0.5).then(setSurfaceData).catch(() => {});
@@ -41,6 +44,7 @@ export const AirCorridorMapPage: React.FC = () => {
     fetchHotspots(24, 'nominal').then(setHotspotsData).catch(() => {});
     fetchMeteorology().then(setMeteorologyData).catch(() => {});
     fetchBiomassEmissions(7).then(setBiomassData).catch(() => {});
+    fetchForecastPlume().then(setPlumeData).catch(() => {});
   }, []);
 
   const punjabMeteo = meteorologyData?.regions.punjab;
@@ -105,7 +109,7 @@ export const AirCorridorMapPage: React.FC = () => {
               Air Corridor Kinematic Trajectory Canvas
             </h1>
             <p className="font-body-md text-body-md text-ink-muted mt-1 max-w-2xl">
-              High-resolution synoptic tracking across the 320km agricultural-urban plume transit funnel. Visualizing Gaussian plume dispersion and thermal subsidence traps.
+              Synoptic tracking across the agricultural-urban corridor using current Gaussian plume envelopes and backend boundary-layer telemetry.
             </p>
           </div>
 
@@ -115,10 +119,10 @@ export const AirCorridorMapPage: React.FC = () => {
               <span className="material-symbols-outlined text-coral-watermelon-vivid text-[22px]">radar</span>
               <div className="flex flex-col">
                 <span className="font-label-md text-label-md uppercase text-secondary-container font-bold">
-                  Air Corridor 04
+                  Current Corridor
                 </span>
                 <span className="font-title-sm text-title-sm text-canvas-cream font-bold tracking-tight leading-none">
-                  Active Inflow Influx
+                  {plumeData ? `${plumeData.features.length} Active Envelopes` : 'Forecast Loading'}
                 </span>
               </div>
             </div>
@@ -176,13 +180,13 @@ export const AirCorridorMapPage: React.FC = () => {
                 <span className="material-symbols-outlined text-[14px]">
                   {layers.cpcbBams ? 'check_circle' : 'radio_button_unchecked'}
                 </span>
-                CAAQMS Stations Grid
+                Sensor Grid ({sensorThingsData?.['@iot.count'] ?? 0})
               </button>
             </div>
 
             <div className="flex items-center gap-2">
               <span className="px-2.5 py-1 rounded-full bg-aqi-hazardous text-canvas-cream font-label-md text-label-md font-bold shadow-[1px_1px_0px_#18181B]">
-                Receptor: AQI 387
+                {delhiSurface ? `Receptor: AQI ${delhiSurface.properties.aqi_index}` : 'Receptor AQI pending'}
               </span>
             </div>
           </div>
@@ -204,7 +208,7 @@ export const AirCorridorMapPage: React.FC = () => {
               <rect fill="url(#corridorGrid)" height="520" width="1000" />
 
               {/* Plume Ribbon */}
-              {layers.plume && (
+              {layers.plume && Boolean(plumeData?.features.length) && (
                 <>
                   <path
                     className="blur-md"
@@ -247,7 +251,7 @@ export const AirCorridorMapPage: React.FC = () => {
               )}
 
               {/* Dynamic Animated Particle Head */}
-              <g
+              {Boolean(plumeData?.features.length) && <g
                 className="transition-all duration-100 ease-out"
                 transform={`translate(${150 + (trajectoryHours / 72) * 690}, ${110 + (trajectoryHours / 72) * 300})`}
               >
@@ -264,7 +268,7 @@ export const AirCorridorMapPage: React.FC = () => {
                   stroke="#FFFFFF"
                   strokeWidth="3"
                 />
-              </g>
+              </g>}
             </svg>
 
             {/* Nodes on Map */}
@@ -314,12 +318,12 @@ export const AirCorridorMapPage: React.FC = () => {
               >
                 <div className="flex items-center gap-1.5 text-coral-watermelon-vivid font-label-md text-label-md uppercase font-bold">
                   <span className="w-2.5 h-2.5 rounded-full bg-coral-watermelon-vivid animate-pulse"></span>
-                  03. Terminal Inversion Trap
+                  03. Delhi Receptor Basin
                 </div>
                 <div className="font-headline-sm text-headline-sm text-ink-black mt-1">Delhi NCR Basin</div>
-                <p className="font-body-sm text-body-sm text-ink-muted mt-0.5">Anand Vihar, ITO, IGI Trap</p>
+                <p className="font-body-sm text-body-sm text-ink-muted mt-0.5">Inversion: {formatBackendStatus(meteorologyData?.inversion.status, 'Weather status pending')}</p>
                 <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-aqi-hazardous text-on-tertiary text-label-md font-bold shadow-[1px_1px_0px_#18181B]">
-                  AQI {delhiSurface?.properties.aqi_index ?? 'N/A'} • {delhiMeteo ? `${delhiMeteo.mixing_layer_height_m_agl.toFixed(0)}m Mixing Layer` : 'Layer unavailable'}
+                  {delhiSurface ? `AQI ${delhiSurface.properties.aqi_index}` : 'AQI pending'} • {delhiMeteo ? `${delhiMeteo.mixing_layer_height_m_agl.toFixed(0)}m Mixing Layer` : 'Layer unavailable'}
                 </div>
               </div>
             </div>
@@ -357,9 +361,9 @@ export const AirCorridorMapPage: React.FC = () => {
               />
               <div className="flex justify-between text-label-md text-ink-muted font-bold">
                 <span>T+0h Origin (Punjab)</span>
-                <span>T+24h Transit (Haryana)</span>
-                <span>T+48h Terminal Inversion (NCR)</span>
-                <span>T+72h Dispersal Washout</span>
+                <span>T+24h Forecast</span>
+                <span>T+48h Forecast</span>
+                <span>T+72h Forecast</span>
               </div>
             </div>
           </div>
@@ -399,16 +403,16 @@ export const AirCorridorMapPage: React.FC = () => {
 
           <div className="p-space-lg rounded-2xl bg-surface-vanilla border-2 border-ink-black shadow-[4px_4px_0px_#18181B]">
             <div className="flex items-center justify-between mb-3">
-              <span className="font-label-md text-label-md text-coral-watermelon-vivid font-bold uppercase">Receptor Trap</span>
+              <span className="font-label-md text-label-md text-coral-watermelon-vivid font-bold uppercase">Receptor Conditions</span>
               <span className="w-3 h-3 rounded-full bg-coral-watermelon-vivid"></span>
             </div>
-            <h3 className="font-headline-sm text-headline-sm text-ink-black font-bold">Delhi NCR Inversion Trap</h3>
+            <h3 className="font-headline-sm text-headline-sm text-ink-black font-bold">Delhi NCR Receptor Conditions</h3>
             <p className="font-body-sm text-body-sm text-ink-muted mt-1 leading-relaxed">
               The live boundary-layer height is available. A vertical temperature profile is still required to measure inversion depth.
             </p>
             <div className="mt-4 pt-3 border-t border-ink-black/10 flex justify-between font-label-md text-label-md font-bold">
               <span>Inversion Severity:</span>
-              <span className="text-aqi-hazardous font-extrabold">{meteorologyData?.inversion.status === 'not_measured' ? 'Not measured' : meteorologyData?.inversion.status ?? 'Unavailable'}</span>
+              <span className="text-aqi-hazardous font-extrabold">{formatBackendStatus(meteorologyData?.inversion.status, 'Weather status pending')}</span>
             </div>
           </div>
         </div>
@@ -419,7 +423,7 @@ export const AirCorridorMapPage: React.FC = () => {
             <div>
               <div className="flex items-center gap-2 font-label-md text-label-md uppercase tracking-wider text-cobalt-deep font-bold mb-1">
                 <span className="material-symbols-outlined text-[14px]">grain</span>
-                AQI Surface &bull; {surfaceData?.source ?? 'Loading source'}
+                AQI Surface &bull; {formatDataSource(surfaceData?.source, 'Loading source')}
               </div>
               <h2 className="font-headline-sm text-headline-sm text-ink-black font-bold">AQI Surface Grid PM2.5 Field</h2>
             </div>
@@ -458,7 +462,7 @@ export const AirCorridorMapPage: React.FC = () => {
           </div>
           {surfaceData && (
             <p className="mt-3 font-body-sm text-body-sm text-ink-muted">
-              Source: {surfaceData.source} &bull; Computed: {new Date(surfaceData.computed_at).toLocaleString()}
+              Source: {formatDataSource(surfaceData.source)} &bull; Computed: {new Date(surfaceData.computed_at).toLocaleString()}
             </p>
           )}
         </div>

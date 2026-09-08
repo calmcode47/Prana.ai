@@ -2,17 +2,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
   createIncident,
-  fetchHotspots, fetchStations, fetchAlerts, fetchHealth, fetchReady,
+  fetchHotspots, fetchStations, fetchAlerts, fetchHealth, fetchReady, fetchAqiSurface,
   createLegalNotice, fetchBiomassEmissions, fetchFireAqiLag, fetchForecastPlume, fetchMeteorology,
   queueLegalDispatch,
   connectCorridorWebSocket,
   BiomassEmissionsResponse, FireAqiLagResponse, HotspotsResponse, MeteorologyResponse,
-  PlumeResponse, StationsResponse, AlertsResponse, HealthResponse, ReadyResponse,
+  PlumeResponse, StationsResponse, AlertsResponse, HealthResponse, ReadyResponse, SurfaceGridResponse,
+  formatDataSource,
   getAqiCategoryAndColor,
 } from '../api/client';
 
 export const DashboardPage: React.FC = () => {
-  const [trajectoryHours, setTrajectoryHours] = useState<number>(28);
+  const [trajectoryHours, setTrajectoryHours] = useState<number>(0);
   const [hotspotHoursBack, setHotspotHoursBack] = useState<number>(24);
   const [minConfidence, setMinConfidence] = useState<'low' | 'nominal' | 'high'>('nominal');
   const [layers, setLayers] = useState({
@@ -35,6 +36,7 @@ export const DashboardPage: React.FC = () => {
   const [lagData, setLagData] = useState<FireAqiLagResponse | null>(null);
   const [biomassData, setBiomassData] = useState<BiomassEmissionsResponse | null>(null);
   const [forecastData, setForecastData] = useState<PlumeResponse | null>(null);
+  const [surfaceData, setSurfaceData] = useState<SurfaceGridResponse | null>(null);
   const [wsStatus, setWsStatus] = useState<'connecting' | 'open' | 'closed'>('closed');
   const [wsLastMsg, setWsLastMsg] = useState<any>(null);
   const wsDisconnectRef = useRef<(() => void) | null>(null);
@@ -53,6 +55,7 @@ export const DashboardPage: React.FC = () => {
     fetchFireAqiLag(7).then(setLagData).catch(() => {});
     fetchBiomassEmissions(7).then(setBiomassData).catch(() => {});
     fetchForecastPlume().then(setForecastData).catch(() => {});
+    fetchAqiSurface(0.5).then(setSurfaceData).catch(() => {});
   }, []);
 
   // WebSocket real-time connection
@@ -76,7 +79,12 @@ export const DashboardPage: React.FC = () => {
     try {
       const forecast = await fetchForecastPlume();
       setForecastData(forecast);
-      const targetHours = 36;
+      const targetHours = Math.max(...forecast.features.map((item) => item.properties.horizon_hours), 0);
+      if (targetHours === 0) {
+        setTrajectoryHours(0);
+        setIsSimulating(false);
+        return;
+      }
       let current = 0;
       setTrajectoryHours(0);
       const stepInterval = setInterval(() => {
@@ -95,12 +103,18 @@ export const DashboardPage: React.FC = () => {
   };
 
   const handleDispatchSquad = async () => {
+    if (!delhiSurface) return;
+    const severity = delhiSurface.properties.aqi_index > 400
+      ? 'emergency'
+      : delhiSurface.properties.aqi_index > 300 ? 'warning' : 'watch';
     const incident = await createIncident({
-      severity: 'emergency',
-      location_text: 'Sangrur Cluster #2026-09 Ground Zero',
+      severity,
+      location_text: 'Delhi NCR model-surface review point',
+      latitude: delhiSurface.geometry.coordinates[1],
+      longitude: delhiSurface.geometry.coordinates[0],
       pollutant: 'PM2.5',
-      measured_pm25: 420.5,
-      satellite_source: 'FIRMS_VIIRS',
+      measured_pm25: delhiSurface.properties.pm25_estimate,
+      satellite_source: surfaceData?.source,
       authority: 'PPCB & Flying Squad Command',
     });
     await queueLegalDispatch({
@@ -113,12 +127,18 @@ export const DashboardPage: React.FC = () => {
   };
 
   const handleIssueShowCause = async () => {
+    if (!delhiSurface) return;
+    const severity = delhiSurface.properties.aqi_index > 400
+      ? 'emergency'
+      : delhiSurface.properties.aqi_index > 300 ? 'warning' : 'watch';
     const incident = await createIncident({
-      severity: 'warning',
-      location_text: 'Sangrur-Patiala Transboundary Ignition Belt',
+      severity,
+      location_text: 'Delhi NCR model-surface review point',
+      latitude: delhiSurface.geometry.coordinates[1],
+      longitude: delhiSurface.geometry.coordinates[0],
       pollutant: 'PM2.5',
-      measured_pm25: 380.0,
-      satellite_source: 'FIRMS_VIIRS',
+      measured_pm25: delhiSurface.properties.pm25_estimate,
+      satellite_source: surfaceData?.source,
       authority: 'District Magistrate Oversight',
     });
     await createLegalNotice({
@@ -135,6 +155,24 @@ export const DashboardPage: React.FC = () => {
   const strongestLag = lagData?.strongest_lag;
   const punjabBiomass = biomassData?.regions.find((item) => item.region === 'Punjab');
   const totalFrp = biomassData?.regions.reduce((sum, item) => sum + item.frp_sum_mw, 0);
+  const closestSurface = (longitude: number, latitude: number) => surfaceData?.features.reduce((closest, feature) => {
+    const [lon, lat] = feature.geometry.coordinates;
+    const [closestLon, closestLat] = closest.geometry.coordinates;
+    return Math.hypot(lon - longitude, lat - latitude) < Math.hypot(closestLon - longitude, closestLat - latitude)
+      ? feature : closest;
+  }, surfaceData.features[0]);
+  const transitSurface = closestSurface(76.99, 29.69);
+  const delhiSurface = closestSurface(77.2, 28.6);
+  const delhiAqi = delhiSurface?.properties.aqi_index;
+  const delhiPm25 = delhiSurface?.properties.pm25_estimate;
+  const delhiCategory = delhiAqi == null ? null : getAqiCategoryAndColor(delhiAqi).category;
+  const activeForecast = forecastData?.features.reduce((closest, feature) =>
+    Math.abs(feature.properties.horizon_hours - trajectoryHours) < Math.abs(closest.properties.horizon_hours - trajectoryHours)
+      ? feature : closest,
+  forecastData.features[0]);
+  const latestHotspot = hotspotsData?.features.reduce((latest, feature) =>
+    Date.parse(feature.properties.acq_datetime) > Date.parse(latest.properties.acq_datetime) ? feature : latest,
+  hotspotsData.features[0]);
   const dashboardLagPoints = (lagData?.correlations ?? []).map((item, index, rows) => ({
     x: rows.length === 1 ? 160 : 20 + (index / (rows.length - 1)) * 280,
     y: 60 - item.pearson_r * 45,
@@ -156,7 +194,7 @@ export const DashboardPage: React.FC = () => {
           <div className="flex items-center flex-wrap gap-space-md font-label-lg text-label-lg">
             <span className="inline-flex items-center gap-1.5 text-terracotta-deep font-bold">
               <span className="material-symbols-outlined text-[18px]">local_fire_department</span>
-              {hotspotsData ? `${hotspotsData.count.toLocaleString()} Fire Clusters Active` : '1,842 Fire Clusters Active'}
+              {hotspotsData ? `${hotspotsData.count.toLocaleString()} Fire Clusters Active` : 'Loading fire feed'}
             </span>
             <span className="text-outline-variant font-normal">/</span>
             <span className="inline-flex items-center gap-1.5 text-cobalt-deep font-bold">
@@ -172,10 +210,10 @@ export const DashboardPage: React.FC = () => {
           <div className="flex items-center gap-space-sm">
             <span className="inline-flex items-center gap-2 px-space-sm py-1 rounded-full bg-coral-watermelon-vivid text-on-secondary text-label-md font-bold shadow-sm animate-pulse">
               <span className="w-2 h-2 rounded-full bg-white"></span>
-              GRAP Stage IV Active
+              {delhiAqi == null ? 'AQI status unavailable' : `${delhiCategory} AQI conditions`}
             </span>
             <span className="text-ink-muted text-label-md uppercase tracking-wider hidden sm:inline font-bold">
-              Statutory Protocol 48h
+              {surfaceData ? `Surface T+${new Date(surfaceData.computed_at).toLocaleTimeString()}` : 'Surface loading'}
             </span>
           </div>
         </div>
@@ -193,9 +231,9 @@ export const DashboardPage: React.FC = () => {
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="px-2 py-0.5 rounded-full bg-surface-vanilla-strong text-ink-black text-label-md font-bold uppercase shadow-[1px_1px_0px_#18181B]">
-                      Corridor Vector 04
+                      Current Corridor Feed
                     </span>
-                    <span className="text-ink-muted text-body-sm">{forecastData?.source ?? 'Loading forecast source'}</span>
+                    <span className="text-ink-muted text-body-sm">{formatDataSource(forecastData?.source, 'Loading forecast source')}</span>
                   </div>
                   <h2 className="font-headline-lg text-headline-lg text-ink-black mt-1">
                     Trans-Boundary Advection Plume Canvas
@@ -303,7 +341,7 @@ export const DashboardPage: React.FC = () => {
                   <rect fill="url(#dotPattern)" height="460" width="800" />
 
                   {/* 72h Plume Inflow Ribbon */}
-                  {layers.plume && (
+                  {layers.plume && Boolean(forecastData?.features.length) && (
                     <>
                       <path
                         className="blur-md"
@@ -367,7 +405,7 @@ export const DashboardPage: React.FC = () => {
                     <div className="font-headline-sm text-headline-sm text-ink-black mt-1">Punjab Malwa</div>
                     <p className="font-body-sm text-body-sm text-ink-muted mt-0.5">{totalFrp == null ? 'FRP unavailable' : `${totalFrp.toFixed(1)} MW Total FRP Recorded`}</p>
                     <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-vanilla-strong text-ink-black text-label-md font-bold shadow-[1px_1px_0px_#18181B]">
-                      <span>842 Stubble Coordinates</span>
+                      <span>{hotspotsData ? `${hotspotsData.count} Current Hotspot Coordinates` : 'Hotspots loading'}</span>
                     </div>
                   </div>
 
@@ -378,9 +416,9 @@ export const DashboardPage: React.FC = () => {
                       Transit Channel
                     </div>
                     <div className="font-headline-sm text-headline-sm text-ink-black mt-1">Karnal-Panipat</div>
-                    <p className="font-body-sm text-body-sm text-ink-muted mt-0.5">PM2.5: 285 µg/m³ in plume</p>
+                    <p className="font-body-sm text-body-sm text-ink-muted mt-0.5">PM2.5: {transitSurface ? `${transitSurface.properties.pm25_estimate.toFixed(1)} µg/m³` : 'Unavailable'}</p>
                     <div className="mt-2 text-label-md font-bold text-coral-watermelon-vivid">
-                      Estimated Transit: 14h Left
+                      {activeForecast ? `Forecast Horizon: ${activeForecast.properties.horizon_hours}h` : 'No active plume forecast'}
                     </div>
                   </div>
 
@@ -391,9 +429,9 @@ export const DashboardPage: React.FC = () => {
                       Target Receptor Sink
                     </div>
                     <div className="font-headline-sm text-headline-sm text-ink-black mt-1">Delhi NCR Basin</div>
-                    <p className="font-body-sm text-body-sm text-ink-muted mt-0.5">AQI 387 Hazardous Level</p>
+                    <p className="font-body-sm text-body-sm text-ink-muted mt-0.5">{delhiAqi == null ? 'AQI unavailable' : `AQI ${delhiAqi} ${delhiCategory}`}</p>
                     <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-aqi-hazardous text-on-tertiary text-label-md font-bold shadow-[1px_1px_0px_#18181B]">
-                      <span>Mixing Layer: {delhiMeteo ? `${delhiMeteo.mixing_layer_height_m_agl.toFixed(0)}m` : 'N/A'}</span>
+                      <span>Mixing Layer: {delhiMeteo ? `${delhiMeteo.mixing_layer_height_m_agl.toFixed(0)}m` : 'Weather unavailable'}</span>
                     </div>
                   </div>
                 </div>
@@ -422,9 +460,9 @@ export const DashboardPage: React.FC = () => {
                   </div>
                   <div className="flex justify-between text-label-md text-ink-muted">
                     <span>T+0h (VIIRS Overpass)</span>
-                    <span>T+24h (Haryana Transit)</span>
-                    <span>T+48h (Basin Inversion)</span>
-                    <span>T+72h (Washout Dispersal)</span>
+                    <span>T+24h Forecast</span>
+                    <span>T+48h Forecast</span>
+                    <span>T+72h Forecast</span>
                   </div>
                 </div>
               </div>
@@ -438,14 +476,16 @@ export const DashboardPage: React.FC = () => {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-title-md text-title-md text-ink-black font-bold">
-                        Sangrur Cluster #2026-09
+                        {latestHotspot ? `${latestHotspot.properties.sensor} hotspot ${latestHotspot.geometry.coordinates[1].toFixed(3)}°N` : 'No current FIRMS hotspot'}
                       </span>
                       <span className="px-2 py-0.5 rounded-full bg-tertiary-fixed text-terracotta-deep font-label-md text-label-md font-bold shadow-[1px_1px_0px_#18181B]">
-                        412 MW FRP
+                        {latestHotspot?.properties.frp == null ? 'FRP unavailable' : `${latestHotspot.properties.frp.toFixed(1)} MW FRP`}
                       </span>
                     </div>
                     <p className="font-body-md text-body-md text-ink-muted mt-1">
-                      Coordinated burning detected across 18 contiguous parcels. Estimated plume mass rate: 38.4 kg/s carbonaceous aerosol. ~28h direct inflow trajectory into the Delhi air basin.
+                      {hotspotsData && hotspotsData.count > 0
+                        ? `${hotspotsData.count} current NASA FIRMS detections are available. ${forecastData?.features.length ?? 0} backend plume envelopes were computed from the current feed.`
+                        : 'NASA FIRMS returned no current detections for the selected confidence and lookback window.'}
                     </p>
                   </div>
                 </div>
@@ -483,7 +523,7 @@ export const DashboardPage: React.FC = () => {
                   <div className="my-2">
                     <div className="font-headline-sm text-headline-sm text-ink-black">Malwa Belt Origin</div>
                     <div className="font-telemetry-val text-telemetry-val text-terracotta-deep font-bold mt-1">
-                      {totalFrp == null ? 'N/A FRP' : `${totalFrp.toFixed(1)} MW FRP`}
+                      {totalFrp == null ? 'FRP feed unavailable' : `${totalFrp.toFixed(1)} MW FRP`}
                     </div>
                   </div>
                   <span className="font-body-sm text-body-sm text-ink-muted">{punjabBiomass?.frp_share_percent == null ? 'Regional share unavailable' : `${punjabBiomass.frp_share_percent.toFixed(0)}% Regional FRP Share`}</span>
@@ -498,10 +538,10 @@ export const DashboardPage: React.FC = () => {
                   <div className="my-2">
                     <div className="font-headline-sm text-headline-sm text-ink-black">Karnal Corridor</div>
                     <div className="font-telemetry-val text-telemetry-val text-cobalt-deep font-bold mt-1">
-                      285 µg/m³
+                      {transitSurface ? `${transitSurface.properties.pm25_estimate.toFixed(1)} µg/m³` : 'Model point unavailable'}
                     </div>
                   </div>
-                  <span className="font-body-sm text-body-sm text-ink-muted">Advection Flux: 18.2 tons/h</span>
+                  <span className="font-body-sm text-body-sm text-ink-muted">{punjabMeteo ? `Wind ${punjabMeteo.wind_speed_ms.toFixed(2)} m/s from ${punjabMeteo.wind.direction_from_deg.toFixed(0)}°` : 'Wind unavailable'}</span>
                 </div>
 
                 {/* Tile 3: Delhi NCR Sink */}
@@ -513,10 +553,10 @@ export const DashboardPage: React.FC = () => {
                   <div className="my-2">
                     <div className="font-headline-sm text-headline-sm text-ink-black">Delhi NCR Sink</div>
                     <div className="font-telemetry-val text-telemetry-val text-coral-watermelon-vivid font-bold mt-1">
-                      AQI 387
+                      {delhiAqi == null ? 'AQI model unavailable' : `AQI ${delhiAqi}`}
                     </div>
                   </div>
-                  <span className="font-body-sm text-body-sm text-ink-muted">Hazardous Health Alert Tier</span>
+                  <span className="font-body-sm text-body-sm text-ink-muted">{delhiCategory ? `${delhiCategory} model-surface category` : 'Category unavailable'}</span>
                 </div>
               </div>
             </div>
@@ -533,28 +573,28 @@ export const DashboardPage: React.FC = () => {
                 <span className="w-3 h-3 rounded-full bg-coral-watermelon-vivid animate-ping"></span>
               </div>
               <div className="my-space-md">
-                <div className="text-display-lg font-display-lg tracking-tight leading-none">AQI 387</div>
+                <div className="text-display-lg font-display-lg tracking-tight leading-none">{delhiAqi == null ? 'AQI pending' : `AQI ${delhiAqi}`}</div>
                 <div className="inline-block mt-2 px-3 py-1 rounded-full bg-aqi-hazardous text-white font-label-lg text-label-lg tracking-wider uppercase font-bold shadow-[1px_1px_0px_#000]">
-                  Hazardous Classification
+                  {delhiCategory ? `${delhiCategory} Classification` : 'Classification unavailable'}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-space-sm pt-space-md border-t border-white/20">
                 <div>
                   <div className="font-label-md text-label-md text-white/70 uppercase font-bold">Mass Concentration</div>
                   <div className="font-telemetry-val text-telemetry-val text-white mt-0.5 font-bold">
-                    312.4 <span className="font-body-sm text-body-sm font-normal">µg/m³</span>
+                    {delhiPm25 == null ? 'Pending' : delhiPm25.toFixed(1)} <span className="font-body-sm text-body-sm font-normal">µg/m³</span>
                   </div>
                 </div>
                 <div>
-                  <div className="font-label-md text-label-md text-white/70 uppercase font-bold">Boundary Inversion</div>
+                  <div className="font-label-md text-label-md text-white/70 uppercase font-bold">Boundary Layer</div>
                   <div className="font-telemetry-val text-telemetry-val text-white mt-0.5 font-bold">
-                    {delhiMeteo?.mixing_layer_height_m_agl.toFixed(0) ?? 'N/A'}m <span className="font-body-sm text-body-sm font-normal">AGL</span>
+                    {delhiMeteo ? `${delhiMeteo.mixing_layer_height_m_agl.toFixed(0)}m` : 'Pending'} <span className="font-body-sm text-body-sm font-normal">AGL</span>
                   </div>
                 </div>
               </div>
               <div className="mt-space-md text-body-sm text-white/90 bg-white/10 rounded-lg p-2.5 flex items-center gap-2">
                 <span className="material-symbols-outlined text-[18px]">warning</span>
-                <span>Respiratory alert issued. Mechanical ventilation required.</span>
+                <span>{delhiCategory ? `Current model-surface category: ${delhiCategory}. Review current local public-health advisories.` : 'Current receptor guidance is unavailable.'}</span>
               </div>
             </div>
 
@@ -584,7 +624,7 @@ export const DashboardPage: React.FC = () => {
                           <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }}></span>
                           <div>
                             <div className="font-title-sm text-title-sm text-ink-black font-bold">{station.name}</div>
-                            <div className="font-body-sm text-body-sm text-ink-muted">{obs?.source ?? 'CPCB'}</div>
+                            <div className="font-body-sm text-body-sm text-ink-muted">{formatDataSource(obs?.source, 'Station source unavailable')}</div>
                           </div>
                         </div>
                         <div className="text-right">
@@ -675,7 +715,7 @@ export const DashboardPage: React.FC = () => {
                   <span className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-forest-jade text-[18px]">verified</span>
                     {squadDispatched ? (
-                      <span className="text-forest-jade font-bold animate-pulse">Squad Unit #09 Dispatched</span>
+                      <span className="text-forest-jade font-bold animate-pulse">Squad Review Queued</span>
                     ) : (
                       'Queue Flying Squad Review for Dirba'
                     )}
@@ -691,7 +731,7 @@ export const DashboardPage: React.FC = () => {
                   <span className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-[18px]">warning</span>
                     {showCauseIssued ? (
-                      <span className="text-on-secondary font-bold animate-pulse">Notice 31A Sealed &amp; Transmitted</span>
+                      <span className="text-on-secondary font-bold animate-pulse">Section 31A Draft Created</span>
                     ) : (
                       'Create Section 31A Show-Cause Draft'
                     )}

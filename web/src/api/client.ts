@@ -1,7 +1,7 @@
 /**
  * PRANA Air Quality Platform — Unified API & WebSocket Client
  * Conforms 100% to FastAPI backend routes, models, and CPCB AQI standards.
- * Supports live backend connectivity with automatic high-fidelity demo fallback.
+ * Uses backend responses as the single source of runtime data.
  */
 
 // Official CPCB 24-hour PM2.5 Breakpoints matching backend/database.py (DEC-010)
@@ -34,6 +34,71 @@ export function getAqiCategoryAndColor(aqi: number): { category: string; color: 
   if (aqi <= 300) return { category: 'Poor', color: '#FF7800' };
   if (aqi <= 400) return { category: 'Very Poor', color: '#FF0000' };
   return { category: 'Severe', color: '#8F3F97' };
+}
+
+/** Convert backend provenance codes into concise, user-facing labels. */
+export function formatDataSource(source?: string | null, fallback: string = 'Source pending'): string {
+  if (!source) return fallback;
+
+  if (source.startsWith('model_estimate;')) {
+    return 'Model estimate using NASA FIRMS fires and live Open-Meteo weather';
+  }
+  if (source.startsWith('CAMS_MODEL_SURFACE;')) {
+    return source.includes('ground_calibration=unavailable')
+      ? 'Open-Meteo CAMS air-quality model (not ground-calibrated)'
+      : 'Open-Meteo CAMS air-quality model';
+  }
+
+  const labels: Record<string, string> = {
+    NASA_FIRMS_VIIRS_SNPP_NRT: 'NASA FIRMS VIIRS near-real-time',
+    NASA_FIRMS_VIIRS_SNPP_NRT_STATIC_FALLBACK: 'NASA FIRMS historical demonstration data',
+    OPEN_METEO_LIVE: 'Open-Meteo live weather',
+    OPEN_METEO_CAMS_GLOBAL_LIVE: 'Open-Meteo CAMS live air-quality model',
+    OPEN_METEO_CAMS_GLOBAL_DEMO_STATIC: 'Open-Meteo CAMS demonstration data',
+    OPENAQ_LIVE: 'OpenAQ live station observation',
+    DEMO_SYNTHETIC: 'Synthetic demonstration data',
+  };
+  if (labels[source]) return labels[source];
+
+  return source
+    .replace(/[;|]/g, ' • ')
+    .replace(/[_=]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/(^|\s)\S/g, (character) => character.toUpperCase());
+}
+
+export function formatFederatedImplementation(implementation?: string | null): string {
+  if (!implementation) return 'Federated training status pending';
+  if (implementation === 'numpy_fedavg_with_optional_paillier_and_dp_sgd') {
+    return 'Federated averaging with encrypted aggregation and differential privacy';
+  }
+  return formatDataSource(implementation, 'Federated training status pending');
+}
+
+export function formatFederatedDataset(dataset?: string | null): string {
+  if (!dataset) return 'Training dataset pending';
+  if (dataset === 'synthetic_corridor') return 'Synthetic corridor demonstration dataset';
+  return formatDataSource(dataset, 'Training dataset pending');
+}
+
+export function formatFederatedMetric(metric?: string | null): string {
+  if (!metric) return 'Prediction score pending';
+  if (metric.includes('RMSE') && metric.includes('target_std')) return 'Normalized prediction score';
+  return formatDataSource(metric, 'Prediction score pending');
+}
+
+export function formatBackendStatus(status?: string | null, fallback: string = 'Status pending'): string {
+  if (!status) return fallback;
+  const labels: Record<string, string> = {
+    not_measured: 'Not measured',
+    vectors_available: 'Wind vectors available',
+    insufficient_data: 'More historical observations required',
+    not_configured: 'Not configured',
+    not_generated: 'Not generated',
+  };
+  return labels[status] ?? formatDataSource(status, fallback);
 }
 
 // Type definitions mirroring backend/models.py
@@ -408,8 +473,6 @@ export interface CemsForensicsResponse {
 
 // API Config
 const API_BASE = (typeof window !== 'undefined' && (window as any).PRANA_API_URL) || 'http://127.0.0.1:8000';
-const CLIENT_DEMO_FALLBACK = typeof window !== 'undefined' && (window as any).PRANA_DEMO_MODE === true;
-
 async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { credentials: 'omit', ...options });
   if (!res.ok) {
@@ -425,295 +488,53 @@ async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-async function safeFetch<T>(url: string, options?: RequestInit, fallback?: T): Promise<T> {
-  try {
-    const res = await fetch(url, { credentials: 'omit', ...options });
-    if (res.ok) {
-      return (await res.json()) as T;
-    }
-    console.warn(`Backend responded with status ${res.status} for ${url}. Using fallback.`);
-  } catch (err) {
-    // Network or CORS error — fallback smoothly
-  }
-  if (CLIENT_DEMO_FALLBACK && fallback !== undefined) return fallback;
-  throw new Error(`Failed to fetch from ${url}`);
-}
-
-// --- API Service Methods ---
-
 export async function fetchHealth(): Promise<HealthResponse> {
-  return safeFetch<HealthResponse>(`${API_BASE}/health`, undefined, {
-    status: 'ok',
-    db: 'connected (PostGIS 3.6)',
-    timestamp: new Date().toISOString(),
-  });
+  return requestJson<HealthResponse>('/health');
 }
 
 export async function fetchReady(): Promise<ReadyResponse> {
-  return safeFetch<ReadyResponse>(`${API_BASE}/ready`, undefined, {
-    status: 'ready',
-    db: 'connected',
-    demo_mode: true,
-  });
+  return requestJson<ReadyResponse>('/ready');
 }
 
 export async function fetchHotspots(hoursBack: number = 24, minConfidence: string = 'nominal'): Promise<HotspotsResponse> {
-  const fallback: HotspotsResponse = {
-    type: 'FeatureCollection',
-    fetched_at: new Date().toISOString(),
-    source: 'NASA_FIRMS_VIIRS_SNPP_NRT_STATIC_FALLBACK',
-    count: 247,
-    features: [
-      {
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [75.792, 30.312] },
-        properties: { frp: 420.5, brightness: 348.6, confidence: 'high', acq_datetime: new Date().toISOString(), sensor: 'VIIRS_SNPP' }
-      },
-      {
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [75.845, 30.285] },
-        properties: { frp: 380.0, brightness: 352.1, confidence: 'high', acq_datetime: new Date().toISOString(), sensor: 'VIIRS_SNPP' }
-      },
-      {
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [76.124, 29.982] },
-        properties: { frp: 215.3, brightness: 334.8, confidence: 'nominal', acq_datetime: new Date().toISOString(), sensor: 'VIIRS_SNPP' }
-      },
-      {
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [76.541, 29.674] },
-        properties: { frp: 184.2, brightness: 329.4, confidence: 'nominal', acq_datetime: new Date().toISOString(), sensor: 'VIIRS_SNPP' }
-      }
-    ]
-  };
-
-  return safeFetch<HotspotsResponse>(`${API_BASE}/api/v1/hotspots?hours_back=${hoursBack}&min_confidence=${minConfidence}`, undefined, fallback);
-}
-
-export async function fetchStations(parameter: string = 'pm25', state?: string): Promise<StationsResponse> {
-  const stateQuery = state ? `&state=${encodeURIComponent(state)}` : '';
-  const fallback: StationsResponse = {
-    '@iot.count': 12,
-    value: [
-      {
-        '@iot.id': 'IN-CPCB-DL-001',
-        name: 'Anand Vihar, Delhi',
-        Locations: [{ location: { type: 'Point', coordinates: [77.316, 28.647] } }],
-        Datastreams: [{
-          name: 'PM2.5',
-          Observations: [{
-            pm25_ugm3: 312.4,
-            aqi_index: 387,
-            phenomenonTime: new Date().toISOString(),
-            source: 'CPCB_BAM_1020',
-            averaging_period: 'instantaneous; PM2.5 sub-index estimate, not official 24h AQI'
-          }]
-        }]
-      },
-      {
-        '@iot.id': 'IN-CPCB-DL-002',
-        name: 'Jahangirpuri, Delhi',
-        Locations: [{ location: { type: 'Point', coordinates: [77.171, 28.724] } }],
-        Datastreams: [{
-          name: 'PM2.5',
-          Observations: [{
-            pm25_ugm3: 294.8,
-            aqi_index: 374,
-            phenomenonTime: new Date().toISOString(),
-            source: 'CPCB_BAM_1020',
-            averaging_period: 'instantaneous; PM2.5 sub-index estimate, not official 24h AQI'
-          }]
-        }]
-      },
-      {
-        '@iot.id': 'IN-CPCB-HR-003',
-        name: 'Manesar Industrial Sector 8, Haryana',
-        Locations: [{ location: { type: 'Point', coordinates: [76.938, 28.351] } }],
-        Datastreams: [{
-          name: 'PM2.5',
-          Observations: [{
-            pm25_ugm3: 248.2,
-            aqi_index: 338,
-            phenomenonTime: new Date().toISOString(),
-            source: 'HSPCB_CAAQMS',
-            averaging_period: 'instantaneous; PM2.5 sub-index estimate, not official 24h AQI'
-          }]
-        }]
-      },
-      {
-        '@iot.id': 'IN-CPCB-PB-001',
-        name: 'Civil Lines, Ludhiana, Punjab',
-        Locations: [{ location: { type: 'Point', coordinates: [75.857, 30.901] } }],
-        Datastreams: [{
-          name: 'PM2.5',
-          Observations: [{
-            pm25_ugm3: 168.5,
-            aqi_index: 242,
-            phenomenonTime: new Date().toISOString(),
-            source: 'PPCB_CAAQMS',
-            averaging_period: 'instantaneous; PM2.5 sub-index estimate, not official 24h AQI'
-          }]
-        }]
-      }
-    ]
-  };
-
-  return safeFetch<StationsResponse>(`${API_BASE}/api/v1/aqi/stations?parameter=${parameter}${stateQuery}`, undefined, fallback);
-}
-
-export async function fetchAnomalies(parameter: string = 'no2', nighttimeOnly: boolean = true, daysBack: number = 7): Promise<AnomaliesResponse> {
-  const fallback: AnomaliesResponse = {
-    count: 4,
-    items: [
-      {
-        station_id: 'IN-CPCB-HR-003',
-        station_name: 'Manesar Industrial Sector 8 (Stack 09)',
-        parameter: 'no2',
-        day: new Date().toISOString().split('T')[0],
-        hour_of_day: 2,
-        is_nighttime: true,
-        anomaly_score: 0.994,
-        is_anomaly: true,
-        source: 'OPENAQ_LIVE'
-      },
-      {
-        station_id: 'IN-CPCB-HR-004',
-        station_name: 'Panipat Refinery Corridor Cluster',
-        parameter: 'no2',
-        day: new Date().toISOString().split('T')[0],
-        hour_of_day: 3,
-        is_nighttime: true,
-        anomaly_score: 0.942,
-        is_anomaly: true,
-        source: 'OPENAQ_LIVE'
-      },
-      {
-        station_id: 'IN-CPCB-HR-005',
-        station_name: 'Sonipat Kundli Smelting Belt',
-        parameter: 'so2',
-        day: new Date().toISOString().split('T')[0],
-        hour_of_day: 1,
-        is_nighttime: true,
-        anomaly_score: 0.918,
-        is_anomaly: true,
-        source: 'OPENAQ_LIVE'
-      },
-      {
-        station_id: 'IN-CPCB-DL-005',
-        station_name: 'Mayapuri Industrial Area Phase II',
-        parameter: 'no2',
-        day: new Date().toISOString().split('T')[0],
-        hour_of_day: 23,
-        is_nighttime: true,
-        anomaly_score: 0.884,
-        is_anomaly: true,
-        source: 'OPENAQ_LIVE'
-      }
-    ]
-  };
-
-  return safeFetch<AnomaliesResponse>(
-    `${API_BASE}/api/v1/anomalies?parameter=${parameter}&nighttime_only=${nighttimeOnly}&days_back=${daysBack}`,
-    undefined,
-    fallback
+  return requestJson<HotspotsResponse>(
+    `/api/v1/hotspots?hours_back=${hoursBack}&min_confidence=${encodeURIComponent(minConfidence)}`
   );
 }
 
-export async function fetchAlerts(severity?: string, limit: number = 20): Promise<AlertsResponse> {
-  const severityQuery = severity ? `&severity=${severity}` : '';
-  const fallback: AlertsResponse = {
-    count: 3,
-    items: [
-      {
-        incident_id: 'INC-2026-09-001',
-        severity: 'emergency',
-        location_text: 'Anand Vihar SPCB Continuous Sensing Node',
-        latitude: 28.647,
-        longitude: 77.316,
-        pollutant: 'PM2.5',
-        measured_pm25: 428.1,
-        measured_aqi: 448,
-        satellite_ts: new Date().toISOString(),
-        satellite_source: 'FIRMS_VIIRS',
-        authority: 'CPCB',
-        created_at: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
-        satellite_evidence: {
-          fire_count_50km: 18,
-          nearest_fire_km: 32.4,
-          tropomi_aai: 2.45
-        }
-      },
-      {
-        incident_id: 'INC-2026-09-002',
-        severity: 'emergency',
-        location_text: 'Manesar Sector 8 Industrial Wet Scrubber Bypass',
-        latitude: 28.351,
-        longitude: 76.938,
-        pollutant: 'NO2',
-        measured_pm25: 384.2,
-        measured_aqi: 418,
-        satellite_ts: new Date().toISOString(),
-        satellite_source: 'CEMS_ISOLATION_FOREST',
-        authority: 'HSPCB',
-        created_at: new Date(Date.now() - 48 * 60 * 1000).toISOString(),
-        satellite_evidence: {
-          fire_count_50km: 4,
-          nearest_fire_km: 18.2,
-          tropomi_aai: 1.84
-        }
-      },
-      {
-        incident_id: 'INC-2026-09-003',
-        severity: 'warning',
-        location_text: 'Jahangirpuri Basin Ingress Trap Zone',
-        latitude: 28.724,
-        longitude: 77.171,
-        pollutant: 'PM2.5',
-        measured_pm25: 312.4,
-        measured_aqi: 387,
-        satellite_ts: new Date().toISOString(),
-        satellite_source: 'WRF_HYSPLIT',
-        authority: 'DPCC',
-        created_at: new Date(Date.now() - 110 * 60 * 1000).toISOString(),
-        satellite_evidence: {
-          fire_count_50km: 26,
-          nearest_fire_km: 41.5,
-          tropomi_aai: 2.12
-        }
-      }
-    ]
-  };
-
-  return safeFetch<AlertsResponse>(`${API_BASE}/api/v1/alerts?limit=${limit}${severityQuery}`, undefined, fallback);
+export async function fetchStations(parameter: string = 'pm25', state?: string): Promise<StationsResponse> {
+  const params = new URLSearchParams({ parameter });
+  if (state) params.set('state', state);
+  return requestJson<StationsResponse>(`/api/v1/aqi/stations?${params.toString()}`);
 }
 
-// Multilingual Alert Bulletin Endpoint (backend/routers/alerts.py: GET /api/v1/alerts/latest?lang=en|hi|pa)
-export async function fetchLatestAlert(lang: 'en' | 'hi' | 'pa' = 'en'): Promise<LatestAlertResponse> {
-  const fallbacks: Record<string, LatestAlertResponse> = {
-    en: {
-      incident_id: 'INC-2026-09-001',
-      severity: 'emergency',
-      title: 'CRITICAL AIR QUALITY ALERT: DELHI-NCR CORRIDOR',
-      body: 'Severe atmospheric advection active. Anand Vihar PM2.5 exceeded 420 ug/m3. Emergency GRAP Stage IV protocols and inter-state industrial stack curtailments initiated under Section 31A.',
-      created_at: new Date().toISOString()
-    },
-    hi: {
-      incident_id: 'INC-2026-09-001',
-      severity: 'emergency',
-      title: 'गंभीर वायु गुणवत्ता चेतावनी: दिल्ली-एनसीआर क्षेत्र',
-      body: 'अत्यधिक गंभीर वायु संचलन सक्रिय है। आनंद विहार में पीएम2.5 का स्तर 420 माइक्रोग्राम/घन मीटर से अधिक हो गया है। धारा 31ए के अंतर्गत ग्रैप चरण IV आपातकालीन प्रतिबंध लागू किए गए हैं।',
-      created_at: new Date().toISOString()
-    },
-    pa: {
-      incident_id: 'INC-2026-09-001',
-      severity: 'emergency',
-      title: 'ਗੰਭੀਰ ਹਵਾ ਪ੍ਰਦੂਸ਼ਣ ਚੇਤਾਵਨੀ: ਦਿੱਲੀ-ਐਨਸੀਆਰ ਖੇਤਰ',
-      body: 'ਹਵਾ ਪ੍ਰਦੂਸ਼ਣ ਦਾ ਪੱਧਰ ਖ਼ਤਰਨਾਕ ਸ਼੍ਰੇਣੀ ਵਿੱਚ ਪਹੁੰਚ ਗਿਆ ਹੈ। ਆਨੰਦ ਵਿਹਾਰ ਵਿਖੇ ਪੀਐਮ2.5 420 ug/m3 ਤੋਂ ਪਾਰ ਹੋ ਗਿਆ ਹੈ। ਐਕਟ ਦੀ ਧਾਰਾ 31ਏ ਅਧੀਨ ਗ੍ਰੈਪ-4 ਐਮਰਜੈਂਸੀ ਪਾਬੰਦੀਆਂ ਲਾਗੂ ਕੀਤੀਆਂ ਗਈਆਂ ਹਨ।',
-      created_at: new Date().toISOString()
-    }
-  };
+export async function fetchAnomalies(
+  parameter: string = 'no2',
+  nighttimeOnly: boolean = true,
+  daysBack: number = 7
+): Promise<AnomaliesResponse> {
+  const params = new URLSearchParams({
+    parameter,
+    nighttime_only: String(nighttimeOnly),
+    days_back: String(daysBack),
+  });
+  return requestJson<AnomaliesResponse>(`/api/v1/anomalies?${params.toString()}`);
+}
 
-  return safeFetch<LatestAlertResponse>(`${API_BASE}/api/v1/alerts/latest?lang=${lang}`, undefined, fallbacks[lang]);
+export async function fetchAlerts(severity?: string, limit: number = 20): Promise<AlertsResponse> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (severity) params.set('severity', severity);
+  return requestJson<AlertsResponse>(`/api/v1/alerts?${params.toString()}`);
+}
+
+export async function fetchLatestAlert(lang: 'en' | 'hi' | 'pa' = 'en'): Promise<LatestAlertResponse | null> {
+  const res = await fetch(`${API_BASE}/api/v1/alerts/latest?lang=${lang}`, { credentials: 'omit' });
+  if (res.status === 204) return null;
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || `${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as LatestAlertResponse;
 }
 
 export async function createIncident(data: IncidentCreate): Promise<IncidentItem> {
@@ -745,28 +566,7 @@ export async function uploadCitizenSkyPhoto(
 
 // Federated Learning Simulation (backend/routers/federated.py & backend/ml/federated/server.py)
 export async function fetchFederatedStatus(): Promise<FLStatusResponse> {
-  const fallback: FLStatusResponse = {
-    run_id: 'FL-2026-FEDAVG-NCR',
-    total_rounds: 10,
-    status: 'complete',
-    implementation: 'numpy_fedavg',
-    dataset: 'synthetic_corridor',
-    metric: '1 - 0.5 * RMSE / target_std, clipped to [0.1, 0.99]',
-    rounds: [
-      { round_number: 1, punjab_accuracy: 0.624, delhi_accuracy: 0.648, global_accuracy: 0.712 },
-      { round_number: 2, punjab_accuracy: 0.658, delhi_accuracy: 0.681, global_accuracy: 0.754 },
-      { round_number: 3, punjab_accuracy: 0.684, delhi_accuracy: 0.709, global_accuracy: 0.792 },
-      { round_number: 4, punjab_accuracy: 0.710, delhi_accuracy: 0.732, global_accuracy: 0.825 },
-      { round_number: 5, punjab_accuracy: 0.728, delhi_accuracy: 0.751, global_accuracy: 0.852 },
-      { round_number: 6, punjab_accuracy: 0.742, delhi_accuracy: 0.768, global_accuracy: 0.874 },
-      { round_number: 7, punjab_accuracy: 0.755, delhi_accuracy: 0.782, global_accuracy: 0.892 },
-      { round_number: 8, punjab_accuracy: 0.765, delhi_accuracy: 0.794, global_accuracy: 0.908 },
-      { round_number: 9, punjab_accuracy: 0.772, delhi_accuracy: 0.803, global_accuracy: 0.921 },
-      { round_number: 10, punjab_accuracy: 0.778, delhi_accuracy: 0.812, global_accuracy: 0.935 },
-    ]
-  };
-
-  return safeFetch<FLStatusResponse>(`${API_BASE}/api/v1/federated/status`, undefined, fallback);
+  return requestJson<FLStatusResponse>('/api/v1/federated/status');
 }
 
 export async function triggerFederatedRun(numRounds: number = 10): Promise<FLStatusResponse> {
@@ -775,75 +575,19 @@ export async function triggerFederatedRun(numRounds: number = 10): Promise<FLSta
   });
 }
 
-// Forecast Plume Trajectories (backend/routers/forecast.py: GET /api/v1/forecast/plume)
 export async function fetchForecastPlume(clusterId?: string): Promise<PlumeResponse> {
-  const q = clusterId ? `?cluster_id=${encodeURIComponent(clusterId)}` : '';
-  const fallback: PlumeResponse = {
-    type: 'FeatureCollection',
-    computed_at: new Date().toISOString(),
-    source: 'WRF_HYSPLIT_ENSEMBLE_FALLBACK',
-    features: [
-      {
-        type: 'Feature',
-        geometry: { type: 'Polygon', coordinates: [[[75.5, 30.8], [76.2, 30.4], [76.8, 29.8], [77.1, 29.3], [76.4, 29.0], [75.8, 29.5], [75.5, 30.8]]] },
-        properties: { cluster_id: 'SANGRUR-2026-09', horizon_hours: 24, max_pm25_est: 285.4, max_aqi_est: 362, wind_speed_ms: 6.9, wind_dir_deg: 315, mixing_height_m: 340 }
-      },
-      {
-        type: 'Feature',
-        geometry: { type: 'Polygon', coordinates: [[[76.2, 29.8], [76.9, 29.3], [77.4, 28.9], [77.8, 28.5], [77.1, 28.2], [76.5, 28.6], [76.2, 29.8]]] },
-        properties: { cluster_id: 'SANGRUR-2026-09', horizon_hours: 48, max_pm25_est: 342.1, max_aqi_est: 412, wind_speed_ms: 5.8, wind_dir_deg: 312, mixing_height_m: 280 }
-      },
-      {
-        type: 'Feature',
-        geometry: { type: 'Polygon', coordinates: [[[77.0, 28.8], [77.5, 28.4], [77.9, 28.0], [78.2, 27.8], [77.8, 27.5], [77.2, 27.8], [77.0, 28.8]]] },
-        properties: { cluster_id: 'SANGRUR-2026-09', horizon_hours: 72, max_pm25_est: 420.5, max_aqi_est: 448, wind_speed_ms: 4.2, wind_dir_deg: 308, mixing_height_m: 185 }
-      },
-    ]
-  };
-  return safeFetch<PlumeResponse>(`${API_BASE}/api/v1/forecast/plume${q}`, undefined, fallback);
+  const params = new URLSearchParams();
+  if (clusterId) params.set('cluster_id', clusterId);
+  const query = params.toString();
+  return requestJson<PlumeResponse>(`/api/v1/forecast/plume${query ? `?${query}` : ''}`);
 }
 
-// AQI GP Surface Grid Downscaler (backend/routers/aqi.py: GET /api/v1/aqi/surface)
 export async function fetchAqiSurface(resolutionDeg: number = 0.5): Promise<SurfaceGridResponse> {
-  const fallback: SurfaceGridResponse = {
-    type: 'FeatureCollection',
-    computed_at: new Date().toISOString(),
-    resolution_deg: resolutionDeg,
-    source: 'GP_DOWNSCALER_TROPOMI_FUSION_FALLBACK',
-    features: [
-      { type: 'Feature', geometry: { type: 'Point', coordinates: [75.8, 30.9] }, properties: { pm25_estimate: 168.5, aqi_index: 242, uncertainty_std: 14.2 } },
-      { type: 'Feature', geometry: { type: 'Point', coordinates: [76.3, 30.4] }, properties: { pm25_estimate: 214.2, aqi_index: 298, uncertainty_std: 17.1 } },
-      { type: 'Feature', geometry: { type: 'Point', coordinates: [76.9, 29.6] }, properties: { pm25_estimate: 285.2, aqi_index: 362, uncertainty_std: 22.1 } },
-      { type: 'Feature', geometry: { type: 'Point', coordinates: [77.2, 28.9] }, properties: { pm25_estimate: 342.8, aqi_index: 412, uncertainty_std: 26.4 } },
-      { type: 'Feature', geometry: { type: 'Point', coordinates: [77.3, 28.6] }, properties: { pm25_estimate: 420.5, aqi_index: 448, uncertainty_std: 31.2 } },
-      { type: 'Feature', geometry: { type: 'Point', coordinates: [77.1, 28.4] }, properties: { pm25_estimate: 394.1, aqi_index: 427, uncertainty_std: 29.8 } },
-    ]
-  };
-  return safeFetch<SurfaceGridResponse>(`${API_BASE}/api/v1/aqi/surface?resolution_deg=${resolutionDeg}`, undefined, fallback);
+  return requestJson<SurfaceGridResponse>(`/api/v1/aqi/surface?resolution_deg=${resolutionDeg}`);
 }
 
-// OGC SensorThings Interoperability (backend/routers/sensorthings.py: GET /api/v1/sensorthings/Things)
 export async function fetchSensorThings(): Promise<SensorThingsResponse> {
-  const fallback: SensorThingsResponse = {
-    '@iot.count': 2,
-    value: [
-      {
-        '@iot.id': 'punjab-node-001',
-        name: 'Punjab Federated Node',
-        description: 'Agricultural burn and air quality monitoring node — Punjab state',
-        properties: { node_type: 'federated_client', state: 'Punjab' },
-        Locations: [{ encodingType: 'application/geo+json', location: { type: 'Point', coordinates: [75.8, 30.9] } }]
-      },
-      {
-        '@iot.id': 'delhi-node-001',
-        name: 'Delhi Receptor Node',
-        description: 'Urban receptor and air quality monitoring node — NCR',
-        properties: { node_type: 'federated_client', state: 'Delhi' },
-        Locations: [{ encodingType: 'application/geo+json', location: { type: 'Point', coordinates: [77.209, 28.614] } }]
-      }
-    ]
-  };
-  return safeFetch<SensorThingsResponse>(`${API_BASE}/api/v1/sensorthings/Things`, undefined, fallback);
+  return requestJson<SensorThingsResponse>('/api/v1/sensorthings/Things');
 }
 
 export async function fetchMeteorology(): Promise<MeteorologyResponse> {
