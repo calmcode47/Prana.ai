@@ -8,17 +8,40 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { Colors } from '../theme/tokens';
 
-// Resolve host IP dynamically for Expo Go, iOS Simulator, and Android Emulator
+// Resolve host IP dynamically for Expo Go, iOS Simulator, Android Emulator, and Web
 function getApiBaseUrl(): string {
+  // 1. Explicitly configured URL from environment variable takes highest priority
   const configuredUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/$/, '');
   if (configuredUrl) return configuredUrl;
+
+  // 2. Web browser: Always use localhost or window-injected URL directly
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && (window as any).PRANA_API_URL) {
+      return (window as any).PRANA_API_URL;
+    }
+    return 'http://127.0.0.1:8000';
+  }
+
+  // 3. Inspect Expo hostUri (e.g. "192.168.1.7:8081" vs "xyz.ngrok-free.app" or "xxx.exp.direct")
   const hostUri = Constants.expoConfig?.hostUri;
   if (hostUri) {
-    const ip = hostUri.split(':')[0];
-    if (ip && ip !== 'localhost') {
-      return `http://${ip}:8000`;
+    const host = hostUri.split(':')[0];
+    const isTunnelHost =
+      host.includes('exp.direct') ||
+      host.includes('ngrok') ||
+      host.includes('localtunnel') ||
+      host.includes('trycloudflare');
+    // Check if host is a numeric IPv4 address (e.g., 192.168.x.x, 10.x.x.x)
+    const isIpv4 = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+
+    // Only append :8000 if it is a real local IP address and NOT a tunnel domain
+    // (tunnel hosts only forward port 8081 for Metro, never backend port 8000)
+    if (host && isIpv4 && !isTunnelHost && host !== 'localhost' && host !== '127.0.0.1') {
+      return `http://${host}:8000`;
     }
   }
+
+  // 4. Platform-specific defaults for emulators, simulators, and tunnel fallbacks
   if (Platform.OS === 'android') {
     return 'http://10.0.2.2:8000';
   }
@@ -28,13 +51,14 @@ function getApiBaseUrl(): string {
 export const API_BASE = getApiBaseUrl();
 
 // Official CPCB 24-hour Breakpoints matching backend/database.py (DEC-010)
+// AQI breakpoints — colors reference the shared theme tokens (single source of truth)
 export const PM25_BREAKPOINTS = [
-  { cLo: 0.0, cHi: 30.0, iLo: 0, iHi: 50, category: 'Good', color: '#00C781' },
-  { cLo: 31.0, cHi: 60.0, iLo: 51, iHi: 100, category: 'Satisfactory', color: '#92D050' },
-  { cLo: 61.0, cHi: 90.0, iLo: 101, iHi: 200, category: 'Moderate', color: '#FFFF00' },
-  { cLo: 91.0, cHi: 120.0, iLo: 201, iHi: 300, category: 'Poor', color: '#FF7800' },
-  { cLo: 121.0, cHi: 250.0, iLo: 301, iHi: 400, category: 'Very Poor', color: '#FF0000' },
-  { cLo: 251.0, cHi: 380.0, iLo: 401, iHi: 500, category: 'Severe', color: '#8F3F97' },
+  { cLo: 0.0,   cHi: 30.0,  iLo: 0,   iHi: 50,  category: 'Good',        color: Colors.aqiGood },
+  { cLo: 31.0,  cHi: 60.0,  iLo: 51,  iHi: 100, category: 'Satisfactory', color: Colors.aqiGood },
+  { cLo: 61.0,  cHi: 90.0,  iLo: 101, iHi: 200, category: 'Moderate',     color: Colors.aqiModerate },
+  { cLo: 91.0,  cHi: 120.0, iLo: 201, iHi: 300, category: 'Poor',         color: Colors.aqiUnhealthy },
+  { cLo: 121.0, cHi: 250.0, iLo: 301, iHi: 400, category: 'Very Poor',    color: Colors.aqiSevere },
+  { cLo: 251.0, cHi: 380.0, iLo: 401, iHi: 500, category: 'Severe',       color: Colors.aqiHazardous },
 ];
 
 export function computeCpcbAqi(pm25: number): number {
@@ -242,7 +266,7 @@ export interface CitizenPhotoResponse {
   aqi_color: string;
   confidence: 'low' | 'medium' | 'high';
   processing_time_ms: number;
-  source: string;
+  // Note: backend does NOT return a `source` field; removed to match actual contract
 }
 
 export interface BiomassRegion {
@@ -621,3 +645,108 @@ export async function fetchSensorThings(): Promise<SensorThingsResponse> {
   return requestJson<SensorThingsResponse>('/api/v1/sensorthings/Things');
 }
 
+// ── Mobile release / update check ────────────────────────────────────────────
+export interface MobileReleaseResponse {
+  version: string;
+  download_url: string;
+  sha256: string;
+  status: string;
+}
+
+/** Returns null (HTTP 204) when no release is configured on the backend. */
+export async function fetchMobileRelease(): Promise<MobileReleaseResponse | null> {
+  return requestJson<MobileReleaseResponse | null>('/api/v1/mobile/releases/latest');
+}
+
+// ── Legal document URL helpers (use with Linking.openURL) ────────────────────
+
+/** Returns the URL to stream a draft notice PDF; open with Linking.openURL. */
+export function getNoticePdfUrl(noticeId: string): string {
+  return `${API_BASE}/api/v1/legal/notices/${encodeURIComponent(noticeId)}/document.pdf`;
+}
+
+/** Returns the URL to stream an evidence-certificate draft PDF. */
+export function getEvidenceCertUrl(noticeId: string): string {
+  return `${API_BASE}/api/v1/legal/notices/${encodeURIComponent(noticeId)}/evidence-certificate.pdf`;
+}
+
+/** Returns the URL to download a full evidence dossier ZIP for an incident. */
+export function getDossierZipUrl(incidentId: string): string {
+  return `${API_BASE}/api/v1/legal/dossiers/${encodeURIComponent(incidentId)}.zip`;
+}
+
+// ── Briefing RSS feed ─────────────────────────────────────────────────────────
+
+/** Returns the full URL of the atmospheric briefing RSS feed. */
+export function getBriefingFeedUrl(): string {
+  return `${API_BASE}/api/v1/briefings/feed.xml`;
+}
+
+// ── WebSocket connection helper ───────────────────────────────────────────────
+
+export type WsMessageType = 'snapshot' | 'aqi_update' | 'alert' | 'pong';
+
+export interface WsMessage {
+  type: WsMessageType;
+  city_id?: string;
+  pm25_ugm3?: number | null;
+  aqi_index?: number | null;
+  delhi_pm25_ugm3?: number | null;
+  delhi_aqi_index?: number | null;
+  fire_count?: number | null;
+  source?: string[];
+  measured_at?: string | null;
+  latest_alert?: Record<string, unknown> | null;
+  // Alert broadcast fields
+  incident_id?: string;
+  severity?: string;
+  title?: string;
+  body?: string;
+  created_at?: string;
+}
+
+/**
+ * Opens a WebSocket to the PRANA real-time channel for the given city.
+ * Valid city_ids: 'delhi' | 'ncr' | 'punjab' | 'haryana'
+ *
+ * Returns the WebSocket instance. Caller is responsible for closing it.
+ *
+ * @example
+ *   const ws = connectWebSocket('delhi', (msg) => { ... });
+ *   return () => ws.close();
+ */
+export function connectWebSocket(
+  cityId: 'delhi' | 'ncr' | 'punjab' | 'haryana',
+  onMessage: (msg: WsMessage) => void,
+  onError?: (event: Event) => void,
+): WebSocket {
+  // Convert http(s) → ws(s) for any configured base URL
+  const wsBase = API_BASE.replace(/^http/, 'ws');
+  const ws = new WebSocket(`${wsBase}/ws/${cityId}`);
+
+  ws.onmessage = (event) => {
+    try {
+      const msg: WsMessage = JSON.parse(event.data);
+      onMessage(msg);
+    } catch {
+      // Non-JSON frame (e.g. plain 'pong') — ignore
+    }
+  };
+
+  ws.onerror = (event) => {
+    if (onError) onError(event);
+  };
+
+  // Keep-alive ping every 30 s
+  const pingInterval = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send('ping');
+    } else {
+      clearInterval(pingInterval);
+    }
+  }, 30_000);
+
+  ws.onclose = () => clearInterval(pingInterval);
+
+  return ws;
+}

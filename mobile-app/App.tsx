@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Modal } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Modal, Text, Pressable, Linking } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Colors } from './src/theme/tokens';
@@ -11,10 +11,54 @@ import { PlumeForecastScreen } from './src/screens/PlumeForecastScreen';
 import { FederatedMeshScreen } from './src/screens/FederatedMeshScreen';
 import { RegulatoryAlertsScreen } from './src/screens/RegulatoryAlertsScreen';
 import { CitizenScannerScreen } from './src/screens/CitizenScannerScreen';
+import { fetchHealth, fetchMobileRelease, MobileReleaseResponse } from './src/api/client';
+import { useWebSocket } from './src/hooks/useWebSocket';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
   const [isScannerOpen, setIsScannerOpen] = useState<boolean>(false);
+  const [backendDown, setBackendDown] = useState<boolean>(false);
+  const [bannerDismissed, setBannerDismissed] = useState<boolean>(false);
+  const [mobileRelease, setMobileRelease] = useState<MobileReleaseResponse | null>(null);
+  const [broadcastAlert, setBroadcastAlert] = useState<string | null>(null);
+
+  // ── Real-time WebSocket feed (delhi channel) ──────────────────────────────
+  const { isConnected: wsConnected, wsError, lastMessage } = useWebSocket('delhi');
+
+  // Listen for live alert broadcasts pushed over WebSocket
+  useEffect(() => {
+    if (lastMessage?.type === 'alert') {
+      const alertTitle = lastMessage.title || 'Air Quality Alert Broadcast';
+      const alertBody = lastMessage.body || `Incident #${lastMessage.incident_id?.slice(0, 8)}`;
+      setBroadcastAlert(`🚨 ${alertTitle}: ${alertBody}`);
+    }
+  }, [lastMessage]);
+
+  // Check for app updates
+  useEffect(() => {
+    fetchMobileRelease()
+      .then((rel) => {
+        if (rel && rel.download_url) {
+          setMobileRelease(rel);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Latest live AQI from WebSocket push, used by FloatingAudioPlayer label
+  const liveAqiNote = lastMessage?.aqi_index != null
+    ? `Delhi AQI ${lastMessage.aqi_index} · ${wsConnected ? 'Live' : 'Reconnecting…'}`
+    : wsConnected
+      ? 'Connected — awaiting snapshot'
+      : 'Connecting to live feed…';
+
+  // ── Backend health check on mount ─────────────────────────────────────────
+  useEffect(() => {
+    fetchHealth()
+      .then(() => setBackendDown(false))
+      .catch(() => setBackendDown(true));
+  }, []);
 
   const renderActiveScreen = () => {
     switch (activeTab) {
@@ -23,6 +67,7 @@ export default function App() {
           <AirshedDashboardScreen
             onOpenScanner={() => setIsScannerOpen(true)}
             onNavigateCorridor={() => setActiveTab('corridor')}
+            liveMessage={lastMessage}
           />
         );
       case 'corridor':
@@ -38,22 +83,71 @@ export default function App() {
           <AirshedDashboardScreen
             onOpenScanner={() => setIsScannerOpen(true)}
             onNavigateCorridor={() => setActiveTab('corridor')}
+            liveMessage={lastMessage}
           />
         );
     }
   };
+
+  const showBanner = (backendDown || wsError) && !bannerDismissed;
 
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         <StatusBar style="dark" />
 
+        {/* Real-time Emergency Broadcast Alert */}
+        {broadcastAlert && (
+          <View style={styles.alertBanner}>
+            <MaterialCommunityIcons name="alert-decagram" size={16} color={Colors.canvasCream} />
+            <Text style={styles.alertBannerText} numberOfLines={2}>
+              {broadcastAlert}
+            </Text>
+            <Pressable onPress={() => setBroadcastAlert(null)} style={styles.bannerDismiss}>
+              <MaterialCommunityIcons name="close" size={14} color={Colors.canvasCream} />
+            </Pressable>
+          </View>
+        )}
+
+        {/* Backend connectivity banner */}
+        {showBanner && (
+          <View style={styles.connectivityBanner}>
+            <MaterialCommunityIcons
+              name={backendDown ? 'wifi-off' : 'wifi-strength-1-alert'}
+              size={15}
+              color={Colors.canvasCream}
+            />
+            <Text style={styles.bannerText}>
+              {backendDown
+                ? 'Backend unreachable — showing cached data'
+                : wsError ?? 'Real-time feed reconnecting…'}
+            </Text>
+            <Pressable onPress={() => setBannerDismissed(true)} style={styles.bannerDismiss}>
+              <MaterialCommunityIcons name="close" size={14} color={Colors.canvasCream} />
+            </Pressable>
+          </View>
+        )}
+
+        {/* Optional update prompt */}
+        {mobileRelease && (
+          <Pressable
+            onPress={() => Linking.openURL(mobileRelease.download_url)}
+            style={styles.updateBanner}
+          >
+            <MaterialCommunityIcons name="cellphone-arrow-down" size={15} color={Colors.inkBlack} />
+            <Text style={styles.updateBannerText}>
+              Update v{mobileRelease.version} available · Tap to install
+            </Text>
+            <MaterialCommunityIcons name="arrow-right" size={14} color={Colors.inkBlack} />
+          </Pressable>
+        )}
+
         {/* Main Screen Content */}
         <View style={styles.screenWrapper}>{renderActiveScreen()}</View>
 
-        {/* Persistent Floating Audio Player */}
+        {/* Persistent Floating Audio Player — wired to live AQI note */}
         <View style={styles.floatingPlayerContainer}>
-          <FloatingAudioPlayer />
+          <FloatingAudioPlayer telemetryNote={liveAqiNote} />
         </View>
 
         {/* Bottom Pill Navigation Bar */}
@@ -80,6 +174,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.canvasCream,
   },
+  connectivityBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.terracottaDeep,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    gap: 8,
+  },
+  bannerText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.canvasCream,
+    letterSpacing: 0.2,
+  },
+  bannerDismiss: {
+    padding: 2,
+  },
   screenWrapper: {
     flex: 1,
   },
@@ -93,5 +205,38 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     backgroundColor: Colors.canvasCream,
+  },
+  alertBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.aqiHazardous,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    gap: 8,
+    borderBottomWidth: 1.5,
+    borderBottomColor: Colors.inkBlack,
+  },
+  alertBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '800',
+    color: Colors.canvasCream,
+    letterSpacing: 0.1,
+  },
+  updateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceVanillaStrong,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.outlineVariant,
+  },
+  updateBannerText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.inkBlack,
   },
 });

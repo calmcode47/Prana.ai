@@ -2,18 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated, Easing, Modal, Linking } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors } from '../theme/tokens';
-import { fetchLatestBriefing, BriefingResponse, formatBackendStatus } from '../api/client';
+import { fetchLatestBriefing, BriefingResponse, formatBackendStatus, getBriefingFeedUrl } from '../api/client';
 
 interface FloatingAudioPlayerProps {
-  episodeTitle?: string;
+  /** Live telemetry note shown under the episode title; defaults to 'No current briefing'. */
   telemetryNote?: string;
-  onPressPlayer?: () => void;
 }
 
 export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
-  episodeTitle = 'PRANA Atmospheric Briefing',
   telemetryNote = 'No current briefing',
-  onPressPlayer,
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [briefing, setBriefing] = useState<BriefingResponse | null>(null);
@@ -26,16 +23,19 @@ export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
           setBriefing(res);
         }
       })
-      .catch(() => {});
+      .catch((err: unknown) => console.warn('[FloatingAudioPlayer] briefing:', err instanceof Error ? err.message : err));
   }, []);
+
 
   const displayTitle = briefing?.incident_id
     ? `Briefing ${briefing.incident_id.slice(0, 16)}`
-    : episodeTitle;
+    : 'PRANA Atmospheric Briefing';
 
-  const displayNote = briefing?.script
-    ? 'Tap to read full atmospheric briefing'
-    : telemetryNote;
+  const displayNote = telemetryNote
+    ? `${telemetryNote} · Tap for briefing`
+    : briefing?.script
+      ? 'Tap to read full atmospheric briefing'
+      : 'No current briefing';
   const hasAudio = Boolean(briefing?.audio_url);
 
   // Equalizer bar animated values
@@ -107,19 +107,21 @@ export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
     }
   };
 
+  const handleRssFeedPress = async () => {
+    try {
+      await Linking.openURL(getBriefingFeedUrl());
+    } catch {
+      // Linking failure — silently ignore (no RSS reader installed)
+    }
+  };
+
   return (
     <View style={styles.outerWrapper}>
       {/* Neo-brutalist shadow */}
       <View style={styles.shadowLayer} />
 
       <Pressable
-        onPress={() => {
-          if (onPressPlayer) {
-            onPressPlayer();
-          } else {
-            setShowBriefingModal(true);
-          }
-        }}
+        onPress={() => setShowBriefingModal(true)}
         style={styles.container}
       >
         {/* Left artwork icon */}
@@ -196,9 +198,16 @@ export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
                   {briefing ? formatBackendStatus(briefing.audio_status) : 'No briefing available'}
                 </Text>
               </View>
-              <Pressable onPress={() => setShowBriefingModal(false)} style={styles.modalDismissBtn}>
-                <Text style={styles.modalDismissText}>Close</Text>
-              </Pressable>
+              <View style={styles.modalFooterActions}>
+                {/* RSS Feed share button */}
+                <Pressable onPress={handleRssFeedPress} style={styles.rssFeedBtn}>
+                  <MaterialCommunityIcons name="rss" size={14} color={Colors.inkBlack} />
+                  <Text style={styles.rssFeedBtnText}>RSS</Text>
+                </Pressable>
+                <Pressable onPress={() => setShowBriefingModal(false)} style={styles.modalDismissBtn}>
+                  <Text style={styles.modalDismissText}>Close</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
         </View>
@@ -375,4 +384,26 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: Colors.canvasCream,
   },
+  modalFooterActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  rssFeedBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: Colors.inkBlack,
+    backgroundColor: Colors.surfaceVanilla,
+  },
+  rssFeedBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.inkBlack,
+  },
 });
+

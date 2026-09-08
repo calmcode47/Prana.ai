@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   TextInput,
   Pressable,
+  RefreshControl,
 } from 'react-native';
 import Svg, { Path, Ellipse, Circle, G, Line, Rect, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -33,13 +34,15 @@ import {
   MeteorologyResponse,
   StationThing,
   SurfaceGridResponse,
+  WsMessage,
   formatDataSource,
   formatBackendStatus,
 } from '../api/client';
 
-interface AirshedDashboardScreenProps {
+export interface AirshedDashboardScreenProps {
   onOpenScanner: () => void;
   onNavigateCorridor: () => void;
+  liveMessage?: WsMessage | null;
 }
 
 export type CorridorNodeKey = 'pb_04' | 'transit_02' | 'delhi_09';
@@ -127,6 +130,7 @@ const distanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
 export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
   onOpenScanner,
   onNavigateCorridor,
+  liveMessage,
 }) => {
   const [activeFilter, setActiveFilter] = useState('foryou');
   const [selectedCorridorNode, setSelectedCorridorNode] = useState<CorridorNodeKey>('pb_04');
@@ -141,42 +145,41 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
   const [biomassData, setBiomassData] = useState<BiomassEmissionsResponse | null>(null);
   const [lagData, setLagData] = useState<FireAqiLagResponse | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [hotspotsRes, meteoRes, stationsRes, biomassRes, lagRes, surfaceRes, sensorsRes] = await Promise.allSettled([
+        fetchHotspots(24, 'nominal'),
+        fetchMeteorology(),
+        fetchStations('pm25'),
+        fetchBiomassEmissions(7),
+        fetchFireAqiLag(7),
+        fetchAqiSurface(0.5),
+        fetchSensorThings(),
+      ]);
+
+      if (hotspotsRes.status === 'fulfilled') setHotspots(hotspotsRes.value);
+      if (meteoRes.status === 'fulfilled') setMeteorology(meteoRes.value);
+      if (stationsRes.status === 'fulfilled') setStations(stationsRes.value?.value ?? []);
+      if (biomassRes.status === 'fulfilled') setBiomassData(biomassRes.value);
+      if (lagRes.status === 'fulfilled') setLagData(lagRes.value);
+      if (surfaceRes.status === 'fulfilled') setSurface(surfaceRes.value);
+      if (sensorsRes.status === 'fulfilled') setSensorCount(sensorsRes.value['@iot.count']);
+    } catch (err: unknown) {
+      console.warn('[Dashboard] loadData:', err instanceof Error ? err.message : err);
+    }
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  }, [loadData]);
 
   useEffect(() => {
-    // Fetch live fire hotspots
-    fetchHotspots(24, 'nominal')
-      .then((res) => {
-        setHotspots(res);
-      })
-      .catch(() => {});
-
-    // Fetch live meteorology
-    fetchMeteorology()
-      .then((res) => {
-        setMeteorology(res);
-      })
-      .catch(() => {});
-
-    // Fetch live ground stations
-    fetchStations('pm25')
-      .then((res) => {
-        setStations(res?.value ?? []);
-      })
-      .catch(() => {});
-
-    // Fetch regional biomass emissions breakdown
-    fetchBiomassEmissions(7)
-      .then(setBiomassData)
-      .catch(() => {});
-
-    // Fetch smoke advection lag correlation
-    fetchFireAqiLag(7)
-      .then(setLagData)
-      .catch(() => {});
-
-    fetchAqiSurface(0.5).then(setSurface).catch(() => {});
-    fetchSensorThings().then((res) => setSensorCount(res['@iot.count'])).catch(() => {});
-  }, []);
+    loadData();
+  }, [loadData]);
 
   const nodeData = useMemo<CorridorNodeData>(() => {
     const base = CORRIDOR_NODES[selectedCorridorNode];
@@ -186,8 +189,15 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
       const [bestLon, bestLat] = best.geometry.coordinates;
       return distanceKm(base.latitude, base.longitude, lat, lon) < distanceKm(base.latitude, base.longitude, bestLat, bestLon) ? feature : best;
     }, null);
-    const pm25 = surfacePoint?.properties.pm25_estimate ?? null;
-    const aqi = surfacePoint?.properties.aqi_index ?? (pm25 !== null ? computeCpcbAqi(pm25) : null);
+
+    // If live WebSocket push is active for Delhi and Delhi node is selected
+    const isLiveDelhi = selectedCorridorNode === 'delhi_09' && liveMessage?.delhi_pm25_ugm3 != null;
+    const pm25 = isLiveDelhi
+      ? liveMessage.delhi_pm25_ugm3!
+      : (surfacePoint?.properties.pm25_estimate ?? null);
+    const aqi = isLiveDelhi && liveMessage.delhi_aqi_index != null
+      ? liveMessage.delhi_aqi_index
+      : (surfacePoint?.properties.aqi_index ?? (pm25 !== null ? computeCpcbAqi(pm25) : null));
     const aqiMeta = aqi !== null ? getAqiCategoryAndColor(aqi) : { category: 'Data unavailable', color: Colors.inkMuted };
     const region = selectedCorridorNode === 'pb_04' ? meteorology?.regions.punjab : meteorology?.regions.delhi;
     const windKmh = region ? region.wind_speed_ms * 3.6 : null;
@@ -200,7 +210,9 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
     const strongestLag = lagData?.strongest_lag;
     const windText = windKmh !== null && windDirection !== null ? `${windDirection}° @ ${windKmh.toFixed(1)} km/h` : 'Data unavailable';
     const inversionText = mixing !== null ? `${Math.round(mixing)} m AGL; ${formatBackendStatus(meteorology?.inversion.status)}` : 'Not measured';
-    const sourceNote = surface?.source ? `Current backend surface; ${formatDataSource(surface.source)}` : 'Current backend surface unavailable';
+    const sourceNote = isLiveDelhi
+      ? 'Live WebSocket real-time broadcast (60s push)'
+      : (surface?.source ? `Current backend surface; ${formatDataSource(surface.source)}` : 'Current backend surface unavailable');
     let metrics: CorridorNodeData['metric1'][];
     if (selectedCorridorNode === 'pb_04') {
       metrics = [
@@ -336,6 +348,14 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.inkBlack}
+            colors={[Colors.terracottaDeep]}
+          />
+        }
       >
         {/* Search & Filter Section */}
         <View style={styles.searchSection}>
@@ -716,7 +736,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
         </NeoCard>
 
         {/* Spacing for floating player & nav */}
-        <View style={{ height: 110 }} />
+        <View style={{ height: 165 }} />
       </ScrollView>
 
       {/* Floating Citizen Sky Haze FAB */}
@@ -1642,7 +1662,7 @@ const styles = StyleSheet.create({
   fabWrapper: {
     position: 'absolute',
     right: 16,
-    bottom: 85,
+    bottom: 152,
     zIndex: 40,
   },
   fabContent: {

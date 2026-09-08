@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   Pressable,
+  RefreshControl,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors } from '../theme/tokens';
@@ -50,31 +51,37 @@ export const PlumeForecastScreen: React.FC = () => {
     return () => clearInterval(interval);
   }, [isPlaying]);
 
-  useEffect(() => {
-    fetchMeteorology()
-      .then((met) => {
-        setMeteoData(met);
-      })
-      .catch(() => {});
+  const [refreshing, setRefreshing] = useState(false);
 
-    fetchForecastPlume()
-      .then((res) => {
-        setPlumeData(res);
-      })
-      .catch(() => {});
+  const loadData = useCallback(async () => {
+    try {
+      const [meteoRes, plumeRes, surfaceRes, lagRes, biomassRes] = await Promise.allSettled([
+        fetchMeteorology(),
+        fetchForecastPlume(),
+        fetchAqiSurface(0.5),
+        fetchFireAqiLag(7),
+        fetchBiomassEmissions(7),
+      ]);
 
-    fetchAqiSurface(0.5)
-      .then(setSurfaceData)
-      .catch(() => {});
-
-    fetchFireAqiLag(7)
-      .then(setLagData)
-      .catch(() => {});
-
-    fetchBiomassEmissions(7)
-      .then(setBiomassData)
-      .catch(() => {});
+      if (meteoRes.status === 'fulfilled') setMeteoData(meteoRes.value);
+      if (plumeRes.status === 'fulfilled') setPlumeData(plumeRes.value);
+      if (surfaceRes.status === 'fulfilled') setSurfaceData(surfaceRes.value);
+      if (lagRes.status === 'fulfilled') setLagData(lagRes.value);
+      if (biomassRes.status === 'fulfilled') setBiomassData(biomassRes.value);
+    } catch (err: unknown) {
+      console.warn('[PlumeForecast] loadData:', err instanceof Error ? err.message : err);
+    }
   }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  }, [loadData]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleSelectHorizon = (h: number) => {
     setSelectedHorizon(h);
@@ -141,7 +148,19 @@ export const PlumeForecastScreen: React.FC = () => {
         <StarburstBadge label={activeFeature ? `T+${activeFeature.properties.horizon_hours}H MODEL` : 'DATA PENDING'} rotation="-2deg" shadowColor={Colors.coralWatermelon} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.inkBlack}
+            colors={[Colors.terracottaDeep]}
+          />
+        }
+      >
         {/* Horizon Segmented Control Bar */}
         <View style={styles.horizonBar}>
           {[
@@ -411,7 +430,7 @@ export const PlumeForecastScreen: React.FC = () => {
           </NeoCard>
         </View>
 
-        <View style={{ height: 110 }} />
+        <View style={{ height: 165 }} />
       </ScrollView>
     </View>
   );

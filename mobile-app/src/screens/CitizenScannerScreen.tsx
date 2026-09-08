@@ -120,10 +120,16 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
       setAnalysisError('Capture or choose a real sky photo before analysis.');
       return;
     }
-    const lat = Number(latitude);
-    const lon = Number(longitude);
-    if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
-      setAnalysisError('Enter valid latitude and longitude values.');
+    const latStr = (latitude ?? '').trim();
+    const lonStr = (longitude ?? '').trim();
+    if (!latStr || !lonStr) {
+      setAnalysisError('Please enter both latitude and longitude coordinates.');
+      return;
+    }
+    const lat = Number(latStr);
+    const lon = Number(lonStr);
+    if (isNaN(lat) || !Number.isFinite(lat) || lat < -90 || lat > 90 || isNaN(lon) || !Number.isFinite(lon) || lon < -180 || lon > 180) {
+      setAnalysisError('Enter valid latitude (-90 to 90) and longitude (-180 to 180).');
       return;
     }
     setIsInferring(true);
@@ -570,7 +576,7 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
           </View>
         </View>
 
-        <View style={{ height: 110 }} />
+        <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );

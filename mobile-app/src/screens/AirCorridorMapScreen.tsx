@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   Pressable,
+  RefreshControl,
 } from 'react-native';
 import Svg, { Path, Rect, Defs, LinearGradient, Stop, Circle, Polygon, G } from 'react-native-svg';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -125,39 +126,39 @@ export const AirCorridorMapScreen: React.FC = () => {
     return () => clearInterval(interval);
   }, [isPlaying]);
 
-  useEffect(() => {
-    fetchHotspots(24, 'nominal')
-      .then((res) => {
-        setHotspots(res);
-      })
-      .catch(() => {});
+  const [refreshing, setRefreshing] = useState(false);
 
-    fetchMeteorology()
-      .then((res) => {
-        setMeteoData(res);
-      })
-      .catch(() => {});
+  const loadData = useCallback(async () => {
+    try {
+      const [hotspotsRes, meteoRes, plumeRes, biomassRes, sensorsRes, surfaceRes] = await Promise.allSettled([
+        fetchHotspots(24, 'nominal'),
+        fetchMeteorology(),
+        fetchForecastPlume(),
+        fetchBiomassEmissions(7),
+        fetchSensorThings(),
+        fetchAqiSurface(0.5),
+      ]);
 
-    fetchForecastPlume()
-      .then((res) => {
-        setPlumeData(res);
-      })
-      .catch(() => {});
-
-    fetchBiomassEmissions(7)
-      .then(setBiomassData)
-      .catch(() => {});
-
-    fetchSensorThings()
-      .then((res: SensorThingsResponse) => {
-        setSensorCount(res['@iot.count']);
-      })
-      .catch(() => {});
-
-    fetchAqiSurface(0.5)
-      .then(setSurfaceData)
-      .catch(() => {});
+      if (hotspotsRes.status === 'fulfilled') setHotspots(hotspotsRes.value);
+      if (meteoRes.status === 'fulfilled') setMeteoData(meteoRes.value);
+      if (plumeRes.status === 'fulfilled') setPlumeData(plumeRes.value);
+      if (biomassRes.status === 'fulfilled') setBiomassData(biomassRes.value);
+      if (sensorsRes.status === 'fulfilled') setSensorCount(sensorsRes.value['@iot.count']);
+      if (surfaceRes.status === 'fulfilled') setSurfaceData(surfaceRes.value);
+    } catch (err: unknown) {
+      console.warn('[AirCorridorMap] loadData:', err instanceof Error ? err.message : err);
+    }
   }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  }, [loadData]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const toggleLayer = (key: keyof typeof layers) => {
     setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -226,7 +227,19 @@ export const AirCorridorMapScreen: React.FC = () => {
         <StarburstBadge label={hotspots ? "LIVE SATELLITE" : "DATA PENDING"} rotation="2deg" shadowColor={Colors.cobaltDeep} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.inkBlack}
+            colors={[Colors.terracottaDeep]}
+          />
+        }
+      >
         {/* Map Container Card */}
         <NeoCard backgroundColor={Colors.canvasCream} style={styles.mapCard}>
           {/* Topographic & Plume SVG Canvas */}
@@ -617,7 +630,7 @@ export const AirCorridorMapScreen: React.FC = () => {
           </Text>
         </NeoCard>
 
-        <View style={{ height: 110 }} />
+        <View style={{ height: 165 }} />
       </ScrollView>
     </View>
   );

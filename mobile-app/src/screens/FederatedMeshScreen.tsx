@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   Pressable,
   DimensionValue,
+  RefreshControl,
 } from 'react-native';
 import Svg, { Path, Circle, Line, Text as SvgText, G } from 'react-native-svg';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -33,23 +34,49 @@ export const FederatedMeshScreen: React.FC = () => {
   const [roundsList, setRoundsList] = useState<FLRoundStatus[]>([]);
   const [statusData, setStatusData] = useState<FLStatusResponse | null>(null);
   const [runFeedback, setRunFeedback] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const isMounted = useRef(true);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const loadData = useCallback(async () => {
+    try {
+      const status = await fetchFederatedStatus();
+      if (!isMounted.current) return;
+      setStatusData(status);
+      if (status?.rounds && status.rounds.length > 0) {
+        setRoundsList(status.rounds);
+        const last = status.rounds[status.rounds.length - 1];
+        setCurrentRound(last.round_number);
+        setGlobalLoss(Number(last.global_loss.toFixed(3)));
+        setGlobalAcc(last.global_accuracy);
+        setDelhiAcc(last.delhi_accuracy);
+        setPunjabAcc(last.punjab_accuracy);
+      }
+    } catch (error: unknown) {
+      if (isMounted.current) {
+        setRunFeedback(`Status unavailable: ${error instanceof Error ? error.message : 'backend error'}`);
+      }
+    }
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    if (isMounted.current) setRefreshing(false);
+  }, [loadData]);
 
   useEffect(() => {
-    fetchFederatedStatus()
-      .then((status: FLStatusResponse) => {
-        setStatusData(status);
-        if (status?.rounds && status.rounds.length > 0) {
-          setRoundsList(status.rounds);
-          const last = status.rounds[status.rounds.length - 1];
-          setCurrentRound(last.round_number);
-          setGlobalLoss(Number(last.global_loss.toFixed(3)));
-          setGlobalAcc(last.global_accuracy);
-          setDelhiAcc(last.delhi_accuracy);
-          setPunjabAcc(last.punjab_accuracy);
-        }
-      })
-      .catch((error) => setRunFeedback(`Status unavailable: ${error instanceof Error ? error.message : 'backend error'}`));
-  }, []);
+    isMounted.current = true;
+    loadData();
+    return () => {
+      isMounted.current = false;
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [loadData]);
 
   const handleSimulateRound = async () => {
     if (isSimulating) return;
@@ -57,12 +84,18 @@ export const FederatedMeshScreen: React.FC = () => {
 
     try {
       const runResult = await triggerFederatedRun(10);
+      if (!isMounted.current) return;
       setStatusData(runResult);
       const rounds = runResult?.rounds || [];
       if (rounds.length > 0) {
         setRoundsList(rounds);
         let i = 0;
-        const timer = setInterval(() => {
+        if (timerRef.current) clearInterval(timerRef.current);
+        timerRef.current = setInterval(() => {
+          if (!isMounted.current) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            return;
+          }
           if (i < rounds.length) {
             const r = rounds[i];
             setCurrentRound(r.round_number);
@@ -72,7 +105,7 @@ export const FederatedMeshScreen: React.FC = () => {
             setPunjabAcc(r.punjab_accuracy);
             i++;
           } else {
-            clearInterval(timer);
+            if (timerRef.current) clearInterval(timerRef.current);
             setIsSimulating(false);
           }
         }, 220);
@@ -80,8 +113,10 @@ export const FederatedMeshScreen: React.FC = () => {
         setIsSimulating(false);
       }
     } catch (error) {
-      setRunFeedback(`Training failed: ${error instanceof Error ? error.message : 'backend error'}`);
-      setIsSimulating(false);
+      if (isMounted.current) {
+        setRunFeedback(`Training failed: ${error instanceof Error ? error.message : 'backend error'}`);
+        setIsSimulating(false);
+      }
     }
   };
 
@@ -105,7 +140,19 @@ export const FederatedMeshScreen: React.FC = () => {
         <StarburstBadge label="FEDAVG MESH" rotation="-3deg" shadowColor={Colors.forestJade} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.inkBlack}
+            colors={[Colors.terracottaDeep]}
+          />
+        }
+      >
         {/* Configured privacy controls */}
         <NeoCard backgroundColor={Colors.surfaceVanilla} style={styles.privacyCard}>
           <View style={styles.privacyHeader}>
@@ -405,7 +452,7 @@ export const FederatedMeshScreen: React.FC = () => {
           </View>
         </NeoCard>
 
-        <View style={{ height: 110 }} />
+        <View style={{ height: 165 }} />
       </ScrollView>
     </View>
   );

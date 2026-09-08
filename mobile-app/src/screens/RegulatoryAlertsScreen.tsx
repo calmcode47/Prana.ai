@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   Pressable,
+  Linking,
+  RefreshControl,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors } from '../theme/tokens';
@@ -26,6 +28,9 @@ import {
   LegalRegistryResponse,
   formatDataSource,
   formatBackendStatus,
+  getNoticePdfUrl,
+  getEvidenceCertUrl,
+  getDossierZipUrl,
 } from '../api/client';
 
 export const RegulatoryAlertsScreen: React.FC = () => {
@@ -47,35 +52,47 @@ export const RegulatoryAlertsScreen: React.FC = () => {
   const [bulletinHeading, setBulletinHeading] = useState<string>('Checking current alerts…');
   const [bulletinBody, setBulletinBody] = useState<string>('The backend has not returned a bulletin yet.');
 
-  useEffect(() => {
-    fetchHotspots(24, 'nominal')
-      .then((res) => {
-        setActiveFiresCount(res.count);
-      })
-      .catch(() => {});
+  const [refreshing, setRefreshing] = useState(false);
 
-    fetchAlerts()
-      .then((res) => {
-        setIncidents(res.items);
-      })
-      .catch(() => {});
+  const loadData = useCallback(async () => {
+    try {
+      const [hotspotsRes, alertsRes, cemsRes, registryRes, anomaliesRes] = await Promise.allSettled([
+        fetchHotspots(24, 'nominal'),
+        fetchAlerts(),
+        fetchCemsForensics('CEMS-FLUE-MAN8', 24),
+        fetchLegalRegistry(),
+        fetchAnomalies('no2', true, 7),
+      ]);
 
-    fetchCemsForensics('CEMS-FLUE-MAN8', 24)
-      .then(setCemsData)
-      .catch(() => {});
-
-    fetchLegalRegistry()
-      .then(setLegalRegistry)
-      .catch(() => {});
-
-    fetchAnomalies('no2', true, 7)
-      .then((res: AnomaliesResponse) => {
-        if (typeof res?.count === 'number') {
-          setAnomaliesCount(res.count);
-        }
-      })
-      .catch(() => {});
+      if (hotspotsRes.status === 'fulfilled') setActiveFiresCount(hotspotsRes.value.count);
+      if (alertsRes.status === 'fulfilled') setIncidents(alertsRes.value.items);
+      if (cemsRes.status === 'fulfilled') setCemsData(cemsRes.value);
+      if (registryRes.status === 'fulfilled') setLegalRegistry(registryRes.value);
+      if (anomaliesRes.status === 'fulfilled' && typeof anomaliesRes.value?.count === 'number') {
+        setAnomaliesCount(anomaliesRes.value.count);
+      }
+    } catch (err: unknown) {
+      console.warn('[RegulatoryAlerts] loadData:', err instanceof Error ? err.message : err);
+    }
   }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.allSettled([
+      loadData(),
+      fetchLatestAlert(selectedLang).then((res) => {
+        if (res?.title && res?.body) {
+          setBulletinHeading(res.title);
+          setBulletinBody(res.body);
+        }
+      }),
+    ]);
+    setRefreshing(false);
+  }, [loadData, selectedLang]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   useEffect(() => {
     fetchLatestAlert(selectedLang)
@@ -108,7 +125,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
       setNoticeDrafted(true);
       setPipelineToast(`Section 31A Notice #${res.notice_id.slice(-6)} Drafted`);
       setTimeout(() => setPipelineToast(null), 3000);
-      fetchLegalRegistry().then(setLegalRegistry).catch(() => {});
+      fetchLegalRegistry().then(setLegalRegistry).catch((err: unknown) => console.warn('[RegulatoryAlerts] legalRegistry refresh:', err instanceof Error ? err.message : err));
     } catch (error) {
       setNoticeDrafted(false);
       setPipelineToast(`Notice failed: ${error instanceof Error ? error.message : 'backend unavailable'}`);
@@ -143,7 +160,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
       setTransmittedToDM(true);
       setPipelineToast(`Transmitted to DM & Police (#${dispatch.dispatch_id.slice(-6)})`);
       setTimeout(() => setPipelineToast(null), 3000);
-      fetchLegalRegistry().then(setLegalRegistry).catch(() => {});
+      fetchLegalRegistry().then(setLegalRegistry).catch((err: unknown) => console.warn('[RegulatoryAlerts] legalRegistry refresh:', err instanceof Error ? err.message : err));
     } catch (error) {
       setTransmittedToDM(false);
       setPipelineToast(`Dispatch failed: ${error instanceof Error ? error.message : 'backend unavailable'}`);
@@ -183,7 +200,19 @@ export const RegulatoryAlertsScreen: React.FC = () => {
         <StarburstBadge label="SPCB ENFORCEMENT" rotation="3deg" shadowColor={Colors.coralWatermelon} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.inkBlack}
+            colors={[Colors.terracottaDeep]}
+          />
+        }
+      >
         {/* Top 3 Metric Cards */}
         <View style={styles.metricsRow}>
           {/* Metric 1 */}
@@ -420,6 +449,33 @@ export const RegulatoryAlertsScreen: React.FC = () => {
                 3. {transmittedToDM ? 'Dispatched to Flying Squad' : 'Transmit to District Magistrate'}
               </Text>
             </Pressable>
+
+            {/* Document download row — shown once a notice has been drafted */}
+            {noticeDrafted && draftedNoticeId && (
+              <View style={styles.downloadRow}>
+                <Pressable
+                  onPress={() => Linking.openURL(getNoticePdfUrl(draftedNoticeId))}
+                  style={styles.downloadBtn}
+                >
+                  <MaterialCommunityIcons name="file-pdf-box" size={14} color={Colors.terracottaDeep} />
+                  <Text style={styles.downloadBtnText}>Draft PDF</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => Linking.openURL(getEvidenceCertUrl(draftedNoticeId))}
+                  style={styles.downloadBtn}
+                >
+                  <MaterialCommunityIcons name="certificate" size={14} color={Colors.primaryContainer} />
+                  <Text style={styles.downloadBtnText}>Evidence Cert</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => Linking.openURL(getDossierZipUrl(firstId))}
+                  style={styles.downloadBtn}
+                >
+                  <MaterialCommunityIcons name="folder-zip" size={14} color={Colors.forestJade} />
+                  <Text style={styles.downloadBtnText}>Dossier ZIP</Text>
+                </Pressable>
+              </View>
+            )}
           </View>
         </NeoCard> : (
           <NeoCard backgroundColor={Colors.surfaceVanilla} style={styles.incidentCard}>
@@ -508,7 +564,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
           </Text>
         </NeoCard>}
 
-        <View style={{ height: 110 }} />
+        <View style={{ height: 165 }} />
       </ScrollView>
     </View>
   );
@@ -1026,5 +1082,27 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '500',
     color: Colors.inkMuted,
+  },
+  downloadRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+    flexWrap: 'wrap',
+  },
+  downloadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: Colors.inkBlack,
+    backgroundColor: Colors.surfaceVanilla,
+  },
+  downloadBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.inkBlack,
   },
 });

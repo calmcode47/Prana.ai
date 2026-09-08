@@ -19,8 +19,9 @@ export const Colors = {
   primaryFixedDim: '#B4C5FF',
 
   // Human & Warm Accents
-  coralWatermelon: '#FF5376',
   coralWatermelonVivid: '#FF5376',
+  // Alias — always identical to coralWatermelonVivid; kept for call-site compatibility
+  coralWatermelon: '#FF5376',
   terracottaDeep: '#EA580C',
   tertiaryContainer: '#B54E00',
   onTertiary: '#FFFFFF',
