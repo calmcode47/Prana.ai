@@ -7,7 +7,10 @@ import {
   Pressable,
   TextInput,
   DimensionValue,
+  Image,
+  Platform,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors } from '../theme/tokens';
 import { NeoCard } from '../components/NeoCard';
@@ -33,7 +36,7 @@ interface PresetInfo {
 const PRESETS: Record<PresetKey, PresetInfo> = {
   clear: {
     name: 'Sangrur Rural Harvest Outskirts',
-    desc: 'High sky patch visibility, minimal light extinction',
+    desc: 'Saved observation coordinates for the Sangrur area',
     lat: '30.2450',
     lon: '75.8420',
     color: '#92D050',
@@ -41,7 +44,7 @@ const PRESETS: Record<PresetKey, PresetInfo> = {
   },
   haze: {
     name: 'Panipat NH-44 Highway Transit Belt',
-    desc: 'Diffuse boundary layer, moderate particulate scattering',
+    desc: 'Saved observation coordinates for the Panipat area',
     lat: '29.3909',
     lon: '76.9635',
     color: '#F97316',
@@ -49,7 +52,7 @@ const PRESETS: Record<PresetKey, PresetInfo> = {
   },
   smog: {
     name: 'Anand Vihar ISBT Receptor Basin',
-    desc: 'Heavy nocturnal subsidence inversion trap, severe scattering',
+    desc: 'Saved observation coordinates for the Anand Vihar area',
     lat: '28.6472',
     lon: '77.3160',
     color: '#8F3F97',
@@ -63,97 +66,98 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
   const [longitude, setLongitude] = useState<string>('77.3160');
 
   const [isInferring, setIsInferring] = useState<boolean>(false);
-  const [hasResult, setHasResult] = useState<boolean>(true);
-  const [photoSnapped, setPhotoSnapped] = useState<boolean>(false);
+  const [hasResult, setHasResult] = useState<boolean>(false);
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoMimeType, setPhotoMimeType] = useState<string>('image/jpeg');
   const [reportSubmitted, setReportSubmitted] = useState<boolean>(false);
 
   // Optical and PM2.5 results
-  const [pm25Est, setPm25Est] = useState<number>(312);
-  const [aqiIndex, setAqiIndex] = useState<number>(378);
-  const [aqiCategory, setAqiCategory] = useState<string>('Severe • Hazardous');
-  const [aqiColor, setAqiColor] = useState<string>('#8F3F97');
-  const [confidence, setConfidence] = useState<'high' | 'medium' | 'low'>('high');
-  const [inferenceTimeMs, setInferenceTimeMs] = useState<number>(1840);
-  const [betaExt, setBetaExt] = useState<string>('1.84');
-  const [darkChannel, setDarkChannel] = useState<number>(182);
+  const [pm25Est, setPm25Est] = useState<number>(0);
+  const [aqiIndex, setAqiIndex] = useState<number>(0);
+  const [aqiCategory, setAqiCategory] = useState<string>('Not analysed');
+  const [aqiColor, setAqiColor] = useState<string>(Colors.inkMuted);
+  const [confidence, setConfidence] = useState<'high' | 'medium' | 'low'>('low');
+  const [inferenceTimeMs, setInferenceTimeMs] = useState<number>(0);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const handleSelectPreset = (key: PresetKey) => {
     setSelectedPreset(key);
     const p = PRESETS[key];
     setLatitude(p.lat);
     setLongitude(p.lon);
-    setPhotoSnapped(false);
+    setPhotoUri(null);
+    setHasResult(false);
     setReportSubmitted(false);
+    setAnalysisError(null);
+  };
 
-    // Update baseline estimation for the selected atmospheric preset
-    if (key === 'clear') {
-      setPm25Est(42);
-      setAqiIndex(85);
-      setAqiCategory('Satisfactory');
-      setAqiColor('#92D050');
-      setConfidence('high');
-      setBetaExt('0.24');
-      setDarkChannel(48);
-    } else if (key === 'haze') {
-      setPm25Est(198);
-      setAqiIndex(265);
-      setAqiCategory('Poor • Unhealthy');
-      setAqiColor('#F97316');
-      setConfidence('medium');
-      setBetaExt('1.15');
-      setDarkChannel(124);
-    } else {
-      setPm25Est(312);
-      setAqiIndex(378);
-      setAqiCategory('Severe • Hazardous');
-      setAqiColor('#8F3F97');
-      setConfidence('high');
-      setBetaExt('1.84');
-      setDarkChannel(182);
+  const usePickedAsset = (asset: ImagePicker.ImagePickerAsset) => {
+    setPhotoUri(asset.uri);
+    setPhotoMimeType(asset.mimeType === 'image/png' ? 'image/png' : 'image/jpeg');
+    setHasResult(false);
+    setReportSubmitted(false);
+    setAnalysisError(null);
+  };
+
+  const handleCapturePhoto = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      setAnalysisError('Camera permission is required to capture a sky photo.');
+      return;
     }
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.85 });
+    if (!result.canceled && result.assets[0]) usePickedAsset(result.assets[0]);
+  };
+
+  const handleChoosePhoto = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
+    if (!result.canceled && result.assets[0]) usePickedAsset(result.assets[0]);
   };
 
   const handleAnalyseHaze = async () => {
     if (isInferring) return;
+    if (!photoUri) {
+      setAnalysisError('Capture or choose a real sky photo before analysis.');
+      return;
+    }
+    const lat = Number(latitude);
+    const lon = Number(longitude);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
+      setAnalysisError('Enter valid latitude and longitude values.');
+      return;
+    }
     setIsInferring(true);
     setReportSubmitted(false);
+    setAnalysisError(null);
 
     try {
       const formData = new FormData();
-      const base64Jpeg =
-        'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
-      formData.append('photo', {
-        uri: base64Jpeg,
-        name: 'sky_photo.jpg',
-        type: 'image/jpeg',
-      } as any);
+      if (Platform.OS === 'web') {
+        const blob = await fetch(photoUri).then((response) => response.blob());
+        formData.append('photo', blob, photoMimeType === 'image/png' ? 'sky_photo.png' : 'sky_photo.jpg');
+      } else {
+        formData.append('photo', { uri: photoUri, name: photoMimeType === 'image/png' ? 'sky_photo.png' : 'sky_photo.jpg', type: photoMimeType } as any);
+      }
       formData.append('latitude', latitude);
       formData.append('longitude', longitude);
 
       const res: CitizenPhotoResponse = await uploadCitizenSkyPhoto(formData);
       if (res && typeof res.pm25_estimate === 'number') {
         setPm25Est(Math.round(res.pm25_estimate));
-        setAqiIndex(res.aqi_index ?? Math.min(500, Math.round(res.pm25_estimate * 1.2)));
-        setAqiCategory(res.aqi_category ?? 'Severe');
-        setAqiColor(res.aqi_color ?? '#8F3F97');
+        setAqiIndex(res.aqi_index);
+        setAqiCategory(res.aqi_category);
+        setAqiColor(res.aqi_color);
         setConfidence(res.confidence === 'low' ? 'low' : res.confidence === 'medium' ? 'medium' : 'high');
-        setInferenceTimeMs(res.processing_time_ms ?? 1450);
-        const beta = (res.pm25_estimate * 0.0058).toFixed(2);
-        setBetaExt(beta);
-        setDarkChannel(Math.round(Math.min(240, 60 + res.pm25_estimate * 0.35)));
+        setInferenceTimeMs(res.processing_time_ms);
         setReportSubmitted(true);
+        setHasResult(true);
       }
-    } catch {
-      // Graceful offline fallback
-      const baseVal = selectedPreset === 'clear' ? 45 : selectedPreset === 'haze' ? 205 : 320;
-      const calculated = Math.round(baseVal + (Math.random() * 20 - 10));
-      setPm25Est(calculated);
-      setAqiIndex(Math.round(calculated * 1.18));
-      setInferenceTimeMs(1240);
-      setReportSubmitted(true);
+    } catch (error) {
+      setHasResult(false);
+      setReportSubmitted(false);
+      setAnalysisError(error instanceof Error ? error.message : 'Photo analysis failed.');
     } finally {
       setIsInferring(false);
-      setHasResult(true);
     }
   };
 
@@ -185,11 +189,11 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
         <View style={styles.editorialBadgeRow}>
           <View style={styles.policyPill}>
             <View style={styles.livePulseDot} />
-            <Text style={styles.policyPillText}>REQ-009 HE ET AL. DCP</Text>
+            <Text style={styles.policyPillText}>PHOTO HAZE ESTIMATE</Text>
           </View>
           <View style={styles.privacyPill}>
             <MaterialCommunityIcons name="shield-lock-outline" size={12} color={Colors.cobaltDeep} />
-            <Text style={styles.privacyPillText}>SEC-003 EXIF Stripped</Text>
+            <Text style={styles.privacyPillText}>METADATA REMOVED</Text>
           </View>
           <View style={styles.noisePill}>
             <Text style={styles.noisePillText}>σ=0.02 Noise</Text>
@@ -198,7 +202,7 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
 
         {/* Section Headline & Description */}
         <View style={styles.introBox}>
-          <Text style={styles.introPretitle}>CITIZEN SCIENCE PROTOCOL // POST /api/v1/citizen/photo</Text>
+          <Text style={styles.introPretitle}>CITIZEN SCIENCE PHOTO ANALYSIS</Text>
           <Text style={styles.introHeading}>
             Decomposes RGB sky imagery using Dark Channel Prior to estimate optical thickness (τ) and compute ground PM2.5 concentrations.
           </Text>
@@ -214,7 +218,7 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
             <Text style={styles.cardHeaderBadge}>3 Airshed Zones</Text>
           </View>
           <Text style={styles.presetExplainer}>
-            Select an atmospheric corridor regime to calibrate aerosol scattering optical depth or simulate localized haze conditions:
+            Select saved observation coordinates, then capture or choose the real sky image to analyse:
           </Text>
 
           <View style={styles.presetGrid}>
@@ -264,10 +268,10 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
             <View
               style={[
                 styles.hazeCanvasBackground,
-                { backgroundColor: photoSnapped ? '#3F3F46' : activePreset.gradientBg },
+                { backgroundColor: photoUri ? '#3F3F46' : activePreset.gradientBg },
               ]}
             >
-              {/* Simulated particulate grain effect */}
+              {photoUri && <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
               <View style={styles.reticleOverlayGrid} />
 
               {/* Scanning Sweep Laser Beam */}
@@ -282,7 +286,7 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
               </View>
               <View style={styles.sunBadge}>
                 <MaterialCommunityIcons name="white-balance-sunny" size={13} color={Colors.aqiModerate} />
-                <Text style={styles.sunText}>Sun: 41.2° elev</Text>
+                <Text style={styles.sunText}>{photoUri ? 'Real image selected' : 'No image selected'}</Text>
               </View>
             </View>
 
@@ -307,7 +311,7 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
                 </Text>
               </View>
               <Text style={styles.isoText}>
-                {photoSnapped ? 'FRAME CAPTURED' : 'READY TO SAMPLE'}
+                {photoUri ? 'FRAME SELECTED' : 'READY TO CAPTURE'}
               </Text>
             </View>
           </View>
@@ -315,27 +319,23 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
           {/* Shutter & Sample Optic Toolbar */}
           <View style={styles.captureToolbar}>
             <Pressable
-              onPress={() => setPhotoSnapped(!photoSnapped)}
+              onPress={handleCapturePhoto}
               style={styles.shutterBtn}
             >
               <MaterialCommunityIcons
-                name={photoSnapped ? 'camera-retake' : 'camera'}
+                name={photoUri ? 'camera-retake' : 'camera'}
                 size={18}
                 color={Colors.coralWatermelonVivid}
               />
-              <Text style={styles.shutterBtnText}>{photoSnapped ? 'Retake Sky Frame' : 'Snap Sky Frame'}</Text>
+              <Text style={styles.shutterBtnText}>{photoUri ? 'Retake Sky Frame' : 'Capture Sky Photo'}</Text>
             </Pressable>
 
             <Pressable
-              onPress={() => {
-                const keys: PresetKey[] = ['clear', 'haze', 'smog'];
-                const nextIdx = (keys.indexOf(selectedPreset) + 1) % keys.length;
-                handleSelectPreset(keys[nextIdx]);
-              }}
+              onPress={handleChoosePhoto}
               style={styles.sampleOpticBtn}
             >
               <MaterialCommunityIcons name="image-filter-hdr" size={18} color={Colors.cobaltDeep} />
-              <Text style={styles.sampleOpticText}>Cycle Optic Frame</Text>
+              <Text style={styles.sampleOpticText}>Choose Sky Photo</Text>
             </Pressable>
           </View>
         </NeoCard>
@@ -396,6 +396,7 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
             />
           </View>
         </NeoButton>
+        {analysisError && <Text style={styles.presetExplainer}>{analysisError}</Text>}
 
         {/* Live Ground Receptor Estimation Result Card */}
         {hasResult && (
@@ -439,7 +440,7 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
             {/* Monte-Carlo Confidence Bar */}
             <View style={styles.confidenceBox}>
               <View style={styles.confidenceTop}>
-                <Text style={styles.confidenceLabel}>Monte-Carlo Sampling Confidence:</Text>
+                <Text style={styles.confidenceLabel}>Backend perturbation confidence:</Text>
                 <Text style={styles.confidenceVal}>{confidence.toUpperCase()} CONFIDENCE</Text>
               </View>
               <View style={styles.confidenceTrack}>
@@ -477,10 +478,8 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
               </View>
 
               <View style={styles.diagItem}>
-                <Text style={styles.diagLabel}>Extinction (βext)</Text>
-                <Text style={styles.diagVal}>
-                  {betaExt} <Text style={styles.diagUnit}>km⁻¹</Text>
-                </Text>
+                <Text style={styles.diagLabel}>Detailed Optical Metrics</Text>
+                <Text style={styles.diagVal}>Not returned by API</Text>
               </View>
             </View>
 
@@ -538,9 +537,9 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
               <MaterialCommunityIcons name="shield-check" size={20} color={Colors.coralWatermelonVivid} />
             </View>
             <View style={styles.securityTextCol}>
-              <Text style={styles.securityTitle}>SEC-003 Zero-Retention Privacy Guarantee</Text>
+              <Text style={styles.securityTitle}>Photo Privacy</Text>
               <Text style={styles.securityBody}>
-                All uploaded imagery is decoded strictly in-memory, stripped of EXIF tags, device serials, and camera metadata via Pillow. Only optical turbidity coefficients and an anonymous SHA-256 hash are recorded. Original frames are destroyed upon inference completion.
+                Uploaded imagery is decoded in memory and stripped of EXIF and camera metadata. The backend stores the anonymous SHA-256 hash, optional coordinates, PM2.5 estimate, and confidence; it does not store the original frame.
               </Text>
             </View>
           </View>
@@ -553,11 +552,11 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
               <MaterialCommunityIcons name="calculator-variant" size={20} color={Colors.canvasCream} />
             </View>
             <View style={styles.formulaTitleCol}>
-              <Text style={styles.formulaTitle}>Calibrated Scattering Regression Formula</Text>
-              <Text style={styles.formulaSubtitle}>CPCB Statutory PM2.5 Transfer Function</Text>
+              <Text style={styles.formulaTitle}>Backend Scattering Heuristic</Text>
+              <Text style={styles.formulaSubtitle}>Photo-based PM2.5 estimate</Text>
             </View>
             <View style={styles.decPill}>
-              <Text style={styles.decPillText}>DEC-010 Compliant</Text>
+              <Text style={styles.decPillText}>CPCB AQI MAPPING</Text>
             </View>
           </View>
 
@@ -566,7 +565,7 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
               PM2.5 (µg/m³) = 20.0 + 125.0 · τ_mean + 18.0 · τ_max − 12.0 · Contrast_lum
             </Text>
             <Text style={styles.formulaSubCaption}>
-              Capped to statutory maximum display ceiling of 500 µg/m³.
+              The PM2.5 estimate is heuristic and is converted to a CPCB PM2.5 sub-index by the backend.
             </Text>
           </View>
         </View>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -22,10 +22,19 @@ import {
   getAqiCategoryAndColor,
   fetchBiomassEmissions,
   fetchFireAqiLag,
+  fetchAqiSurface,
+  fetchSensorThings,
   queueLegalDispatch,
   createLegalNotice,
+  createIncident,
   BiomassEmissionsResponse,
   FireAqiLagResponse,
+  HotspotsResponse,
+  MeteorologyResponse,
+  StationThing,
+  SurfaceGridResponse,
+  formatDataSource,
+  formatBackendStatus,
 } from '../api/client';
 
 interface AirshedDashboardScreenProps {
@@ -41,8 +50,10 @@ interface CorridorNodeData {
   category: string;
   state: string;
   coords: string;
-  pm25: number;
-  aqi: number;
+  latitude: number;
+  longitude: number;
+  pm25: number | null;
+  aqi: number | null;
   aqiCategory: string;
   aqiColor: string;
   wind: string;
@@ -61,17 +72,15 @@ export const CORRIDOR_NODES: Record<CorridorNodeKey, CorridorNodeData> = {
     category: 'Upwind Origin Basin',
     state: 'Punjab (Sangrur Cluster)',
     coords: '30.2450°N, 75.8420°E',
-    pm25: 142,
-    aqi: 285,
-    aqiCategory: 'Poor • Stubble Haze',
-    aqiColor: Colors.terracottaDeep,
-    wind: '295° WNW @ 18 km/h',
-    inversion: '680m AGL (Lifting)',
-    metric1: { label: 'ACTIVE STUBBLE FIRES', val: '247', sub: '+18% vs yday (VIIRS 375m)' },
-    metric2: { label: 'TOTAL FRP FLUX', val: '1,420 MW', sub: 'Aerosol: 12.8 kg/s' },
-    metric3: { label: 'WIND BEARING', val: '295° WNW', sub: 'Direct Ingress to NCR' },
-    metric4: { label: 'SPCB ALERT STATUS', val: 'Armed', sub: 'Flying Squad Staged' },
-    statusNote: 'Active harvest stubble burn cluster emitting dense smoke plume into the south-east transport corridor.',
+    latitude: 30.245,
+    longitude: 75.842,
+    pm25: null, aqi: null, aqiCategory: 'Data pending', aqiColor: Colors.inkMuted,
+    wind: 'Data pending', inversion: 'Data pending',
+    metric1: { label: 'ACTIVE FIRE HOTSPOTS', val: '—', sub: 'NASA FIRMS, last 24 hours' },
+    metric2: { label: 'TOTAL FIRE RADIATIVE POWER', val: '—', sub: 'NASA FIRMS' },
+    metric3: { label: 'WIND', val: '—', sub: 'Open-Meteo' },
+    metric4: { label: 'PM2.5 SURFACE', val: '—', sub: 'Backend model pending' },
+    statusNote: 'Waiting for current backend observations.',
   },
   transit_02: {
     id: 'TR-CORRIDOR-02',
@@ -79,17 +88,15 @@ export const CORRIDOR_NODES: Record<CorridorNodeKey, CorridorNodeData> = {
     category: 'Transit Transport Channel',
     state: 'Haryana (Karnal-Panipat)',
     coords: '29.3909°N, 76.9635°E',
-    pm25: 284,
-    aqi: 345,
-    aqiCategory: 'Very Poor • In Transit',
-    aqiColor: Colors.aqiUnhealthy,
-    wind: '300° WNW @ 14 km/h',
-    inversion: '480m AGL (Descending)',
-    metric1: { label: 'SMOKE TRANSPORT LAG', val: 'T+36h', sub: 'Pearson r = 0.84' },
-    metric2: { label: 'PLUME FLUX SPEED', val: '24 km/h', sub: 'ETA NCR: 8.5 Hours' },
-    metric3: { label: 'HIGHWAY PM2.5', val: '284 µg/m³', sub: 'Dense Aerosol River' },
-    metric4: { label: 'TRANSPORT CHANNEL', val: 'Open', sub: 'Nocturnal Advection' },
-    statusNote: 'High-density particulate highway corridor funneling transboundary stubble emissions directly into Delhi airshed.',
+    latitude: 29.3909,
+    longitude: 76.9635,
+    pm25: null, aqi: null, aqiCategory: 'Data pending', aqiColor: Colors.inkMuted,
+    wind: 'Data pending', inversion: 'Data pending',
+    metric1: { label: 'SMOKE TRANSPORT LAG', val: '—', sub: 'Needs sufficient history' },
+    metric2: { label: 'WIND SPEED', val: '—', sub: 'Open-Meteo' },
+    metric3: { label: 'CORRIDOR PM2.5', val: '—', sub: 'Backend surface model' },
+    metric4: { label: 'DATA STATUS', val: 'Pending', sub: 'Backend request in progress' },
+    statusNote: 'Waiting for current backend observations.',
   },
   delhi_09: {
     id: 'DL-URBAN-09',
@@ -97,18 +104,24 @@ export const CORRIDOR_NODES: Record<CorridorNodeKey, CorridorNodeData> = {
     category: 'Target Receptor Sink',
     state: 'Delhi NCR (Anand Vihar ISBT)',
     coords: '28.6472°N, 77.3160°E',
-    pm25: 312,
-    aqi: 387,
-    aqiCategory: 'Severe • Hazardous',
-    aqiColor: Colors.aqiSevere,
-    wind: '295° WNW @ 11 km/h',
-    inversion: '340m AGL (Cap Locked)',
-    metric1: { label: 'MIXING LAYER CAP', val: '340m AGL', sub: 'Subsidence Inversion' },
-    metric2: { label: 'VENTILATION INDEX', val: '1,133 m²/s', sub: 'Critically Low Trap' },
-    metric3: { label: 'GROUND PM2.5', val: '312 µg/m³', sub: 'CPCB Sub-Index 387' },
-    metric4: { label: 'EMERGENCY STATUS', val: 'Active', sub: 'GRAP Stage IV Ready' },
-    statusNote: 'Severe nocturnal inversion trap locking all regional & urban emissions in lower 340m canopy.',
+    latitude: 28.6472,
+    longitude: 77.316,
+    pm25: null, aqi: null, aqiCategory: 'Data pending', aqiColor: Colors.inkMuted,
+    wind: 'Data pending', inversion: 'Data pending',
+    metric1: { label: 'MIXING LAYER HEIGHT', val: '—', sub: 'Open-Meteo' },
+    metric2: { label: 'VENTILATION ESTIMATE', val: '—', sub: 'Wind speed × mixing height' },
+    metric3: { label: 'PM2.5', val: '—', sub: 'Backend surface model' },
+    metric4: { label: 'AQI CATEGORY', val: '—', sub: 'CPCB PM2.5 sub-index' },
+    statusNote: 'Waiting for current backend observations.',
   },
+};
+
+const distanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
 export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
@@ -117,18 +130,14 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
 }) => {
   const [activeFilter, setActiveFilter] = useState('foryou');
   const [selectedCorridorNode, setSelectedCorridorNode] = useState<CorridorNodeKey>('pb_04');
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Live backend data state
-  const [hotspotsCount, setHotspotsCount] = useState<number>(247);
-  const [nearestFireKm, setNearestFireKm] = useState<number>(82);
-  const [windSpeedKmH, setWindSpeedKmH] = useState<number>(28);
-  const [mixingHeight, setMixingHeight] = useState<number>(340);
-  const [localPm25, setLocalPm25] = useState<number>(48.2);
-  const [localAqi, setLocalAqi] = useState<number>(162);
-  const [aqiCategory, setAqiCategory] = useState<string>('MODERATE');
-  const [aqiColor, setAqiColor] = useState<string>(Colors.aqiModerate);
+  const [hotspots, setHotspots] = useState<HotspotsResponse | null>(null);
+  const [meteorology, setMeteorology] = useState<MeteorologyResponse | null>(null);
+  const [stations, setStations] = useState<StationThing[]>([]);
+  const [surface, setSurface] = useState<SurfaceGridResponse | null>(null);
+  const [sensorCount, setSensorCount] = useState<number | null>(null);
   const [biomassData, setBiomassData] = useState<BiomassEmissionsResponse | null>(null);
   const [lagData, setLagData] = useState<FireAqiLagResponse | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
@@ -137,41 +146,21 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
     // Fetch live fire hotspots
     fetchHotspots(24, 'nominal')
       .then((res) => {
-        if (res && typeof res.count === 'number' && res.count > 0) {
-          setHotspotsCount(res.count);
-        }
+        setHotspots(res);
       })
       .catch(() => {});
 
     // Fetch live meteorology
     fetchMeteorology()
       .then((res) => {
-        if (res?.regions?.delhi) {
-          const speed = Math.round(res.regions.delhi.wind_speed_ms * 3.6);
-          if (speed > 0) setWindSpeedKmH(speed);
-          if (res.regions.delhi.mixing_layer_height_m_agl > 0) {
-            setMixingHeight(Math.round(res.regions.delhi.mixing_layer_height_m_agl));
-          }
-        }
+        setMeteorology(res);
       })
       .catch(() => {});
 
     // Fetch live ground stations
     fetchStations('pm25')
       .then((res) => {
-        if (res?.value && res.value.length > 0) {
-          const firstStn = res.value[0];
-          const obs = firstStn.Datastreams?.[0]?.Observations?.[0];
-          if (obs && typeof obs.pm25_ugm3 === 'number') {
-            const pm = Number(obs.pm25_ugm3.toFixed(1));
-            const calculatedAqi = obs.aqi_index || computeCpcbAqi(pm);
-            setLocalPm25(pm);
-            setLocalAqi(calculatedAqi);
-            const { category, color } = getAqiCategoryAndColor(calculatedAqi);
-            setAqiCategory(category.toUpperCase());
-            setAqiColor(color);
-          }
-        }
+        setStations(res?.value ?? []);
       })
       .catch(() => {});
 
@@ -184,39 +173,137 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
     fetchFireAqiLag(7)
       .then(setLagData)
       .catch(() => {});
+
+    fetchAqiSurface(0.5).then(setSurface).catch(() => {});
+    fetchSensorThings().then((res) => setSensorCount(res['@iot.count'])).catch(() => {});
   }, []);
+
+  const nodeData = useMemo<CorridorNodeData>(() => {
+    const base = CORRIDOR_NODES[selectedCorridorNode];
+    const surfacePoint = surface?.features.reduce<typeof surface.features[number] | null>((best, feature) => {
+      const [lon, lat] = feature.geometry.coordinates;
+      if (!best) return feature;
+      const [bestLon, bestLat] = best.geometry.coordinates;
+      return distanceKm(base.latitude, base.longitude, lat, lon) < distanceKm(base.latitude, base.longitude, bestLat, bestLon) ? feature : best;
+    }, null);
+    const pm25 = surfacePoint?.properties.pm25_estimate ?? null;
+    const aqi = surfacePoint?.properties.aqi_index ?? (pm25 !== null ? computeCpcbAqi(pm25) : null);
+    const aqiMeta = aqi !== null ? getAqiCategoryAndColor(aqi) : { category: 'Data unavailable', color: Colors.inkMuted };
+    const region = selectedCorridorNode === 'pb_04' ? meteorology?.regions.punjab : meteorology?.regions.delhi;
+    const windKmh = region ? region.wind_speed_ms * 3.6 : null;
+    const windDirection = region ? Math.round(region.wind.direction_from_deg) : null;
+    const mixing = region?.mixing_layer_height_m_agl ?? null;
+    const totalFrp = hotspots?.features.reduce((sum, feature) => sum + (feature.properties.frp ?? 0), 0) ?? null;
+    const nearestFire = hotspots?.features.length
+      ? Math.min(...hotspots.features.map((feature) => distanceKm(base.latitude, base.longitude, feature.geometry.coordinates[1], feature.geometry.coordinates[0])))
+      : null;
+    const strongestLag = lagData?.strongest_lag;
+    const windText = windKmh !== null && windDirection !== null ? `${windDirection}° @ ${windKmh.toFixed(1)} km/h` : 'Data unavailable';
+    const inversionText = mixing !== null ? `${Math.round(mixing)} m AGL; ${formatBackendStatus(meteorology?.inversion.status)}` : 'Not measured';
+    const sourceNote = surface?.source ? `Current backend surface; ${formatDataSource(surface.source)}` : 'Current backend surface unavailable';
+    let metrics: CorridorNodeData['metric1'][];
+    if (selectedCorridorNode === 'pb_04') {
+      metrics = [
+        { label: 'ACTIVE FIRE HOTSPOTS', val: hotspots ? String(hotspots.count) : '—', sub: 'NASA FIRMS, last 24 hours' },
+        { label: 'TOTAL FIRE RADIATIVE POWER', val: totalFrp !== null ? `${totalFrp.toFixed(1)} MW` : '—', sub: 'Sum of current FIRMS detections' },
+        { label: 'WIND', val: windText, sub: 'Open-Meteo live weather' },
+        { label: 'NEAREST FIRE', val: nearestFire !== null ? `${nearestFire.toFixed(1)} km` : 'None reported', sub: 'Distance from selected node' },
+      ];
+    } else if (selectedCorridorNode === 'transit_02') {
+      metrics = [
+        { label: 'SMOKE TRANSPORT LAG', val: strongestLag ? `T+${strongestLag.lag_hours}h` : 'Insufficient history', sub: strongestLag ? `Pearson r = ${strongestLag.pearson_r.toFixed(2)}` : 'No measured correlation yet' },
+        { label: 'WIND SPEED', val: windKmh !== null ? `${windKmh.toFixed(1)} km/h` : '—', sub: 'Open-Meteo live weather' },
+        { label: 'CORRIDOR PM2.5', val: pm25 !== null ? `${pm25.toFixed(1)} µg/m³` : '—', sub: sourceNote },
+        { label: 'DATA STATUS', val: surfacePoint ? 'Available' : 'Unavailable', sub: 'Nearest backend grid point' },
+      ];
+    } else {
+      const ventilation = region ? region.wind_speed_ms * region.mixing_layer_height_m_agl : null;
+      metrics = [
+        { label: 'MIXING LAYER HEIGHT', val: mixing !== null ? `${Math.round(mixing)} m AGL` : '—', sub: 'Open-Meteo live weather' },
+        { label: 'VENTILATION ESTIMATE', val: ventilation !== null ? `${Math.round(ventilation)} m²/s` : '—', sub: 'Wind speed × mixing height' },
+        { label: 'PM2.5', val: pm25 !== null ? `${pm25.toFixed(1)} µg/m³` : '—', sub: sourceNote },
+        { label: 'AQI CATEGORY', val: aqiMeta.category, sub: aqi !== null ? `CPCB PM2.5 sub-index ${aqi}` : 'No current value' },
+      ];
+    }
+    return {
+      ...base, pm25, aqi, aqiCategory: aqiMeta.category, aqiColor: aqiMeta.color,
+      wind: windText, inversion: inversionText,
+      metric1: metrics[0], metric2: metrics[1], metric3: metrics[2], metric4: metrics[3],
+      statusNote: `${sourceNote}. Values are estimates unless identified as station observations.`,
+    };
+  }, [hotspots, lagData, meteorology, selectedCorridorNode, surface]);
+
+  const nearestStation = useMemo(() => {
+    if (!stations.length) return null;
+    const base = CORRIDOR_NODES[selectedCorridorNode];
+    return stations.reduce<StationThing | null>((best, station) => {
+      const coords = station.Locations?.[0]?.location?.coordinates;
+      if (!coords) return best;
+      if (!best) return station;
+      const bestCoords = best.Locations?.[0]?.location?.coordinates;
+      if (!bestCoords) return station;
+      return distanceKm(base.latitude, base.longitude, coords[1], coords[0]) < distanceKm(base.latitude, base.longitude, bestCoords[1], bestCoords[0]) ? station : best;
+    }, null);
+  }, [selectedCorridorNode, stations]);
+
+  const createCurrentIncident = async () => {
+    if (nodeData.pm25 === null) throw new Error('Current PM2.5 is unavailable');
+    return createIncident({
+      severity: (nodeData.aqi ?? 0) > 400 ? 'emergency' : (nodeData.aqi ?? 0) > 200 ? 'warning' : 'watch',
+      location_text: nodeData.name,
+      latitude: nodeData.latitude,
+      longitude: nodeData.longitude,
+      pollutant: 'PM2.5',
+      measured_pm25: nodeData.pm25,
+      satellite_source: hotspots?.source,
+      authority: 'CPCB',
+    });
+  };
+
+  const selectDashboardFilter = (value: string) => {
+    setActiveFilter(value);
+    if (value === 'stubble') setSelectedCorridorNode('pb_04');
+    if (value === 'wind') setSelectedCorridorNode('transit_02');
+  };
+
+  const applySearch = () => {
+    const query = searchQuery.trim().toLowerCase();
+    if (query.includes('delhi') || query.includes('anand')) setSelectedCorridorNode('delhi_09');
+    else if (query.includes('panipat') || query.includes('transit') || query.includes('haryana')) setSelectedCorridorNode('transit_02');
+    else if (query.includes('punjab') || query.includes('sangrur') || query.includes('stubble')) setSelectedCorridorNode('pb_04');
+  };
 
   const handleQuickDispatch = async () => {
     try {
+      const incident = await createCurrentIncident();
       await queueLegalDispatch({
-        incident_id: 'INC-QUICK-SQUAD',
+        incident_id: incident.incident_id,
         recipient_kind: 'flying_squad',
         recipient_reference: 'PPCB Flying Squad Command, Dirba Sector',
       });
       setActionFeedback('⚡ Flying squad dispatched to Dirba sector');
       setTimeout(() => setActionFeedback(null), 3000);
-    } catch {
-      setActionFeedback('⚡ Flying squad alert queued for review');
+    } catch (error) {
+      setActionFeedback(`Dispatch failed: ${error instanceof Error ? error.message : 'backend unavailable'}`);
       setTimeout(() => setActionFeedback(null), 3000);
     }
   };
 
   const handleQuickNotice = async () => {
     try {
+      const incident = await createCurrentIncident();
       const res = await createLegalNotice({
-        incident_id: 'INC-20260908-2B2A460C75A7',
+        incident_id: incident.incident_id,
         issuing_authority: 'Delhi Pollution Control Committee (DPCC)',
         requested_direction: 'Review CEMS industrial stack discharge and mandate immediate scrubber activation.',
       });
-      setActionFeedback(`⚖ Notice ${res.notice_id.slice(0, 16)} issued & sealed`);
+      setActionFeedback(`Notice ${res.notice_id.slice(0, 16)} ${formatBackendStatus(res.status)}`);
       setTimeout(() => setActionFeedback(null), 3000);
-    } catch {
-      setActionFeedback('⚖ Section 31A Show-Cause notice drafted');
+    } catch (error) {
+      setActionFeedback(`Notice failed: ${error instanceof Error ? error.message : 'backend unavailable'}`);
       setTimeout(() => setActionFeedback(null), 3000);
     }
   };
-
-  const nodeData = CORRIDOR_NODES[selectedCorridorNode];
 
   return (
     <View style={styles.container}>
@@ -228,7 +315,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
             <Text style={styles.brandSparkle}>✦</Text>
           </View>
           {/* Location Chip */}
-          <Pressable style={styles.locationChip}>
+          <Pressable style={styles.locationChip} onPress={() => setSelectedCorridorNode('delhi_09')}>
             <MaterialCommunityIcons name="navigation-variant" size={14} color={Colors.terracottaDeep} />
             <Text style={styles.locationText} numberOfLines={1}>
               Anand Vihar, DL
@@ -238,7 +325,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
         </View>
 
         <View style={styles.headerRight}>
-          <StarburstBadge label="72H SMOG WATCH" rotation="-4deg" shadowColor={Colors.coralWatermelon} />
+          <StarburstBadge label="72H FORECAST" rotation="-4deg" shadowColor={Colors.coralWatermelon} />
           <View style={styles.avatarCircle}>
             <MaterialCommunityIcons name="account" size={18} color={Colors.canvasCream} />
           </View>
@@ -260,8 +347,9 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
               placeholderTextColor={Colors.inkMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
+              onSubmitEditing={applySearch}
             />
-            <Pressable style={styles.filterTuneBtn}>
+            <Pressable style={styles.filterTuneBtn} onPress={applySearch}>
               <MaterialCommunityIcons name="tune" size={16} color={Colors.inkBlack} />
             </Pressable>
           </View>
@@ -269,7 +357,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
           {/* Filter Pills */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterPillsRow}>
             <Pressable
-              onPress={() => setActiveFilter('foryou')}
+              onPress={() => selectDashboardFilter('foryou')}
               style={[
                 styles.filterPill,
                 activeFilter === 'foryou' ? styles.filterPillActive : styles.filterPillInactive,
@@ -281,7 +369,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
             </Pressable>
 
             <Pressable
-              onPress={() => setActiveFilter('stubble')}
+              onPress={() => selectDashboardFilter('stubble')}
               style={[
                 styles.filterPill,
                 activeFilter === 'stubble' ? styles.filterPillActive : styles.filterPillInactive,
@@ -293,7 +381,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
             </Pressable>
 
             <Pressable
-              onPress={() => setActiveFilter('wind')}
+              onPress={() => selectDashboardFilter('wind')}
               style={[
                 styles.filterPill,
                 activeFilter === 'wind' ? styles.filterPillActive : styles.filterPillInactive,
@@ -305,7 +393,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
             </Pressable>
 
             <View style={styles.filterPillMore}>
-              <Text style={styles.filterPillMoreText}>12+ more</Text>
+              <Text style={styles.filterPillMoreText}>More data</Text>
             </View>
           </ScrollView>
         </View>
@@ -317,11 +405,11 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
             <MaterialCommunityIcons name="fire" size={20} color={Colors.canvasCream} style={styles.fireIcon} />
             <View style={styles.marqueeTextContainer}>
               <Text style={styles.marqueeText} numberOfLines={1}>
-                <Text style={{ fontWeight: '900' }}>{hotspotsCount} Active Stubble Fires</Text> in Punjab • Nearest: {nearestFireKm} km NW
+                <Text style={{ fontWeight: '900' }}>{hotspots ? `${hotspots.count} current fire hotspots` : 'Fire feed unavailable'}</Text> • NASA FIRMS, last 24 hours
               </Text>
             </View>
             <View style={styles.urgentBadge}>
-              <Text style={styles.urgentText}>URGENT</Text>
+              <Text style={styles.urgentText}>{hotspots ? 'CURRENT' : 'UNAVAILABLE'}</Text>
             </View>
           </View>
         </View>
@@ -334,7 +422,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
               <View style={styles.nodeLiveDot} />
               <View>
                 <View style={styles.nodeTitleFlexRow}>
-                  <Text style={styles.nodeTitleText}>AIRSHED NODE 04</Text>
+                  <Text style={styles.nodeTitleText}>{nodeData.id}</Text>
                   <View style={styles.nodeIdBadge}>
                     <Text style={styles.nodeIdBadgeText}>{nodeData.id}</Text>
                   </View>
@@ -344,7 +432,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
             </View>
             <View style={styles.liveTelemetryChip}>
               <View style={styles.telemetryDot} />
-              <Text style={styles.liveTelemetryText}>LIVE FEED</Text>
+              <Text style={styles.liveTelemetryText}>{surface ? 'BACKEND DATA' : 'DATA PENDING'}</Text>
             </View>
           </View>
 
@@ -388,7 +476,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
               </View>
 
               <View style={[styles.stationAqiBadge, { backgroundColor: nodeData.aqiColor }]}>
-                <Text style={styles.stationAqiVal}>AQI {nodeData.aqi}</Text>
+                <Text style={styles.stationAqiVal}>AQI {nodeData.aqi ?? '—'}</Text>
                 <Text style={styles.stationAqiLabel}>{nodeData.aqiCategory.split('•')[0].trim()}</Text>
               </View>
             </View>
@@ -460,20 +548,29 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
 
           {/* Dual-Unit Telemetry Chips */}
           <View style={styles.chipsRow}>
-            <DualUnitChip
-              massValue={nodeData.pm25}
-              massUnit="µg/m³ PM2.5"
-              aqiValue={nodeData.aqi}
-              aqiColor={nodeData.aqiColor}
-              aqiLabel={nodeData.aqiCategory}
-            />
-            <DualUnitChip
-              massValue={Math.round(nodeData.pm25 * 2.05)}
-              massUnit="µg/m³ PM10"
-              aqiValue={Math.min(500, Math.round(nodeData.aqi * 1.25))}
-              aqiColor={Colors.aqiSevere}
-              aqiLabel="Severe"
-            />
+            {nodeData.pm25 !== null && nodeData.aqi !== null && (
+              <DualUnitChip
+                massValue={Number(nodeData.pm25.toFixed(1))}
+                massUnit="µg/m³ PM2.5 model"
+                aqiValue={nodeData.aqi}
+                aqiColor={nodeData.aqiColor}
+                aqiLabel={nodeData.aqiCategory}
+              />
+            )}
+            {nearestStation?.Datastreams?.[0]?.Observations?.[0] && (() => {
+              const observation = nearestStation.Datastreams[0].Observations[0];
+              const meta = getAqiCategoryAndColor(observation.aqi_index);
+              return (
+                <DualUnitChip
+                  massValue={Number(observation.pm25_ugm3.toFixed(1))}
+                  massUnit="µg/m³ PM2.5 station"
+                  aqiValue={observation.aqi_index}
+                  aqiColor={meta.color}
+                  aqiLabel={nearestStation.name}
+                />
+              );
+            })()}
+            {nodeData.pm25 === null && !nearestStation && <Text style={styles.sectionCardSubtitle}>No current PM2.5 value is available.</Text>}
           </View>
         </NeoCard>
 
@@ -501,10 +598,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
           </Text>
 
           <View style={styles.biomassGrid}>
-            {(biomassData?.regions ?? [
-              { region: 'Haryana', frp_sum_mw: 46.1, frp_share_percent: 94.9, hotspot_count: 3 },
-              { region: 'Punjab', frp_sum_mw: 2.5, frp_share_percent: 5.1, hotspot_count: 1 },
-            ]).map((r) => (
+            {(biomassData?.regions ?? []).map((r) => (
               <View key={r.region} style={styles.biomassRow}>
                 <View style={styles.biomassLeft}>
                   <Text style={styles.biomassRegionName}>{r.region}</Text>
@@ -515,7 +609,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
                     style={[
                       styles.biomassFill,
                       {
-                        width: `${Math.min(100, r.frp_share_percent ?? 50)}%` as any,
+                        width: `${Math.min(100, r.frp_share_percent ?? 0)}%` as any,
                         backgroundColor: r.region === 'Punjab' ? Colors.terracottaDeep : Colors.coralWatermelonVivid,
                       },
                     ]}
@@ -526,6 +620,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
                 </Text>
               </View>
             ))}
+            {!biomassData?.regions.length && <Text style={styles.sectionCardSubtitle}>No current regional fire-emissions summary is available.</Text>}
           </View>
         </NeoCard>
 
@@ -548,13 +643,13 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
           <View style={styles.lagMetricsRow}>
             <View style={styles.lagMetricBox}>
               <Text style={styles.lagMetricVal}>
-                {lagData?.strongest_lag?.lag_hours ? `T+${lagData.strongest_lag.lag_hours}h` : 'T+36h'}
+                {lagData?.strongest_lag ? `T+${lagData.strongest_lag.lag_hours}h` : 'Insufficient history'}
               </Text>
               <Text style={styles.lagMetricLabel}>Peak Transit Window</Text>
             </View>
             <View style={styles.lagMetricBox}>
               <Text style={[styles.lagMetricVal, { color: Colors.forestJade }]}>
-                {lagData?.strongest_lag?.pearson_r ? `r = ${lagData.strongest_lag.pearson_r.toFixed(2)}` : 'r = 0.84'}
+                {lagData?.strongest_lag ? `r = ${lagData.strongest_lag.pearson_r.toFixed(2)}` : 'Not computed'}
               </Text>
               <Text style={styles.lagMetricLabel}>Cross-Regional Correlation</Text>
             </View>
@@ -611,8 +706,8 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
               <MaterialCommunityIcons name="hub" size={22} color={Colors.canvasCream} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.meshTitle}>Airshed Mesh: 48 Nodes Active</Text>
-              <Text style={styles.meshSubtitle}>Local calibrated optical particulate scatter</Text>
+                <Text style={styles.meshTitle}>Airshed Mesh: {sensorCount ?? '—'} Registered Nodes</Text>
+                <Text style={styles.meshSubtitle}>Backend SensorThings registry</Text>
             </View>
           </View>
           <View style={[styles.meshArrowCircle, { backgroundColor: Colors.forestJade }]}>

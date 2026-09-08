@@ -53,10 +53,7 @@ export default function App() {
 
         {/* Persistent Floating Audio Player */}
         <View style={styles.floatingPlayerContainer}>
-          <FloatingAudioPlayer
-            episodeTitle="Ep. 5 — Thermal Inversion"
-            telemetryNote="340m Boundary Layer • LIVE DISPERSION"
-          />
+          <FloatingAudioPlayer />
         </View>
 
         {/* Bottom Pill Navigation Bar */}

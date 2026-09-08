@@ -139,6 +139,31 @@ async def test_openaq_without_measurements_does_not_invent_120():
 
 
 @pytest.mark.asyncio
+async def test_openaq_corridor_excludes_non_indian_locations():
+    stamp = datetime.now(timezone.utc).isoformat()
+    locations = [
+        {"id": 1, "name": "Delhi", "country": {"code": "IN"},
+         "coordinates": {"latitude": 28.6, "longitude": 77.2}, "datetimeLast": {"utc": stamp},
+         "sensors": [{"id": 11, "parameter": {"name": "pm25"}}]},
+        {"id": 2, "name": "Outside corridor country", "country": {"code": "PK"},
+         "coordinates": {"latitude": 31.5, "longitude": 74.3}, "datetimeLast": {"utc": stamp},
+         "sensors": [{"id": 22, "parameter": {"name": "pm25"}}]},
+    ]
+
+    def respond(request):
+        if request.url.path.endswith("/locations/1/latest"):
+            return httpx.Response(200, json={"results": [{"locationsId": 1, "sensorsId": 11, "value": 75,
+                "coordinates": locations[0]["coordinates"], "datetime": {"utc": stamp}}]})
+        if request.url.path.endswith("/locations/2/latest"):
+            raise AssertionError("Foreign location should not be queried")
+        return httpx.Response(200, json={"results": locations})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        readings = await fetch_openaq_stations(client=client)
+    assert [reading["name"] for reading in readings] == ["Delhi"]
+
+
+@pytest.mark.asyncio
 async def test_meteo_wind_units_and_hourly_height():
     def respond(request):
         assert request.url.params["wind_speed_unit"] == "ms"

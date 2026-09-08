@@ -20,20 +20,20 @@ import {
   createIncident,
   queueLegalDispatch,
   getAqiCategoryAndColor,
-  PlumeFeature,
   SurfaceGridResponse,
   FireAqiLagResponse,
   BiomassEmissionsResponse,
+  PlumeResponse,
+  MeteorologyResponse,
+  formatDataSource,
 } from '../api/client';
 
 export const PlumeForecastScreen: React.FC = () => {
-  const [currentHour, setCurrentHour] = useState<number>(38);
-  const [selectedHorizon, setSelectedHorizon] = useState<number>(38);
+  const [currentHour, setCurrentHour] = useState<number>(0);
+  const [selectedHorizon, setSelectedHorizon] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [plumeFeatures, setPlumeFeatures] = useState<PlumeFeature[]>([]);
-  const [blMixingHeight, setBlMixingHeight] = useState<number>(340);
-  const [liveWindKmh, setLiveWindKmh] = useState<number>(14);
-  const [ventilationIndex, setVentilationIndex] = useState<number>(1840);
+  const [plumeData, setPlumeData] = useState<PlumeResponse | null>(null);
+  const [meteoData, setMeteoData] = useState<MeteorologyResponse | null>(null);
   const [mandateTriggered, setMandateTriggered] = useState<string | null>(null);
   const [surfaceData, setSurfaceData] = useState<SurfaceGridResponse | null>(null);
   const [lagData, setLagData] = useState<FireAqiLagResponse | null>(null);
@@ -53,26 +53,13 @@ export const PlumeForecastScreen: React.FC = () => {
   useEffect(() => {
     fetchMeteorology()
       .then((met) => {
-        const blh = met.regions?.delhi?.mixing_layer_height_m_agl;
-        const windMs = met.regions?.delhi?.wind_speed_ms;
-        if (typeof blh === 'number' && blh > 0) {
-          setBlMixingHeight(Math.round(blh));
-        }
-        if (typeof windMs === 'number' && windMs > 0) {
-          const kmh = Math.round(windMs * 3.6);
-          setLiveWindKmh(kmh);
-          if (blh) {
-            setVentilationIndex(Math.round(blh * windMs));
-          }
-        }
+        setMeteoData(met);
       })
       .catch(() => {});
 
     fetchForecastPlume()
       .then((res) => {
-        if (res?.features && res.features.length > 0) {
-          setPlumeFeatures(res.features);
-        }
+        setPlumeData(res);
       })
       .catch(() => {});
 
@@ -96,8 +83,8 @@ export const PlumeForecastScreen: React.FC = () => {
 
   const handleMandateQueue = async () => {
     try {
-      const activeF = plumeFeatures.find((f) => f.properties.horizon_hours >= currentHour) ?? plumeFeatures[0];
-      const maxPm = activeF?.properties.max_pm25_est ?? estimatedPm25;
+      if (!activeFeature) throw new Error('No current plume estimate is available');
+      const maxPm = activeFeature.properties.max_pm25_est;
       const incident = await createIncident({
         severity: maxPm > 350 ? 'emergency' : 'warning',
         location_text: `Forecast Plume Corridor at T+${currentHour}h`,
@@ -112,13 +99,14 @@ export const PlumeForecastScreen: React.FC = () => {
       });
       setMandateTriggered(`Emergency Review Dispatched #${incident.incident_id.slice(-6)}`);
       setTimeout(() => setMandateTriggered(null), 3000);
-    } catch {
-      setMandateTriggered('Emergency Review Queued to SPCB');
+    } catch (error) {
+      setMandateTriggered(`Review failed: ${error instanceof Error ? error.message : 'backend unavailable'}`);
       setTimeout(() => setMandateTriggered(null), 3000);
     }
   };
 
   // Match live plume feature closest to current hour
+  const plumeFeatures = plumeData?.features ?? [];
   const activeFeature = plumeFeatures.find((f) => {
     const h = f.properties.horizon_hours;
     if (currentHour <= 24) return h === 24;
@@ -126,24 +114,18 @@ export const PlumeForecastScreen: React.FC = () => {
     return h === 72;
   });
 
-  const basePm25 = activeFeature?.properties.max_pm25_est ?? 180;
-  const baseAqi = activeFeature?.properties.max_aqi_est ?? 240;
-
-  // Derived metrics based on scrubber hour
   const progressPercent = Math.min(100, Math.max(0, (currentHour / 72) * 100));
-  const estimatedPm25 = Math.round(basePm25 + (currentHour / 72) * 80);
-  const estimatedAqi = Math.round(baseAqi + (currentHour / 72) * 60);
-  const aqiDetails = getAqiCategoryAndColor(estimatedAqi);
+  const estimatedPm25 = activeFeature?.properties.max_pm25_est ?? null;
+  const estimatedAqi = activeFeature?.properties.max_aqi_est ?? null;
+  const aqiDetails = estimatedAqi !== null ? getAqiCategoryAndColor(estimatedAqi) : { category: 'Data unavailable', color: Colors.inkMuted };
+  const currentStage = activeFeature ? `Backend model horizon T+${activeFeature.properties.horizon_hours}h` : 'Forecast data unavailable';
 
-  const currentStage =
-    currentHour < 20
-      ? 'Sangrur Ignition Zone'
-      : currentHour < 45
-      ? 'Karnal–Sonipat Ingress Corridor'
-      : 'Delhi NCR Basin Inversion Trap';
-
-  const totalFrp = biomassData?.regions?.reduce((sum, r) => sum + r.frp_sum_mw, 0) ?? 48.6;
+  const totalFrp = biomassData?.regions?.reduce((sum, r) => sum + r.frp_sum_mw, 0) ?? null;
   const strongestLag = lagData?.strongest_lag;
+  const delhiWeather = meteoData?.regions.delhi;
+  const blMixingHeight = delhiWeather?.mixing_layer_height_m_agl ?? null;
+  const liveWindKmh = delhiWeather ? delhiWeather.wind_speed_ms * 3.6 : null;
+  const ventilationIndex = delhiWeather ? delhiWeather.wind_speed_ms * delhiWeather.mixing_layer_height_m_agl : null;
 
   return (
     <View style={styles.container}>
@@ -156,7 +138,7 @@ export const PlumeForecastScreen: React.FC = () => {
           </View>
           <Text style={styles.screenSubtitle}>Gaussian Inversion Dispersion Flow</Text>
         </View>
-        <StarburstBadge label="T-38H DISPERSION" rotation="-2deg" shadowColor={Colors.coralWatermelon} />
+        <StarburstBadge label={activeFeature ? `T+${activeFeature.properties.horizon_hours}H MODEL` : 'DATA PENDING'} rotation="-2deg" shadowColor={Colors.coralWatermelon} />
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -209,31 +191,35 @@ export const PlumeForecastScreen: React.FC = () => {
             <View style={styles.heroBannerTop}>
               <Text style={styles.heroSubTag}>INVERSION TRAJECTORY</Text>
               <View style={styles.warmBadge}>
-                <Text style={styles.warmBadgeText}>AIR WARM</Text>
+                <Text style={styles.warmBadgeText}>{plumeData ? 'MODEL OUTPUT' : 'DATA PENDING'}</Text>
               </View>
             </View>
-            <Text style={styles.heroHeading}>Border Ingress T-{currentHour}h</Text>
+            <Text style={styles.heroHeading}>Forecast Selection T+{currentHour}h</Text>
             <Text style={styles.heroLocation}>{currentStage}</Text>
           </View>
 
           {/* Telemetry Chips & Story */}
           <View style={styles.heroContent}>
             <View style={styles.heroChipsRow}>
-              <DualUnitChip
-                massValue={estimatedPm25}
-                massUnit="µg/m³"
-                aqiValue={estimatedAqi}
-                aqiLabel={aqiDetails.category}
-                aqiColor={aqiDetails.color}
-              />
+              {estimatedPm25 !== null && estimatedAqi !== null && (
+                <DualUnitChip
+                  massValue={Number(estimatedPm25.toFixed(1))}
+                  massUnit="µg/m³ model maximum"
+                  aqiValue={estimatedAqi}
+                  aqiLabel={aqiDetails.category}
+                  aqiColor={aqiDetails.color}
+                />
+              )}
               <View style={styles.windChip}>
                 <MaterialCommunityIcons name="weather-windy" size={13} color={Colors.terracottaDeep} />
-                <Text style={styles.windChipText}>NW {liveWindKmh} km/h</Text>
+                <Text style={styles.windChipText}>{liveWindKmh !== null ? `${liveWindKmh.toFixed(1)} km/h` : 'Wind unavailable'}</Text>
               </View>
             </View>
 
             <Text style={styles.heroBodyText}>
-              High-density crop residue plume tracking downwind at {liveWindKmh} km/h through the Rohtak–Sonipat synoptic corridor. Compaction intensifying prior to Yamuna contact.
+              {plumeData
+                ? `${formatDataSource(plumeData.source)} computed ${plumeData.features.length} forecast envelopes. ${plumeData.model_assumptions}`
+                : 'Current plume inputs are unavailable from the backend.'}
             </Text>
 
             {/* Interactive Timeline Scrubber */}
@@ -241,7 +227,7 @@ export const PlumeForecastScreen: React.FC = () => {
               <View style={styles.scrubberHeader}>
                 <View style={styles.scrubberTitleRow}>
                   <MaterialCommunityIcons name="radiobox-marked" size={16} color={Colors.coralWatermelonVivid} />
-                  <Text style={styles.scrubberTitle}>Simulated Dispersion Flow</Text>
+                  <Text style={styles.scrubberTitle}>Forecast Horizon Viewer</Text>
                 </View>
                 <Text style={styles.scrubberTimeIndicator}>Hour {currentHour} / 72</Text>
               </View>
@@ -264,13 +250,13 @@ export const PlumeForecastScreen: React.FC = () => {
               {/* Timeline Milestones */}
               <View style={styles.milestoneLabels}>
                 <Pressable onPress={() => setCurrentHour(0)}>
-                  <Text style={[styles.milestoneText, currentHour < 15 && styles.milestoneActive]}>Sangrur (0h)</Text>
+                  <Text style={[styles.milestoneText, currentHour < 15 && styles.milestoneActive]}>Selection (0h)</Text>
                 </Pressable>
                 <Pressable onPress={() => setCurrentHour(38)}>
-                  <Text style={[styles.milestoneText, currentHour >= 15 && currentHour < 55 && styles.milestoneActive]}>Karnal Gate (38h)</Text>
+                  <Text style={[styles.milestoneText, currentHour >= 15 && currentHour < 55 && styles.milestoneActive]}>Model midpoints</Text>
                 </Pressable>
                 <Pressable onPress={() => setCurrentHour(72)}>
-                  <Text style={[styles.milestoneText, currentHour >= 55 && styles.milestoneActive]}>Delhi NCR (72h)</Text>
+                  <Text style={[styles.milestoneText, currentHour >= 55 && styles.milestoneActive]}>72h horizon</Text>
                 </Pressable>
               </View>
 
@@ -313,24 +299,13 @@ export const PlumeForecastScreen: React.FC = () => {
           </View>
 
           <View style={styles.wardList}>
-            {(surfaceData?.features?.slice(0, 4) ?? [
-              { properties: { pm25_estimate: 420, aqi_index: 440 }, geometry: { coordinates: [77.21, 28.65] } },
-              { properties: { pm25_estimate: 360, aqi_index: 395 }, geometry: { coordinates: [77.12, 28.70] } },
-              { properties: { pm25_estimate: 310, aqi_index: 345 }, geometry: { coordinates: [77.30, 28.58] } },
-              { properties: { pm25_estimate: 260, aqi_index: 290 }, geometry: { coordinates: [76.96, 29.39] } },
-            ]).map((item, idx) => {
+            {(surfaceData?.features?.slice(0, 4) ?? []).map((item, idx) => {
               const p = item.properties;
               const coords = item.geometry.coordinates;
-              const wardName =
-                idx === 0
-                  ? 'Anand Vihar Receptor Basin'
-                  : idx === 1
-                  ? 'Punjabi Bagh West Axis'
-                  : idx === 2
-                  ? 'Okhla Phase-II Inflow'
-                  : 'Panipat Gateway NH-44';
-              const arrivalEta = idx === 0 ? `T+${currentHour}h Peak` : `T+${Math.max(0, currentHour - 12)}h Ingress`;
+              const wardName = `Grid point ${Number(coords[1]).toFixed(2)}°N, ${Number(coords[0]).toFixed(2)}°E`;
+              const arrivalEta = 'Current surface estimate';
               const barPercent = Math.min(100, Math.round(p.aqi_index / 5));
+              const pointAqi = getAqiCategoryAndColor(p.aqi_index);
 
               return (
                 <View key={idx} style={styles.wardItemBox}>
@@ -355,12 +330,13 @@ export const PlumeForecastScreen: React.FC = () => {
                     />
                   </View>
                   <View style={styles.wardItemBottom}>
-                    <Text style={styles.wardAqiText}>AQI {p.aqi_index} • {p.aqi_index > 400 ? 'Severe+' : 'Very Poor'}</Text>
+                    <Text style={styles.wardAqiText}>AQI {p.aqi_index} • {pointAqi.category}</Text>
                     <Text style={styles.wardPmText}>{Math.round(p.pm25_estimate)} µg/m³ PM2.5</Text>
                   </View>
                 </View>
               );
             })}
+            {!surfaceData?.features?.length && <Text style={styles.heroBodyText}>No current surface-grid values are available.</Text>}
           </View>
         </NeoCard>
 
@@ -370,7 +346,7 @@ export const PlumeForecastScreen: React.FC = () => {
             <Text style={styles.sectionTitle}>Boundary Physics &amp; Lag</Text>
             <Text style={styles.titleSparkle}>✦</Text>
           </View>
-          <Text style={styles.sectionMeta}>LIDAR &bull; CORRELATION</Text>
+          <Text style={styles.sectionMeta}>MODEL WEATHER &bull; CORRELATION</Text>
         </View>
 
         <View style={styles.bentoGrid}>
@@ -383,13 +359,13 @@ export const PlumeForecastScreen: React.FC = () => {
               <View>
                 <View style={styles.bentoTitleRow}>
                   <Text style={styles.bentoTitle}>BL Mixing Height</Text>
-                  <Text style={styles.bentoTag}>⬇ Compressed</Text>
+                  <Text style={styles.bentoTag}>{blMixingHeight !== null ? 'Model weather' : 'Unavailable'}</Text>
                 </View>
-                <Text style={styles.bentoDesc}>Thermal lid trapping ground particulates</Text>
+                <Text style={styles.bentoDesc}>Open-Meteo boundary-layer estimate</Text>
               </View>
             </View>
             <View style={styles.bentoValBox}>
-              <Text style={styles.bentoVal}>{blMixingHeight}</Text>
+              <Text style={styles.bentoVal}>{blMixingHeight !== null ? Math.round(blMixingHeight) : '—'}</Text>
               <Text style={styles.bentoUnit}>m AGL</Text>
             </View>
           </NeoCard>
@@ -403,13 +379,13 @@ export const PlumeForecastScreen: React.FC = () => {
               <View>
                 <View style={styles.bentoTitleRow}>
                   <Text style={styles.bentoTitle}>Biomass FRP Flux</Text>
-                  <Text style={[styles.bentoTag, { color: Colors.terracottaDeep }]}>Pearson r={strongestLag?.pearson_r.toFixed(2) ?? '0.84'}</Text>
+                  <Text style={[styles.bentoTag, { color: Colors.terracottaDeep }]}>{strongestLag ? `Pearson r=${strongestLag.pearson_r.toFixed(2)}` : 'Insufficient history'}</Text>
                 </View>
-                <Text style={styles.bentoDesc}>Strongest lag: {strongestLag ? `T+${strongestLag.lag_hours}h` : 'T+36h'}</Text>
+                <Text style={styles.bentoDesc}>Strongest lag: {strongestLag ? `T+${strongestLag.lag_hours}h` : 'not computed'}</Text>
               </View>
             </View>
             <View style={styles.bentoValBox}>
-              <Text style={styles.bentoVal}>{totalFrp.toFixed(1)}</Text>
+              <Text style={styles.bentoVal}>{totalFrp !== null ? totalFrp.toFixed(1) : '—'}</Text>
               <Text style={styles.bentoUnit}>MW FRP</Text>
             </View>
           </NeoCard>
@@ -423,13 +399,13 @@ export const PlumeForecastScreen: React.FC = () => {
               <View>
                 <View style={styles.bentoTitleRow}>
                   <Text style={styles.bentoTitle}>Stagnation Lock</Text>
-                  <Text style={[styles.bentoTag, { color: Colors.forestJade }]}>High Trap</Text>
+                  <Text style={[styles.bentoTag, { color: Colors.forestJade }]}>{ventilationIndex !== null ? (ventilationIndex < 2200 ? 'Low ventilation' : 'Ventilating') : 'Unavailable'}</Text>
                 </View>
                 <Text style={styles.bentoDesc}>Ventilation index &lt; 2,200 m²/s</Text>
               </View>
             </View>
             <View style={styles.bentoValBox}>
-              <Text style={styles.bentoVal}>{ventilationIndex.toLocaleString()}</Text>
+              <Text style={styles.bentoVal}>{ventilationIndex !== null ? Math.round(ventilationIndex).toLocaleString() : '—'}</Text>
               <Text style={styles.bentoUnit}>m²/s</Text>
             </View>
           </NeoCard>

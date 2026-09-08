@@ -65,6 +65,9 @@ async def fetch_openaq_stations(client: Optional[httpx.AsyncClient] = None) -> L
             # bounded set of recently reporting corridor stations instead.
             recent_locations = []
             for item in locations:
+                country_code = (item.get("country") or {}).get("code")
+                if country_code and country_code.upper() != "IN":
+                    continue
                 stamp = (item.get("datetimeLast") or {}).get("utc")
                 if not stamp:
                     continue

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -23,16 +23,22 @@ import {
   SurfaceGridResponse,
   SurfaceGridFeature,
   MeteorologyResponse,
+  HotspotsResponse,
+  PlumeResponse,
+  getAqiCategoryAndColor,
+  formatBackendStatus,
 } from '../api/client';
 
 interface CorridorNode {
   id: string;
   name: string;
   role: string;
-  aqi: number;
-  pm25: number;
-  frp: number;
-  windSpeed: number;
+  latitude: number;
+  longitude: number;
+  aqi: number | null;
+  pm25: number | null;
+  frp: number | null;
+  windSpeed: number | null;
   eta: string;
   color: string;
   x: number;
@@ -44,11 +50,8 @@ const NODES: CorridorNode[] = [
     id: 'sangrur',
     name: 'Sangrur Cluster',
     role: 'NW Primary Emitter (Punjab)',
-    aqi: 420,
-    pm25: 412,
-    frp: 38.4,
-    windSpeed: 28,
-    eta: 'T+0h (Origin)',
+    latitude: 30.245, longitude: 75.842, aqi: null, pm25: null, frp: null, windSpeed: null,
+    eta: 'Route origin',
     color: Colors.coralWatermelonVivid,
     x: 45,
     y: 35,
@@ -57,11 +60,8 @@ const NODES: CorridorNode[] = [
     id: 'patiala',
     name: 'Patiala Sub-Belt',
     role: 'Secondary Emitter',
-    aqi: 380,
-    pm25: 285,
-    frp: 18.2,
-    windSpeed: 24,
-    eta: 'T+9h',
+    latitude: 30.3398, longitude: 76.3869, aqi: null, pm25: null, frp: null, windSpeed: null,
+    eta: 'Route reference',
     color: Colors.aqiUnhealthy,
     x: 105,
     y: 80,
@@ -70,11 +70,8 @@ const NODES: CorridorNode[] = [
     id: 'karnal',
     name: 'Karnal Gate',
     role: 'Midpoint Transit Corridor (NH-44)',
-    aqi: 360,
-    pm25: 190,
-    frp: 8.5,
-    windSpeed: 20,
-    eta: 'T+22h',
+    latitude: 29.6857, longitude: 76.9905, aqi: null, pm25: null, frp: null, windSpeed: null,
+    eta: 'Route reference',
     color: Colors.aqiModerate,
     x: 170,
     y: 125,
@@ -83,11 +80,8 @@ const NODES: CorridorNode[] = [
     id: 'panipat',
     name: 'Panipat Choke Point',
     role: 'Atmospheric Compression Gate',
-    aqi: 390,
-    pm25: 240,
-    frp: 4.2,
-    windSpeed: 16,
-    eta: 'T+38h',
+    latitude: 29.3909, longitude: 76.9635, aqi: null, pm25: null, frp: null, windSpeed: null,
+    eta: 'Route reference',
     color: Colors.aqiUnhealthy,
     x: 235,
     y: 170,
@@ -96,11 +90,8 @@ const NODES: CorridorNode[] = [
     id: 'delhi',
     name: 'Delhi NCR Basin',
     role: 'Nocturnal Subsidence Sink',
-    aqi: 445,
-    pm25: 520,
-    frp: 0,
-    windSpeed: 10,
-    eta: 'T+72h (Receptor)',
+    latitude: 28.6139, longitude: 77.209, aqi: null, pm25: null, frp: null, windSpeed: null,
+    eta: 'Route receptor',
     color: Colors.aqiHazardous,
     x: 295,
     y: 220,
@@ -108,15 +99,13 @@ const NODES: CorridorNode[] = [
 ];
 
 export const AirCorridorMapScreen: React.FC = () => {
-  const [selectedNode, setSelectedNode] = useState<CorridorNode>(NODES[0]);
+  const [selectedNodeId, setSelectedNodeId] = useState<string>(NODES[0].id);
   const [selectedSegment, setSelectedSegment] = useState<'origin' | 'transit' | 'sink'>('origin');
   const [trajectoryHours, setTrajectoryHours] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [hotspotsCount, setHotspotsCount] = useState<number>(247);
-  const [liveWindDelhi, setLiveWindDelhi] = useState<number>(10);
-  const [liveWindPunjab, setLiveWindPunjab] = useState<number>(28);
-  const [clustersCount, setClustersCount] = useState<number>(3);
-  const [sensorCount, setSensorCount] = useState<number>(12);
+  const [hotspots, setHotspots] = useState<HotspotsResponse | null>(null);
+  const [plumeData, setPlumeData] = useState<PlumeResponse | null>(null);
+  const [sensorCount, setSensorCount] = useState<number | null>(null);
   const [biomassData, setBiomassData] = useState<BiomassEmissionsResponse | null>(null);
   const [surfaceData, setSurfaceData] = useState<SurfaceGridResponse | null>(null);
   const [meteoData, setMeteoData] = useState<MeteorologyResponse | null>(null);
@@ -139,29 +128,19 @@ export const AirCorridorMapScreen: React.FC = () => {
   useEffect(() => {
     fetchHotspots(24, 'nominal')
       .then((res) => {
-        if (res && typeof res.count === 'number' && res.count > 0) {
-          setHotspotsCount(res.count);
-        }
+        setHotspots(res);
       })
       .catch(() => {});
 
     fetchMeteorology()
       .then((res) => {
         setMeteoData(res);
-        if (res?.regions?.delhi?.wind_speed_ms) {
-          setLiveWindDelhi(Math.round(res.regions.delhi.wind_speed_ms * 3.6));
-        }
-        if (res?.regions?.punjab?.wind_speed_ms) {
-          setLiveWindPunjab(Math.round(res.regions.punjab.wind_speed_ms * 3.6));
-        }
       })
       .catch(() => {});
 
     fetchForecastPlume()
       .then((res) => {
-        if (res?.clusters_evaluated) {
-          setClustersCount(res.clusters_evaluated);
-        }
+        setPlumeData(res);
       })
       .catch(() => {});
 
@@ -171,9 +150,7 @@ export const AirCorridorMapScreen: React.FC = () => {
 
     fetchSensorThings()
       .then((res: SensorThingsResponse) => {
-        if (res?.['@iot.count']) {
-          setSensorCount(res['@iot.count']);
-        }
+        setSensorCount(res['@iot.count']);
       })
       .catch(() => {});
 
@@ -189,13 +166,13 @@ export const AirCorridorMapScreen: React.FC = () => {
   const handleSelectSegment = (segment: 'origin' | 'transit' | 'sink') => {
     setSelectedSegment(segment);
     if (segment === 'origin') {
-      setSelectedNode(NODES[0]);
+      setSelectedNodeId(NODES[0].id);
       setTrajectoryHours(0);
     } else if (segment === 'transit') {
-      setSelectedNode(NODES[2]);
+      setSelectedNodeId(NODES[2].id);
       setTrajectoryHours(24);
     } else {
-      setSelectedNode(NODES[4]);
+      setSelectedNodeId(NODES[4].id);
       setTrajectoryHours(72);
     }
   };
@@ -203,17 +180,37 @@ export const AirCorridorMapScreen: React.FC = () => {
   const punjabBiomass = biomassData?.regions?.find((r) => r.region === 'Punjab');
   const totalFrp = biomassData?.regions?.reduce((sum, r) => sum + r.frp_sum_mw, 0);
 
+  const nodes = useMemo(() => NODES.map((node) => {
+    const point = surfaceData?.features.reduce<SurfaceGridFeature | null>((best, feature) => {
+      const [lon, lat] = feature.geometry.coordinates;
+      const distance = (lat - node.latitude) ** 2 + (lon - node.longitude) ** 2;
+      if (!best) return feature;
+      const [bestLon, bestLat] = best.geometry.coordinates;
+      return distance < (bestLat - node.latitude) ** 2 + (bestLon - node.longitude) ** 2 ? feature : best;
+    }, null);
+    const nearbyFires = hotspots?.features.filter((feature) => {
+      const [lon, lat] = feature.geometry.coordinates;
+      return Math.hypot((lat - node.latitude) * 111, (lon - node.longitude) * 98) <= 100;
+    }) ?? [];
+    const frp = hotspots ? nearbyFires.reduce((sum, feature) => sum + (feature.properties.frp ?? 0), 0) : null;
+    const region = node.id === 'sangrur' || node.id === 'patiala' ? meteoData?.regions.punjab : meteoData?.regions.delhi;
+    const aqi = point?.properties.aqi_index ?? null;
+    return {
+      ...node,
+      pm25: point?.properties.pm25_estimate ?? null,
+      aqi,
+      frp,
+      windSpeed: region ? region.wind_speed_ms * 3.6 : null,
+      color: aqi !== null ? getAqiCategoryAndColor(aqi).color : Colors.inkMuted,
+    };
+  }), [hotspots, meteoData, surfaceData]);
+  const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? nodes[0];
+
   // Dynamic particle coordinates based on trajectoryHours (0 to 72h)
   const particleProgress = trajectoryHours / 72;
   // Route from (45, 35) through (170, 125) to (295, 220)
   const particleX = 45 + particleProgress * (295 - 45);
   const particleY = 35 + Math.sin(particleProgress * Math.PI * 0.9) * 100 + particleProgress * 85;
-
-  const getEffectiveWindSpeed = (nodeId: string) => {
-    if (nodeId === 'delhi') return liveWindDelhi;
-    if (nodeId === 'sangrur' || nodeId === 'patiala') return liveWindPunjab;
-    return Math.round((liveWindPunjab + liveWindDelhi) / 2);
-  };
 
   return (
     <View style={styles.container}>
@@ -226,7 +223,7 @@ export const AirCorridorMapScreen: React.FC = () => {
           </View>
           <Text style={styles.screenSubtitle}>Synoptic NW-to-SE Dispersion Swath</Text>
         </View>
-        <StarburstBadge label="LIVE SATELLITE" rotation="2deg" shadowColor={Colors.cobaltDeep} />
+        <StarburstBadge label={hotspots ? "LIVE SATELLITE" : "DATA PENDING"} rotation="2deg" shadowColor={Colors.cobaltDeep} />
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -287,10 +284,10 @@ export const AirCorridorMapScreen: React.FC = () => {
               />
 
               {/* Trajectory Nodes on SVG */}
-              {NODES.map((node) => {
+              {layers.grid && nodes.map((node) => {
                 const isSelected = selectedNode.id === node.id;
                 return (
-                  <G key={node.id} onPress={() => setSelectedNode(node)}>
+                  <G key={node.id}>
                     {isSelected && (
                       <Circle cx={node.x} cy={node.y} r={16} fill={node.color} opacity={0.3} />
                     )}
@@ -308,13 +305,13 @@ export const AirCorridorMapScreen: React.FC = () => {
             </Svg>
 
             {/* Interactive Node Labels placed over map */}
-            <View style={styles.nodesOverlay} pointerEvents="box-none">
-              {NODES.map((node) => {
+            <View style={[styles.nodesOverlay, { pointerEvents: 'box-none' }]}>
+              {nodes.map((node) => {
                 const isSelected = selectedNode.id === node.id;
                 return (
                   <Pressable
                     key={node.id}
-                    onPress={() => setSelectedNode(node)}
+                    onPress={() => setSelectedNodeId(node.id)}
                     style={[
                       styles.nodeTouchTarget,
                       { left: node.x - 30, top: node.y + 12 },
@@ -331,7 +328,7 @@ export const AirCorridorMapScreen: React.FC = () => {
 
             {/* Scale watermark */}
             <View style={styles.mapWatermark}>
-              <Text style={styles.watermarkText}>Scale: 1:2.4M • NW Inversion Layer</Text>
+              <Text style={styles.watermarkText}>Scale: 1:2.4M • Configured Corridor</Text>
             </View>
           </View>
 
@@ -409,7 +406,7 @@ export const AirCorridorMapScreen: React.FC = () => {
             >
               <MaterialCommunityIcons name="fire" size={14} color={layers.frp ? Colors.canvasCream : Colors.terracottaDeep} />
               <Text style={[styles.layerChipText, layers.frp && styles.layerChipTextActive]}>
-                FRP Hotspots ({hotspotsCount})
+                FRP Hotspots ({hotspots?.count ?? '—'})
               </Text>
             </Pressable>
 
@@ -429,13 +426,13 @@ export const AirCorridorMapScreen: React.FC = () => {
             >
               <MaterialCommunityIcons name="weather-windy" size={14} color={layers.plume ? Colors.canvasCream : Colors.cobaltDeep} />
               <Text style={[styles.layerChipText, layers.plume && styles.layerChipTextActive]}>
-                Plume Swath ({clustersCount} envel.)
+                Plume Swath ({plumeData?.features.length ?? '—'} envel.)
               </Text>
             </Pressable>
 
             <View style={styles.sensorBadgeChip}>
               <MaterialCommunityIcons name="radio-tower" size={12} color={Colors.forestJade} />
-              <Text style={styles.sensorBadgeText}>Sensors: {sensorCount}</Text>
+              <Text style={styles.sensorBadgeText}>Sensors: {sensorCount ?? '—'}</Text>
             </View>
           </View>
         </NeoCard>
@@ -478,13 +475,13 @@ export const AirCorridorMapScreen: React.FC = () => {
               </View>
               <Text style={styles.segmentCardHeading}>Punjab Biomass Harvest Ignition</Text>
               <Text style={styles.segmentCardBody}>
-                VIIRS observations record {totalFrp == null ? 'active' : `${totalFrp.toFixed(1)} MW`} fire radiative power across the agricultural corridor.
+                {totalFrp == null ? 'Current regional fire-radiative-power data is unavailable.' : `NASA FIRMS observations total ${totalFrp.toFixed(1)} MW of fire radiative power across the agricultural corridor.`}
               </Text>
               <View style={styles.segmentDivider} />
               <View style={styles.segmentMetaRow}>
                 <Text style={styles.segmentMetaLabel}>Aerosol Emission Rate:</Text>
                 <Text style={[styles.segmentMetaVal, { color: Colors.terracottaDeep }]}>
-                  {punjabBiomass?.estimated_aerosol_kg_s ? `${punjabBiomass.estimated_aerosol_kg_s.toFixed(2)} kg/s` : '3.80 kg/s'}
+                  {punjabBiomass?.estimated_aerosol_kg_s != null ? `${punjabBiomass.estimated_aerosol_kg_s.toFixed(2)} kg/s` : 'Not configured'}
                 </Text>
               </View>
             </View>
@@ -498,15 +495,15 @@ export const AirCorridorMapScreen: React.FC = () => {
               </View>
               <Text style={styles.segmentCardHeading}>Karnal-Panipat Secondary Aerosol Conversion</Text>
               <Text style={styles.segmentCardBody}>
-                Ammonia from agricultural fields mixes with urban NOx along the transport corridor, generating secondary inorganic aerosols.
+                This corridor view follows the configured route between the Punjab source region and Delhi. The backend supplies the current wind vector; chemical conversion is not measured by this endpoint.
               </Text>
               <View style={styles.segmentDivider} />
               <View style={styles.segmentMetaRow}>
                 <Text style={styles.segmentMetaLabel}>Advection Velocity:</Text>
                 <Text style={[styles.segmentMetaVal, { color: Colors.cobaltDeep }]}>
-                  {meteoData?.regions?.punjab?.wind_speed_ms
-                    ? `${meteoData.regions.punjab.wind_speed_ms.toFixed(1)} m/s from NW`
-                    : '4.8 m/s from 315° NW'}
+                  {meteoData?.regions?.punjab
+                    ? `${meteoData.regions.punjab.wind_speed_ms.toFixed(1)} m/s from ${Math.round(meteoData.regions.punjab.wind.direction_from_deg)}°`
+                    : 'Data unavailable'}
                 </Text>
               </View>
             </View>
@@ -520,13 +517,13 @@ export const AirCorridorMapScreen: React.FC = () => {
               </View>
               <Text style={styles.segmentCardHeading}>Delhi Nocturnal Subsidence Trap</Text>
               <Text style={styles.segmentCardBody}>
-                Thermal inversion compresses the planetary boundary layer, capping surface particulate ventilation under calm wind regimes.
+                The current mixing-layer height and backend inversion status are shown below. The endpoint does not directly measure inversion severity.
               </Text>
               <View style={styles.segmentDivider} />
               <View style={styles.segmentMetaRow}>
                 <Text style={styles.segmentMetaLabel}>Inversion Severity / Mixing Layer:</Text>
                 <Text style={[styles.segmentMetaVal, { color: Colors.aqiHazardous }]}>
-                  {meteoData?.inversion?.status ?? 'STABLE'} • {meteoData?.regions?.delhi?.mixing_layer_height_m_agl ? `${Math.round(meteoData.regions.delhi.mixing_layer_height_m_agl)}m AGL` : '280m AGL'}
+                  {meteoData ? `${formatBackendStatus(meteoData.inversion.status)} • ${Math.round(meteoData.regions.delhi.mixing_layer_height_m_agl)}m AGL` : 'Data unavailable'}
                 </Text>
               </View>
             </View>
@@ -547,7 +544,7 @@ export const AirCorridorMapScreen: React.FC = () => {
             </View>
 
             <View style={styles.inspectorAqiBadge}>
-              <Text style={styles.inspectorAqiValue}>{selectedNode.aqi}</Text>
+              <Text style={styles.inspectorAqiValue}>{selectedNode.aqi ?? '—'}</Text>
               <Text style={styles.inspectorAqiLabel}>AQI</Text>
             </View>
           </View>
@@ -556,28 +553,28 @@ export const AirCorridorMapScreen: React.FC = () => {
           <View style={styles.inspectorMetricsGrid}>
             <View style={styles.inspectorMetricItem}>
               <Text style={styles.metricLabel}>Particulate Mass</Text>
-              <Text style={styles.metricVal}>{selectedNode.pm25} <Text style={styles.metricUnit}>µg/m³</Text></Text>
+              <Text style={styles.metricVal}>{selectedNode.pm25 != null ? selectedNode.pm25.toFixed(1) : '—'} <Text style={styles.metricUnit}>µg/m³ model</Text></Text>
             </View>
 
             <View style={styles.inspectorMetricItem}>
               <Text style={styles.metricLabel}>Wind Velocity</Text>
-              <Text style={styles.metricVal}>{getEffectiveWindSpeed(selectedNode.id)} <Text style={styles.metricUnit}>km/h NW</Text></Text>
+              <Text style={styles.metricVal}>{selectedNode.windSpeed != null ? selectedNode.windSpeed.toFixed(1) : '—'} <Text style={styles.metricUnit}>km/h</Text></Text>
             </View>
 
             <View style={styles.inspectorMetricItem}>
               <Text style={styles.metricLabel}>Thermal Radiation</Text>
-              <Text style={styles.metricVal}>{selectedNode.frp} <Text style={styles.metricUnit}>MW FRP</Text></Text>
+              <Text style={styles.metricVal}>{selectedNode.frp != null ? selectedNode.frp.toFixed(1) : '—'} <Text style={styles.metricUnit}>MW within 100 km</Text></Text>
             </View>
 
             <View style={styles.inspectorMetricItem}>
               <Text style={styles.metricLabel}>Dispersion Status</Text>
-              <Text style={[styles.metricVal, { color: selectedNode.color }]}>Compressed</Text>
+              <Text style={[styles.metricVal, { color: selectedNode.color }]}>{surfaceData ? 'Model available' : 'Data unavailable'}</Text>
             </View>
           </View>
         </NeoCard>
 
         {/* Downscaled Surface Grid Field */}
-        {surfaceData && surfaceData.features?.length > 0 && (
+        {layers.grid && surfaceData && surfaceData.features?.length > 0 && (
           <NeoCard backgroundColor={Colors.surfaceVanillaStrong} style={styles.surfaceCard}>
             <View style={styles.surfaceHeader}>
               <View style={styles.surfaceTitleRow}>
@@ -614,7 +611,9 @@ export const AirCorridorMapScreen: React.FC = () => {
             <Text style={styles.synopsisTitle}>Synoptic Ingress Analysis</Text>
           </View>
           <Text style={styles.synopsisBody}>
-            Smoke emitted in Sangrur and Patiala moves along the NH-44 highway transport spine. As nocturnal cooling sets in near Panipat, boundary layer compression traps smoke at &lt;300m before discharging into the Delhi NCR basin.
+            {meteoData
+              ? `The configured corridor is shown with current Open-Meteo wind inputs (${meteoData.regions.punjab.wind_speed_ms.toFixed(1)} m/s in Punjab and ${meteoData.regions.delhi.wind_speed_ms.toFixed(1)} m/s in Delhi) and a Delhi mixing height of ${Math.round(meteoData.regions.delhi.mixing_layer_height_m_agl)} m. Forecast envelopes are model estimates, not direct plume observations.`
+              : 'Current meteorological inputs are unavailable. The route remains a geographic corridor reference.'}
           </Text>
         </NeoCard>
 

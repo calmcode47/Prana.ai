@@ -6,21 +6,28 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "backgroundColor": "#FAF6EE"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "ai.prana.air"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#FAF6EE"
+        "backgroundColor": "#FAF6EE",
+        "foregroundImage": "./assets/adaptive-icon.png"
       },
       "package": "ai.prana.air"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow PRANA Air to select a sky photo for local air-quality analysis.",
+          "cameraPermission": "Allow PRANA Air to capture a sky photo for local air-quality analysis."
+        }
+      ]
+    ]
   }
 }

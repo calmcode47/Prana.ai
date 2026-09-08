@@ -10,6 +10,8 @@ import { Colors } from '../theme/tokens';
 
 // Resolve host IP dynamically for Expo Go, iOS Simulator, and Android Emulator
 function getApiBaseUrl(): string {
+  const configuredUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/$/, '');
+  if (configuredUrl) return configuredUrl;
   const hostUri = Constants.expoConfig?.hostUri;
   if (hostUri) {
     const ip = hostUri.split(':')[0];
@@ -149,15 +151,15 @@ export interface PlumeFeature {
 
 export interface PlumeResponse {
   type: 'FeatureCollection';
-  generated_at: string;
-  model: string;
-  clusters_evaluated: number;
+  computed_at: string;
+  source: string;
+  model_assumptions: string;
   features: PlumeFeature[];
 }
 
 export interface IncidentItem {
   incident_id: string;
-  severity: 'info' | 'warning' | 'emergency';
+  severity: 'watch' | 'warning' | 'emergency';
   title?: string;
   body?: string;
   location_text?: string;
@@ -185,10 +187,8 @@ export interface IncidentItem {
 }
 
 export interface AlertsResponse {
-  total_incidents?: number;
-  count?: number;
-  incidents?: IncidentItem[];
-  items?: IncidentItem[];
+  count: number;
+  items: IncidentItem[];
 }
 
 export interface LatestAlertResponse {
@@ -215,6 +215,9 @@ export interface FLStatusResponse {
   total_rounds: number;
   status: string;
   rounds: FLRoundStatus[];
+  implementation: string;
+  dataset: string;
+  metric: string;
   privacy?: {
     dp_sgd?: {
       enabled?: boolean;
@@ -234,17 +237,12 @@ export interface FLStatusResponse {
 
 export interface CitizenPhotoResponse {
   pm25_estimate: number;
-  aqi_estimate?: number;
-  aqi_index?: number;
+  aqi_index: number;
   aqi_category: string;
-  aqi_color?: string;
-  confidence: string;
-  inference_latency_ms?: number;
-  processing_time_ms?: number;
-  optical_depth?: number;
-  atmospheric_light?: number[];
-  model?: string;
-  source?: string;
+  aqi_color: string;
+  confidence: 'low' | 'medium' | 'high';
+  processing_time_ms: number;
+  source: string;
 }
 
 export interface BiomassRegion {
@@ -360,9 +358,50 @@ export interface IncidentCreate {
 
 export function formatDataSource(source?: string | null, fallback: string = 'Source pending'): string {
   if (!source) return fallback;
-  if (source.startsWith('model_estimate;')) return 'Model estimate (NASA FIRMS & Open-Meteo)';
-  if (source.startsWith('CAMS_MODEL_SURFACE;')) return 'Open-Meteo CAMS Model';
-  return source.replace(/[;_]/g, ' ').trim();
+  const normalized = source.trim();
+  if (normalized.startsWith('model_estimate;')) return 'Model estimate using NASA FIRMS and Open-Meteo';
+  if (normalized.startsWith('CAMS_MODEL_SURFACE;')) return 'Open-Meteo CAMS air-quality model';
+  const labels: Record<string, string> = {
+    NASA_FIRMS_VIIRS_SNPP_NRT: 'NASA FIRMS VIIRS near-real-time',
+    FIRMS: 'NASA FIRMS satellite evidence',
+    OPENAQ_LIVE: 'OpenAQ live station observation',
+    OPEN_METEO_LIVE: 'Open-Meteo live weather',
+    DCP_HEURISTIC_ESTIMATE: 'Photo-based haze estimate',
+    NOT_CONFIGURED: 'Not configured',
+  };
+  return labels[normalized] ?? normalized.replace(/[_;]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+export function formatFederatedImplementation(value?: string | null): string {
+  if (!value) return 'Implementation details unavailable';
+  return value === 'numpy_fedavg_with_optional_paillier_and_dp_sgd'
+    ? 'NumPy FedAvg with configured privacy controls'
+    : value.replace(/_/g, ' ');
+}
+
+export function formatFederatedDataset(value?: string | null): string {
+  if (!value) return 'Dataset unavailable';
+  return value === 'synthetic_corridor' ? 'Synthetic corridor training data' : value.replace(/_/g, ' ');
+}
+
+export function formatFederatedMetric(value?: string | null): string {
+  if (!value) return 'Metric unavailable';
+  if (value.startsWith('1 - 0.5 * RMSE')) return 'Normalized prediction score';
+  return value.replace(/_/g, ' ');
+}
+
+export function formatBackendStatus(value?: string | null, fallback: string = 'Status unavailable'): string {
+  if (!value) return fallback;
+  const known: Record<string, string> = {
+    not_measured: 'Not measured',
+    NO_PATTERN_DETECTED: 'No pattern detected',
+    REVIEW_REQUIRED: 'Review required',
+    READY_FOR_PROVIDER: 'Ready for signature provider',
+    PROVIDER_NOT_CONFIGURED: 'Signature provider not configured',
+    script_ready: 'Script ready',
+    empty: 'No current item',
+  };
+  return known[value] ?? value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 // HTTP Helper with timeout
@@ -383,6 +422,7 @@ async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
       } catch {}
       throw new Error(detail);
     }
+    if (res.status === 204) return null as T;
     return (await res.json()) as T;
   } finally {
     clearTimeout(timeoutId);
@@ -416,8 +456,8 @@ export async function fetchAlerts(severity?: string, limit: number = 10): Promis
   return requestJson<AlertsResponse>(`/api/v1/alerts${query}`);
 }
 
-export async function fetchLatestAlert(lang: 'en' | 'hi' | 'pa' = 'en'): Promise<LatestAlertResponse> {
-  return requestJson<LatestAlertResponse>(`/api/v1/alerts/latest?lang=${lang}`);
+export async function fetchLatestAlert(lang: 'en' | 'hi' | 'pa' = 'en'): Promise<LatestAlertResponse | null> {
+  return requestJson<LatestAlertResponse | null>(`/api/v1/alerts/latest?lang=${lang}`);
 }
 
 export interface CreateNoticePayload {
@@ -538,7 +578,6 @@ export async function fetchAnomalies(
 export interface SurfacePointProperties {
   pm25_estimate: number;
   aqi_index: number;
-  source: string;
   uncertainty_std?: number | null;
 }
 

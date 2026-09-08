@@ -18,35 +18,26 @@ import {
   triggerFederatedRun,
   FLRoundStatus,
   FLStatusResponse,
+  formatFederatedDataset,
+  formatFederatedImplementation,
+  formatFederatedMetric,
 } from '../api/client';
 
-const DEFAULT_ROUNDS: FLRoundStatus[] = [
-  { round_number: 1, punjab_accuracy: 0.52, delhi_accuracy: 0.55, global_accuracy: 0.58, punjab_loss: 0.28, delhi_loss: 0.26, global_loss: 0.24 },
-  { round_number: 2, punjab_accuracy: 0.58, delhi_accuracy: 0.61, global_accuracy: 0.66, punjab_loss: 0.23, delhi_loss: 0.21, global_loss: 0.19 },
-  { round_number: 3, punjab_accuracy: 0.62, delhi_accuracy: 0.66, global_accuracy: 0.72, punjab_loss: 0.19, delhi_loss: 0.17, global_loss: 0.15 },
-  { round_number: 4, punjab_accuracy: 0.65, delhi_accuracy: 0.70, global_accuracy: 0.77, punjab_loss: 0.16, delhi_loss: 0.14, global_loss: 0.12 },
-  { round_number: 5, punjab_accuracy: 0.68, delhi_accuracy: 0.73, global_accuracy: 0.81, punjab_loss: 0.13, delhi_loss: 0.12, global_loss: 0.10 },
-  { round_number: 6, punjab_accuracy: 0.70, delhi_accuracy: 0.75, global_accuracy: 0.84, punjab_loss: 0.11, delhi_loss: 0.10, global_loss: 0.09 },
-  { round_number: 7, punjab_accuracy: 0.71, delhi_accuracy: 0.76, global_accuracy: 0.87, punjab_loss: 0.10, delhi_loss: 0.09, global_loss: 0.08 },
-  { round_number: 8, punjab_accuracy: 0.72, delhi_accuracy: 0.77, global_accuracy: 0.89, punjab_loss: 0.09, delhi_loss: 0.08, global_loss: 0.078 },
-  { round_number: 9, punjab_accuracy: 0.73, delhi_accuracy: 0.78, global_accuracy: 0.905, punjab_loss: 0.085, delhi_loss: 0.075, global_loss: 0.072 },
-  { round_number: 10, punjab_accuracy: 0.735, delhi_accuracy: 0.786, global_accuracy: 0.914, punjab_loss: 0.082, delhi_loss: 0.071, global_loss: 0.068 },
-];
-
 export const FederatedMeshScreen: React.FC = () => {
-  const [currentRound, setCurrentRound] = useState<number>(10);
-  const [globalLoss, setGlobalLoss] = useState<number>(0.068);
-  const [dpEpsilon, setDpEpsilon] = useState<number>(0.42);
-  const [schemeName, setSchemeName] = useState<string>('Paillier 2048-bit Homomorphic');
-  const [globalAcc, setGlobalAcc] = useState<number>(0.914);
-  const [delhiAcc, setDelhiAcc] = useState<number>(0.786);
-  const [punjabAcc, setPunjabAcc] = useState<number>(0.735);
+  const [currentRound, setCurrentRound] = useState<number>(0);
+  const [globalLoss, setGlobalLoss] = useState<number | null>(null);
+  const [globalAcc, setGlobalAcc] = useState<number | null>(null);
+  const [delhiAcc, setDelhiAcc] = useState<number | null>(null);
+  const [punjabAcc, setPunjabAcc] = useState<number | null>(null);
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
-  const [roundsList, setRoundsList] = useState<FLRoundStatus[]>(DEFAULT_ROUNDS);
+  const [roundsList, setRoundsList] = useState<FLRoundStatus[]>([]);
+  const [statusData, setStatusData] = useState<FLStatusResponse | null>(null);
+  const [runFeedback, setRunFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     fetchFederatedStatus()
       .then((status: FLStatusResponse) => {
+        setStatusData(status);
         if (status?.rounds && status.rounds.length > 0) {
           setRoundsList(status.rounds);
           const last = status.rounds[status.rounds.length - 1];
@@ -56,14 +47,8 @@ export const FederatedMeshScreen: React.FC = () => {
           setDelhiAcc(last.delhi_accuracy);
           setPunjabAcc(last.punjab_accuracy);
         }
-        if (status?.privacy?.dp_sgd?.epsilon_spent) {
-          setDpEpsilon(Number(status.privacy.dp_sgd.epsilon_spent.toFixed(2)));
-        }
-        if (status?.privacy?.secure_aggregation?.scheme) {
-          setSchemeName(`${status.privacy.secure_aggregation.scheme} ${status.privacy.secure_aggregation.key_bits ?? 2048}-bit Homomorphic`);
-        }
       })
-      .catch(() => {});
+      .catch((error) => setRunFeedback(`Status unavailable: ${error instanceof Error ? error.message : 'backend error'}`));
   }, []);
 
   const handleSimulateRound = async () => {
@@ -72,6 +57,7 @@ export const FederatedMeshScreen: React.FC = () => {
 
     try {
       const runResult = await triggerFederatedRun(10);
+      setStatusData(runResult);
       const rounds = runResult?.rounds || [];
       if (rounds.length > 0) {
         setRoundsList(rounds);
@@ -81,9 +67,6 @@ export const FederatedMeshScreen: React.FC = () => {
             const r = rounds[i];
             setCurrentRound(r.round_number);
             setGlobalLoss(Number(r.global_loss.toFixed(3)));
-            if (r.dp_epsilon_spent) {
-              setDpEpsilon(Number(r.dp_epsilon_spent.toFixed(2)));
-            }
             setGlobalAcc(r.global_accuracy);
             setDelhiAcc(r.delhi_accuracy);
             setPunjabAcc(r.punjab_accuracy);
@@ -96,22 +79,13 @@ export const FederatedMeshScreen: React.FC = () => {
       } else {
         setIsSimulating(false);
       }
-    } catch {
-      let step = 0;
-      const interval = setInterval(() => {
-        step += 1;
-        if (step <= 3) {
-          setCurrentRound((prev) => (prev >= 10 ? 1 : prev + 1));
-          setGlobalLoss((prev) => Number(Math.max(0.042, prev - 0.012).toFixed(3)));
-        } else {
-          clearInterval(interval);
-          setIsSimulating(false);
-        }
-      }, 400);
+    } catch (error) {
+      setRunFeedback(`Training failed: ${error instanceof Error ? error.message : 'backend error'}`);
+      setIsSimulating(false);
     }
   };
 
-  const latestGain = globalAcc - Math.max(delhiAcc, punjabAcc);
+  const latestGain = globalAcc !== null && delhiAcc !== null && punjabAcc !== null ? globalAcc - Math.max(delhiAcc, punjabAcc) : null;
   const chartX = (index: number, total: number) => 30 + (index / Math.max(1, total - 1)) * 260;
   const chartY = (accuracy: number) => 140 - Math.max(0, Math.min(1, accuracy)) * 115;
   const buildPath = (field: 'global_accuracy' | 'delhi_accuracy' | 'punjab_accuracy') =>
@@ -132,25 +106,27 @@ export const FederatedMeshScreen: React.FC = () => {
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Zero-Knowledge Privacy Guarantee Banner */}
+        {/* Configured privacy controls */}
         <NeoCard backgroundColor={Colors.surfaceVanilla} style={styles.privacyCard}>
           <View style={styles.privacyHeader}>
             <View style={styles.privacyBadge}>
               <MaterialCommunityIcons name="shield-lock" size={16} color={Colors.forestJade} />
-              <Text style={styles.privacyBadgeText}>Differential Privacy ε = {dpEpsilon}</Text>
+              <Text style={styles.privacyBadgeText}>Differential Privacy ε = {statusData?.privacy?.dp_sgd?.epsilon_spent?.toFixed(2) ?? '—'}</Text>
             </View>
             <View style={styles.statusLivePip} />
           </View>
           <Text style={styles.privacyBody}>
-            Zero raw agricultural data leaves Punjab; zero urban data departs Delhi. Only cryptographically blinded gradient tensors enter central aggregation.
+            {statusData
+              ? `${formatFederatedDataset(statusData.dataset)} runs locally in the backend. Client fit calls omit local metrics; production separation of clients and key custody requires an external deployment.`
+              : 'Federated status is unavailable from the backend.'}
           </Text>
           <View style={styles.privacyPillsRow}>
             <View style={styles.miniTag}>
               <MaterialCommunityIcons name="lock-check" size={13} color={Colors.forestJade} />
-              <Text style={styles.miniTagText}>{schemeName}</Text>
+              <Text style={styles.miniTagText}>{statusData?.privacy?.secure_aggregation?.enabled ? `${statusData.privacy.secure_aggregation.scheme ?? 'Paillier'} ${statusData.privacy.secure_aggregation.key_bits ?? '—'}-bit` : 'Secure aggregation disabled'}</Text>
             </View>
             <Text style={styles.bulletDot}>•</Text>
-            <Text style={styles.miniTagMuted}>Laplace Noise Added</Text>
+            <Text style={styles.miniTagMuted}>{statusData?.privacy?.dp_sgd?.enabled ? 'Configured DP-SGD noise' : 'DP-SGD disabled'}</Text>
           </View>
         </NeoCard>
 
@@ -158,10 +134,11 @@ export const FederatedMeshScreen: React.FC = () => {
         <View style={styles.dispatchPill}>
           <View style={styles.dispatchLeft}>
             <View style={styles.dispatchPulse} />
-            <Text style={styles.dispatchLabel}>Next scheduled FedAvg dispatch</Text>
+            <Text style={styles.dispatchLabel}>Federated execution</Text>
           </View>
-          <Text style={styles.dispatchTime}>03:45 UTC</Text>
+          <Text style={styles.dispatchTime}>Manual local run</Text>
         </View>
+        {runFeedback && <Text style={styles.chartSubtitle}>{runFeedback}</Text>}
 
         {/* Decentralized Mesh Topology Card */}
         <NeoCard backgroundColor={Colors.surfaceVanilla} style={styles.topologyCard}>
@@ -172,7 +149,7 @@ export const FederatedMeshScreen: React.FC = () => {
               </View>
               <Text style={styles.topologyTitle}>Decentralized Mesh Topology</Text>
             </View>
-            <Text style={styles.roundSettledText}>Round #{currentRound} Settled</Text>
+            <Text style={styles.roundSettledText}>{currentRound ? `Round #${currentRound} Settled` : 'No completed round'}</Text>
           </View>
 
           {/* 2 Regional Nodes Grid */}
@@ -189,12 +166,12 @@ export const FederatedMeshScreen: React.FC = () => {
               <Text style={styles.nodeTileSubtitle}>Farms / PPCB Sub-station</Text>
 
               <View style={styles.sampleBox}>
-                <Text style={styles.sampleCount}>42,810</Text>
-                <Text style={styles.sampleUnit}>crop residue samples</Text>
+                <Text style={styles.sampleCount}>Synthetic</Text>
+                <Text style={styles.sampleUnit}>backend training partition</Text>
               </View>
 
               <View style={styles.tensorStatus}>
-                <Text style={styles.tensorStatusText}>Tensors Local</Text>
+                <Text style={styles.tensorStatusText}>Local simulation</Text>
                 <MaterialCommunityIcons name="check-decagram" size={14} color={Colors.forestJade} />
               </View>
             </View>
@@ -211,12 +188,12 @@ export const FederatedMeshScreen: React.FC = () => {
               <Text style={styles.nodeTileSubtitle}>DPCC / Urban Canopy</Text>
 
               <View style={styles.sampleBox}>
-                <Text style={styles.sampleCount}>61,420</Text>
-                <Text style={styles.sampleUnit}>local urban samples</Text>
+                <Text style={styles.sampleCount}>Synthetic</Text>
+                <Text style={styles.sampleUnit}>backend training partition</Text>
               </View>
 
               <View style={styles.tensorStatus}>
-                <Text style={styles.tensorStatusText}>Tensors Local</Text>
+                <Text style={styles.tensorStatusText}>Local simulation</Text>
                 <MaterialCommunityIcons name="check-decagram" size={14} color={Colors.forestJade} />
               </View>
             </View>
@@ -241,10 +218,10 @@ export const FederatedMeshScreen: React.FC = () => {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.aggregatorTitle}>FedAvg Central Core</Text>
-                <Text style={styles.aggregatorSubtitle}>Secure Multi-Party Computation</Text>
+                <Text style={styles.aggregatorSubtitle}>{formatFederatedImplementation(statusData?.implementation)}</Text>
               </View>
               <View style={styles.lossBadge}>
-                <Text style={styles.lossBadgeText}>Loss: {globalLoss}</Text>
+                <Text style={styles.lossBadgeText}>MSE: {globalLoss ?? '—'}</Text>
               </View>
             </View>
 
@@ -273,7 +250,7 @@ export const FederatedMeshScreen: React.FC = () => {
               <View style={styles.chartTitleRow}>
                 <Text style={styles.chartTitle}>Federated Convergence Curves</Text>
                 <View style={styles.metricPill}>
-                  <Text style={styles.metricPillText}>R2 / SCORE</Text>
+                  <Text style={styles.metricPillText}>{formatFederatedMetric(statusData?.metric).toUpperCase()}</Text>
                 </View>
               </View>
               <Text style={styles.chartSubtitle}>
@@ -285,7 +262,7 @@ export const FederatedMeshScreen: React.FC = () => {
             <View style={styles.gainBadge}>
               <MaterialCommunityIcons name="trending-up" size={16} color={Colors.forestJade} />
               <Text style={styles.gainBadgeText}>
-                +{Math.max(0, (latestGain * 100)).toFixed(1)} pts vs local
+                {latestGain === null ? 'No measured result' : `${latestGain >= 0 ? '+' : ''}${(latestGain * 100).toFixed(1)} pts vs best local`}
               </Text>
             </View>
           </View>
@@ -351,11 +328,10 @@ export const FederatedMeshScreen: React.FC = () => {
 
             {/* X Axis round milestones */}
             <View style={styles.chartXLabels}>
-              <Text style={styles.chartXText}>R1</Text>
-              <Text style={styles.chartXText}>R3</Text>
-              <Text style={styles.chartXText}>R5</Text>
-              <Text style={styles.chartXText}>R8</Text>
-              <Text style={styles.chartXText}>R10</Text>
+              {roundsList.length > 0 ? [0, 0.25, 0.5, 0.75, 1].map((fraction) => {
+                const index = Math.min(roundsList.length - 1, Math.round((roundsList.length - 1) * fraction));
+                return <Text key={fraction} style={styles.chartXText}>R{roundsList[index].round_number}</Text>;
+              }) : <Text style={styles.chartXText}>No completed rounds</Text>}
             </View>
           </View>
 
@@ -363,15 +339,15 @@ export const FederatedMeshScreen: React.FC = () => {
           <View style={styles.legendRow}>
             <View style={styles.legendPill}>
               <View style={[styles.legendColor, { backgroundColor: Colors.coralWatermelonVivid }]} />
-              <Text style={styles.legendText}>Global FL ({(globalAcc * 100).toFixed(1)}%)</Text>
+              <Text style={styles.legendText}>Global FL ({globalAcc === null ? '—' : `${(globalAcc * 100).toFixed(1)}%`})</Text>
             </View>
             <View style={styles.legendPill}>
               <View style={[styles.legendColor, { backgroundColor: Colors.cobaltDeep }]} />
-              <Text style={styles.legendText}>Delhi Silo ({(delhiAcc * 100).toFixed(1)}%)</Text>
+              <Text style={styles.legendText}>Delhi Silo ({delhiAcc === null ? '—' : `${(delhiAcc * 100).toFixed(1)}%`})</Text>
             </View>
             <View style={styles.legendPill}>
               <View style={[styles.legendColor, { backgroundColor: Colors.terracottaDeep }]} />
-              <Text style={styles.legendText}>Punjab Silo ({(punjabAcc * 100).toFixed(1)}%)</Text>
+              <Text style={styles.legendText}>Punjab Silo ({punjabAcc === null ? '—' : `${(punjabAcc * 100).toFixed(1)}%`})</Text>
             </View>
           </View>
         </NeoCard>
@@ -386,7 +362,7 @@ export const FederatedMeshScreen: React.FC = () => {
             <MaterialCommunityIcons name="arrow-right-thick" size={14} color={Colors.terracottaDeep} />
             <View style={styles.pipelineNodeCenter}>
               <MaterialCommunityIcons name="lock-check" size={16} color={Colors.forestJade} />
-              <Text style={styles.pipelineCenterText}>Paillier 2048b</Text>
+              <Text style={styles.pipelineCenterText}>{statusData?.privacy?.secure_aggregation?.enabled ? 'Paillier enabled' : 'Plain aggregation'}</Text>
             </View>
             <MaterialCommunityIcons name="arrow-right-thick" size={14} color={Colors.cobaltDeep} />
             <View style={styles.pipelineNode}>
@@ -398,33 +374,33 @@ export const FederatedMeshScreen: React.FC = () => {
 
         {/* Model Accuracy Comparison Bars */}
         <NeoCard backgroundColor={Colors.surfaceVanillaStrong} style={styles.comparisonCard}>
-          <Text style={styles.comparisonTitle}>Cross-State Model Accuracy Gains</Text>
+          <Text style={styles.comparisonTitle}>Federated Model Prediction Scores</Text>
           <View style={styles.barsContainer}>
             {/* Global FedAvg Model */}
             <View style={styles.barRow}>
               <Text style={styles.barLabel}>Global FedAvg Model</Text>
               <View style={styles.barTrack}>
-                <View style={[styles.barFill, { width: `${(globalAcc * 100).toFixed(1)}%` as DimensionValue, backgroundColor: Colors.coralWatermelonVivid }]} />
+                <View style={[styles.barFill, { width: `${((globalAcc ?? 0) * 100).toFixed(1)}%` as DimensionValue, backgroundColor: Colors.coralWatermelonVivid }]} />
               </View>
-              <Text style={styles.barPercent}>{(globalAcc * 100).toFixed(1)}%</Text>
+              <Text style={styles.barPercent}>{globalAcc === null ? '—' : `${(globalAcc * 100).toFixed(1)}%`}</Text>
             </View>
 
             {/* Delhi Local Isolated */}
             <View style={styles.barRow}>
               <Text style={styles.barLabel}>Delhi Local Isolated</Text>
               <View style={styles.barTrack}>
-                <View style={[styles.barFill, { width: `${(delhiAcc * 100).toFixed(1)}%` as DimensionValue, backgroundColor: Colors.cobaltDeep }]} />
+                <View style={[styles.barFill, { width: `${((delhiAcc ?? 0) * 100).toFixed(1)}%` as DimensionValue, backgroundColor: Colors.cobaltDeep }]} />
               </View>
-              <Text style={styles.barPercent}>{(delhiAcc * 100).toFixed(1)}%</Text>
+              <Text style={styles.barPercent}>{delhiAcc === null ? '—' : `${(delhiAcc * 100).toFixed(1)}%`}</Text>
             </View>
 
             {/* Punjab Local Isolated */}
             <View style={styles.barRow}>
               <Text style={styles.barLabel}>Punjab Local Isolated</Text>
               <View style={styles.barTrack}>
-                <View style={[styles.barFill, { width: `${(punjabAcc * 100).toFixed(1)}%` as DimensionValue, backgroundColor: Colors.terracottaDeep }]} />
+                <View style={[styles.barFill, { width: `${((punjabAcc ?? 0) * 100).toFixed(1)}%` as DimensionValue, backgroundColor: Colors.terracottaDeep }]} />
               </View>
-              <Text style={styles.barPercent}>{(punjabAcc * 100).toFixed(1)}%</Text>
+              <Text style={styles.barPercent}>{punjabAcc === null ? '—' : `${(punjabAcc * 100).toFixed(1)}%`}</Text>
             </View>
           </View>
         </NeoCard>

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Pressable, Animated, Easing, Modal } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Animated, Easing, Modal, Linking } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors } from '../theme/tokens';
-import { fetchLatestBriefing, BriefingResponse } from '../api/client';
+import { fetchLatestBriefing, BriefingResponse, formatBackendStatus } from '../api/client';
 
 interface FloatingAudioPlayerProps {
   episodeTitle?: string;
@@ -12,10 +12,10 @@ interface FloatingAudioPlayerProps {
 
 export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
   episodeTitle = 'PRANA Atmospheric Briefing',
-  telemetryNote = 'AI SYNOPTIC BRIEFING • LIVE TTS',
+  telemetryNote = 'No current briefing',
   onPressPlayer,
 }) => {
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [briefing, setBriefing] = useState<BriefingResponse | null>(null);
   const [showBriefingModal, setShowBriefingModal] = useState(false);
 
@@ -36,6 +36,7 @@ export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
   const displayNote = briefing?.script
     ? 'Tap to read full atmospheric briefing'
     : telemetryNote;
+  const hasAudio = Boolean(briefing?.audio_url);
 
   // Equalizer bar animated values
   const bar1 = useRef(new Animated.Value(6)).current;
@@ -68,7 +69,7 @@ export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
       );
     };
 
-    if (isPlaying) {
+    if (isPlaying && hasAudio) {
       anim1 = createLoop(bar1, 4, 16, 280);
       anim2 = createLoop(bar2, 4, 18, 360);
       anim3 = createLoop(bar3, 4, 14, 220);
@@ -91,7 +92,20 @@ export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
       anim3?.stop();
       anim4?.stop();
     };
-  }, [isPlaying]);
+  }, [hasAudio, isPlaying]);
+
+  const handleAudioPress = async () => {
+    if (!briefing?.audio_url) {
+      setShowBriefingModal(true);
+      return;
+    }
+    setIsPlaying(true);
+    try {
+      await Linking.openURL(briefing.audio_url);
+    } finally {
+      setIsPlaying(false);
+    }
+  };
 
   return (
     <View style={styles.outerWrapper}>
@@ -138,14 +152,14 @@ export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
 
           {/* Chunky black Play/Pause button */}
           <Pressable
-            onPress={() => setIsPlaying(!isPlaying)}
+            onPress={handleAudioPress}
             style={({ pressed }) => [
               styles.playButton,
               pressed && { transform: [{ scale: 0.92 }] },
             ]}
           >
             <MaterialCommunityIcons
-              name={isPlaying ? 'pause' : 'play'}
+              name={hasAudio && isPlaying ? 'pause' : hasAudio ? 'play' : 'text-box-search'}
               size={18}
               color={Colors.canvasCream}
             />
@@ -173,14 +187,13 @@ export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
             </View>
 
             <Text style={styles.modalScriptText}>
-              {briefing?.script ??
-                'PRANA atmospheric briefing. Severe boundary layer compression below 300m detected across the Northern Receptor Corridor. Crop residue emissions are tracking along the NH-44 highway spine.'}
+              {briefing?.script ?? 'No current atmospheric briefing is available from the backend.'}
             </Text>
 
             <View style={styles.modalFooter}>
               <View style={styles.ttsBadge}>
                 <Text style={styles.ttsBadgeText}>
-                  {briefing?.audio_status ?? 'SYNOPTIC SCRIPT READY'}
+                  {briefing ? formatBackendStatus(briefing.audio_status) : 'No briefing available'}
                 </Text>
               </View>
               <Pressable onPress={() => setShowBriefingModal(false)} style={styles.modalDismissBtn}>

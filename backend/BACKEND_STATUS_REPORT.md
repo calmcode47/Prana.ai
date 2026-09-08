@@ -1,16 +1,16 @@
 # Backend verification report
 
-Verified locally on 7 September 2026. This report supersedes the previous unsupported “94% production ready” checklist.
+Verified locally on 8 September 2026. This report supersedes the previous unsupported “94% production ready” checklist.
 
 ## Result
 
 The backend runs at **http://127.0.0.1:8000**. The current user-supplied configuration leaves `DATABASE_URL` empty, so this running process uses ephemeral in-memory storage. The isolated **PostgreSQL 16.15 / PostGIS 3.6.2** database on loopback port 55432 remains available and passed the dedicated persistence suite, but it is not selected by the current environment file. Backend work only was performed in this task; no frontend changes were made.
 
-The current scope is local backend completion. Cloud deployment is explicitly excluded at the user's request. All new verification artifacts and temporary files are kept inside this repository.
+The current scope is local backend completion plus connection of the existing web and mobile clients. Cloud deployment is explicitly excluded at the user's request. All new verification artifacts and temporary files are kept inside this repository.
 
 | Verification | Result |
 | --- | --- |
-| Unit and regression suite | **100 passed**, one PostGIS test skipped when no test URL is supplied |
+| Unit and regression suite | **102 passed**, one PostGIS test skipped when no test URL is supplied |
 | Dedicated real PostGIS suite | **1 passed** after applying the expanded schema |
 | External NASA integration test | Deselected; a live API key is required |
 | Preflight checks with local PostGIS | **25 passed**, zero failures |
@@ -27,10 +27,10 @@ The current scope is local backend completion. Cloud deployment is explicitly ex
 
 | Provider | Result |
 | --- | --- |
-| NASA FIRMS | Passed; 2 current corridor hotspots returned |
+| NASA FIRMS | Passed; 4 current corridor hotspots returned |
 | Open-Meteo weather | Passed; current Punjab and Delhi records returned |
 | Open-Meteo CAMS global air quality | Passed; 24 current corridor grid cells returned |
-| OpenAQ v3 | Authentication/connectivity passed; 0 observations met the 24-hour freshness rule. Older provider records are excluded rather than displayed as current. |
+| OpenAQ v3 | Passed; 5 current Indian stations met the 24-hour freshness rule. Older and non-Indian provider records are excluded. |
 
 The suite has four dependency deprecation warnings; no test failures. It tests behavior, not 100% code coverage.
 
@@ -46,7 +46,7 @@ The suite has four dependency deprecation warnings; no test failures. It tests b
 - Verified incident, photo, observation, forecast geometry, and federated-result persistence against real PostGIS, including reconnecting with empty process caches.
 - Made federated round batches transactional and updated process metrics only after the database commit. Verified a rejected second round rolls back the entire batch without publishing partial results. Duplicate in-memory rounds now update their scores consistently with PostgreSQL.
 - Corrected live-mode WebSocket fire counts to exclude demonstration records, rejected empty production CORS lists, and removed database credential output from the legacy smoke-check script.
-- Corrected OpenAQ v3 ingestion to join actual latest sensor observations. Removed invented 120 µg/m³ readings, retained measurement times, and separated NO2/SO2 history from PM2.5.
+- Corrected OpenAQ v3 ingestion to join actual location-level latest sensor observations. Removed invented readings, retained measurement times, excluded non-Indian stations, and separated NO2/SO2 history from PM2.5.
 - Corrected Open-Meteo wind units, current/hourly field handling, and boundary-layer-height selection. Live weather retrieval succeeded for Punjab and Delhi.
 - Replaced Earth Engine with the keyless Open-Meteo CAMS global air-quality endpoint for AOD, surface NO₂, PM2.5, dust, SO₂, and ozone. The implementation preserves the scientific distinction between AOD and Sentinel-5P AAI.
 - Removed fabricated federated convergence curves. Returned scores now come from trained models and independent local-only baselines evaluated on the same synthetic corridor test set.
@@ -73,7 +73,7 @@ Measured on this machine with the dedicated test PostGIS database and an ASGI co
 
 ## Boundaries of verification
 
-Additional backend-only work on 7 September: 100 unit/regression tests and the dedicated real PostGIS test pass. Live-provider verification rejects fallback/stale data and reports missing credentials; fresh weather passed for both regions. Read-only verification covers HTTP readiness, required routes, and all four WebSocket channels. The plume model no longer substitutes invented fire power, missing weather, or a minimum pollution floor; tests cover physical behavior and invalid inputs. Deployment documentation is retained for future use and is outside the current local-only scope.
+The 102-test unit/regression suite and the dedicated real PostGIS test pass. Live-provider verification rejects fallback, stale, foreign-corridor data and reports missing credentials; fresh weather passed for both regions. Read-only verification covers HTTP readiness, required routes, and all four WebSocket channels. The plume model no longer substitutes invented fire power, missing weather, or a minimum pollution floor; tests cover physical behavior and invalid inputs. Deployment documentation is retained for future use and is outside the current local-only scope.
 
 - NASA FIRMS and OpenAQ keys are configured locally. Open-Meteo weather and CAMS air quality require no key. Historical demo data is explicitly identified and disabled in the current local configuration.
 - This is a single-server backend. Multiple API workers/replicas require shared rate limiting, scheduling, and WebSocket messaging. Celery/Redis and remote deployment were not added.

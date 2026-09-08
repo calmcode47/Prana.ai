@@ -109,7 +109,12 @@ app.add_middleware(UploadLimitMiddleware)
 
 # CORS Policy Configuration (SEC-004)
 # Origins strictly loaded from environment variable, never hardcoded
-cors_env = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000")
+cors_env = os.getenv(
+    "CORS_ORIGINS",
+    "http://localhost:3000,http://localhost:5173,http://localhost:8000,http://localhost:8081,"
+    "http://localhost:19006,http://127.0.0.1:5173,http://127.0.0.1:8000,"
+    "http://127.0.0.1:8081,http://127.0.0.1:19006",
+)
 allowed_origins = [origin.strip() for origin in cors_env.split(",") if origin.strip()]
 
 app.add_middleware(
