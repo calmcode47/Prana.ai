@@ -14,12 +14,25 @@ export async function writeApiCache<T>(requestKey: string, value: T): Promise<vo
   await AsyncStorage.setItem(keyFor(requestKey), JSON.stringify(envelope));
 }
 
-export async function readApiCache<T>(requestKey: string): Promise<T | null> {
+export const DEFAULT_CACHE_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
+
+export async function readApiCache<T>(
+  requestKey: string,
+  maxAgeMs: number = DEFAULT_CACHE_MAX_AGE_MS
+): Promise<T | null> {
   const serialized = await AsyncStorage.getItem(keyFor(requestKey));
   if (!serialized) return null;
   try {
     const envelope = JSON.parse(serialized) as CacheEnvelope<T>;
-    return envelope?.value ?? null;
+    if (!envelope || envelope.value === undefined) return null;
+
+    if (envelope.savedAt && maxAgeMs > 0) {
+      const ageMs = Date.now() - new Date(envelope.savedAt).getTime();
+      if (ageMs > maxAgeMs) {
+        return null;
+      }
+    }
+    return envelope.value ?? null;
   } catch {
     await AsyncStorage.removeItem(keyFor(requestKey));
     return null;

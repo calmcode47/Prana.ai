@@ -61,6 +61,38 @@ const PRESETS: Record<PresetKey, PresetInfo> = {
   },
 };
 
+export function base64ToUint8Array(base64: string): Uint8Array {
+  const raw = base64.includes(',') ? base64.split(',')[1] : base64;
+  if (typeof atob === 'function') {
+    const binary = atob(raw);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const lookup = new Uint8Array(256);
+  for (let i = 0; i < chars.length; i++) lookup[chars.charCodeAt(i)] = i;
+  let bufferLength = raw.length * 0.75;
+  if (raw[raw.length - 1] === '=') {
+    bufferLength--;
+    if (raw[raw.length - 2] === '=') bufferLength--;
+  }
+  const bytes = new Uint8Array(bufferLength);
+  let p = 0;
+  for (let i = 0; i < raw.length; i += 4) {
+    const encoded1 = lookup[raw.charCodeAt(i)];
+    const encoded2 = lookup[raw.charCodeAt(i + 1)];
+    const encoded3 = lookup[raw.charCodeAt(i + 2)];
+    const encoded4 = lookup[raw.charCodeAt(i + 3)];
+    bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
+    if (encoded3 !== 64 && p < bufferLength) bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
+    if (encoded4 !== 64 && p < bufferLength) bytes[p++] = ((encoded3 & 3) << 6) | (encoded4 & 63);
+  }
+  return bytes;
+}
+
 export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onClose }) => {
   const [selectedPreset, setSelectedPreset] = useState<PresetKey>('smog');
   const [latitude, setLatitude] = useState<string>('28.6472');
@@ -69,6 +101,7 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
   const [isInferring, setIsInferring] = useState<boolean>(false);
   const [hasResult, setHasResult] = useState<boolean>(false);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [photoMimeType, setPhotoMimeType] = useState<string>('image/jpeg');
   const [reportSubmitted, setReportSubmitted] = useState<boolean>(false);
 
@@ -122,6 +155,7 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
     setLongitude(p.lon);
     setLocationStatus('Saved observation coordinates');
     setPhotoUri(null);
+    setPhotoBase64(null);
     setHasResult(false);
     setReportSubmitted(false);
     setAnalysisError(null);
@@ -129,6 +163,7 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
 
   const usePickedAsset = (asset: ImagePicker.ImagePickerAsset) => {
     setPhotoUri(asset.uri);
+    setPhotoBase64(asset.base64 ?? null);
     setPhotoMimeType(asset.mimeType === 'image/png' ? 'image/png' : 'image/jpeg');
     setHasResult(false);
     setReportSubmitted(false);
@@ -141,12 +176,20 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
       setAnalysisError('Camera permission is required to capture a sky photo.');
       return;
     }
-    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.85 });
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      quality: 0.85,
+      base64: true,
+    });
     if (!result.canceled && result.assets[0]) usePickedAsset(result.assets[0]);
   };
 
   const handleChoosePhoto = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.85,
+      base64: true,
+    });
     if (!result.canceled && result.assets[0]) usePickedAsset(result.assets[0]);
   };
 
@@ -173,13 +216,66 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
     setAnalysisError(null);
 
     try {
+      const filename = photoMimeType === 'image/png' ? 'sky_photo.png' : 'sky_photo.jpg';
       const formData = new FormData();
-      if (Platform.OS === 'web') {
-        const blob = await fetch(photoUri).then((response) => response.blob());
-        formData.append('photo', blob, photoMimeType === 'image/png' ? 'sky_photo.png' : 'sky_photo.jpg');
-      } else {
-        formData.append('photo', { uri: photoUri, name: photoMimeType === 'image/png' ? 'sky_photo.png' : 'sky_photo.jpg', type: photoMimeType } as any);
+      let attached = false;
+
+      // 1. If in-memory base64 is available, create binary bytes part supported by Expo WinterCG fetch
+      if (photoBase64) {
+        try {
+          const bytes = base64ToUint8Array(photoBase64);
+          formData.append(
+            'photo',
+            {
+              name: filename,
+              type: photoMimeType,
+              bytes: async () => bytes,
+            } as any,
+            filename
+          );
+          attached = true;
+        } catch {
+          // Fall through to other approaches
+        }
       }
+
+      // 2. If not attached yet, attempt to read Blob or ArrayBuffer via fetch(photoUri)
+      if (!attached && photoUri) {
+        try {
+          const resp = await fetch(photoUri);
+          if (typeof resp.blob === 'function') {
+            const blob = await resp.blob();
+            formData.append('photo', blob, filename);
+            attached = true;
+          } else if (typeof resp.arrayBuffer === 'function') {
+            const buf = await resp.arrayBuffer();
+            const bytes = new Uint8Array(buf);
+            formData.append(
+              'photo',
+              {
+                name: filename,
+                type: photoMimeType,
+                bytes: async () => bytes,
+              } as any,
+              filename
+            );
+            attached = true;
+          }
+        } catch {
+          // Fall through to native URI object
+        }
+      }
+
+      // 3. Fallback: native React Native { uri, name, type } object
+      // (client.uploadCitizenSkyPhoto will route this to XMLHttpRequest if fetch throws)
+      if (!attached && photoUri) {
+        formData.append('photo', {
+          uri: photoUri,
+          name: filename,
+          type: photoMimeType,
+        } as any);
+      }
+
       formData.append('latitude', latitude);
       formData.append('longitude', longitude);
 
@@ -211,7 +307,12 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           {onClose && (
-            <Pressable onPress={onClose} style={styles.closeBtn}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Close Sky Haze Scanner"
+              onPress={onClose}
+              style={styles.closeBtn}
+            >
               <MaterialCommunityIcons name="close" size={20} color={Colors.inkBlack} />
             </Pressable>
           )}
@@ -270,6 +371,8 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
               return (
                 <Pressable
                   key={key}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${p.name} calibration preset`}
                   onPress={() => handleSelectPreset(key)}
                   style={[
                     styles.presetButton,
@@ -361,6 +464,8 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
           {/* Shutter & Sample Optic Toolbar */}
           <View style={styles.captureToolbar}>
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={photoUri ? 'Retake sky photo frame' : 'Capture sky photo with camera'}
               onPress={handleCapturePhoto}
               style={styles.shutterBtn}
             >
@@ -373,6 +478,8 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
             </Pressable>
 
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Choose sky photo from gallery"
               onPress={handleChoosePhoto}
               style={styles.sampleOpticBtn}
             >
@@ -413,7 +520,12 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
               />
             </View>
           </View>
-          <Pressable onPress={() => applyDeviceLocation(true)} style={styles.gpsButton}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Use current device GPS location"
+            onPress={() => applyDeviceLocation(true)}
+            style={styles.gpsButton}
+          >
             <MaterialCommunityIcons name="crosshairs-gps" size={15} color={Colors.canvasCream} />
             <Text style={styles.gpsButtonText}>{isLocating ? 'Getting Device Location…' : 'Use Device GPS'}</Text>
             <Text style={styles.gpsStatusText}>{locationStatus}</Text>

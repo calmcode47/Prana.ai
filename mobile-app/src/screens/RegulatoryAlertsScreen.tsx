@@ -7,6 +7,7 @@ import {
   Pressable,
   Linking,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors } from '../theme/tokens';
@@ -53,6 +54,23 @@ export const RegulatoryAlertsScreen: React.FC = () => {
   const [bulletinBody, setBulletinBody] = useState<string>('The backend has not returned a bulletin yet.');
 
   const [refreshing, setRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchBulletin = useCallback(async (lang: 'en' | 'hi' | 'pa') => {
+    try {
+      const res = await fetchLatestAlert(lang);
+      if (res?.title && res?.body) {
+        setBulletinHeading(res.title);
+        setBulletinBody(res.body);
+      } else {
+        setBulletinHeading('No alert issued in the last 24 hours');
+        setBulletinBody('There is no current multilingual regulatory bulletin from the backend.');
+      }
+    } catch (error) {
+      setBulletinHeading('Bulletin unavailable');
+      setBulletinBody(error instanceof Error ? error.message : 'The backend could not be reached.');
+    }
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -73,6 +91,8 @@ export const RegulatoryAlertsScreen: React.FC = () => {
       }
     } catch (err: unknown) {
       console.warn('[RegulatoryAlerts] loadData:', err instanceof Error ? err.message : err);
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
@@ -80,36 +100,18 @@ export const RegulatoryAlertsScreen: React.FC = () => {
     setRefreshing(true);
     await Promise.allSettled([
       loadData(),
-      fetchLatestAlert(selectedLang).then((res) => {
-        if (res?.title && res?.body) {
-          setBulletinHeading(res.title);
-          setBulletinBody(res.body);
-        }
-      }),
+      fetchBulletin(selectedLang),
     ]);
     setRefreshing(false);
-  }, [loadData, selectedLang]);
+  }, [loadData, fetchBulletin, selectedLang]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
   useEffect(() => {
-    fetchLatestAlert(selectedLang)
-      .then((res) => {
-        if (res?.title && res?.body) {
-          setBulletinHeading(res.title);
-          setBulletinBody(res.body);
-        } else {
-          setBulletinHeading('No alert issued in the last 24 hours');
-          setBulletinBody('There is no current multilingual regulatory bulletin from the backend.');
-        }
-      })
-      .catch((error) => {
-        setBulletinHeading('Bulletin unavailable');
-        setBulletinBody(error instanceof Error ? error.message : 'The backend could not be reached.');
-      });
-  }, [selectedLang]);
+    fetchBulletin(selectedLang);
+  }, [fetchBulletin, selectedLang]);
 
   const handleDraftNotice = async (incidentId: string) => {
     if (isDrafting) return;
@@ -199,6 +201,14 @@ export const RegulatoryAlertsScreen: React.FC = () => {
         </View>
         <StarburstBadge label="SPCB ENFORCEMENT" rotation="3deg" shadowColor={Colors.coralWatermelon} />
       </View>
+
+      {/* Initial Loading Indicator */}
+      {isLoading && (
+        <View style={styles.loadingBanner}>
+          <ActivityIndicator size="small" color={Colors.terracottaDeep} />
+          <Text style={styles.loadingBannerText}>Fetching regulatory alerts and CEMS telemetry…</Text>
+        </View>
+      )}
 
       <ScrollView
         style={styles.scroll}
@@ -571,6 +581,25 @@ export const RegulatoryAlertsScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  loadingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surfaceVanilla,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: Colors.inkBlack,
+    padding: 9,
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  loadingBannerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.inkBlack,
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.canvasCream,

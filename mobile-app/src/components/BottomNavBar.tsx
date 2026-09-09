@@ -27,6 +27,9 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab, onSelectT
           return (
             <Pressable
               key={tab.key}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={`${tab.label} tab`}
               onPress={() => onSelectTab(tab.key)}
               style={({ pressed }) => [
                 styles.tabItem,

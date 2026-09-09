@@ -10,17 +10,17 @@ import { Colors } from '../theme/tokens';
 import { readApiCache, writeApiCache } from './cache';
 
 // Resolve host IP dynamically for Expo Go, iOS Simulator, Android Emulator, and Web
-function getApiBaseUrl(): string {
+export function getApiBaseUrl(): string {
   // 1. Explicitly configured URL from environment variable takes highest priority
   const configuredUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/$/, '');
   if (configuredUrl) return configuredUrl;
 
-  // 2. Web browser: Always use localhost or window-injected URL directly
+  // 2. Web browser: Always use 0.0.0.0:8000 or window-injected URL directly
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined' && (window as any).PRANA_API_URL) {
       return (window as any).PRANA_API_URL;
     }
-    return 'http://127.0.0.1:8000';
+    return 'http://0.0.0.0:8000';
   }
 
   // 3. Inspect Expo hostUri (e.g. "192.168.1.7:8081" vs "xyz.ngrok-free.app" or "xxx.exp.direct")
@@ -41,7 +41,7 @@ function getApiBaseUrl(): string {
     }
 
     // On the local network the backend is directly available on port 8000.
-    if (host && isIpv4 && !isTunnelHost && host !== 'localhost' && host !== '127.0.0.1') {
+    if (host && isIpv4 && !isTunnelHost && host !== 'localhost' && host !== '127.0.0.1' && host !== '0.0.0.0') {
       return `http://${host}:8000`;
     }
   }
@@ -50,7 +50,7 @@ function getApiBaseUrl(): string {
   if (Platform.OS === 'android') {
     return 'http://10.0.2.2:8000';
   }
-  return 'http://127.0.0.1:8000';
+  return 'http://0.0.0.0:8000';
 }
 
 export const API_BASE = getApiBaseUrl();
@@ -70,8 +70,11 @@ export function computeCpcbAqi(pm25: number): number {
   if (pm25 === null || pm25 === undefined || pm25 < 0 || isNaN(pm25)) return 0;
   if (!isFinite(pm25)) return 500;
   if (pm25 <= 30.0) return Math.round((50.0 / 30.0) * pm25);
+  // India CPCB boundary coverage for fractional concentrations between 30.0 and 31.0
+  if (pm25 < 31.0) return 51;
 
   for (const b of PM25_BREAKPOINTS) {
+    if (b.cLo === 0.0) continue;
     if (pm25 <= b.cHi) {
       return Math.max(b.iLo, Math.round(((b.iHi - b.iLo) / (b.cHi - b.cLo)) * (pm25 - b.cLo) + b.iLo));
     }
@@ -443,10 +446,11 @@ async function requestJson<T>(
   const timeoutId = setTimeout(() => controller.abort(), settings.timeoutMs ?? 8000);
   const method = (options?.method ?? 'GET').toUpperCase();
   const canUseCache = method === 'GET' && settings.cache !== false;
-  const cacheKey = `${API_BASE}${path}`;
+  const baseUrl = getApiBaseUrl();
+  const cacheKey = `${baseUrl}${path}`;
 
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await fetch(`${baseUrl}${path}`, {
       ...options,
       signal: controller.signal,
     });
@@ -544,12 +548,46 @@ export async function triggerFederatedRun(rounds: number = 10): Promise<FLStatus
   });
 }
 
+function uploadViaXHR(
+  url: string,
+  formData: FormData,
+  timeoutMs: number = 25000
+): Promise<CitizenPhotoResponse> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.timeout = timeoutMs;
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const json = JSON.parse(xhr.responseText);
+          resolve(json);
+        } catch {
+          reject(new Error('Invalid JSON response from server'));
+        }
+      } else {
+        let detail = `${xhr.status} ${xhr.statusText || 'Error'}`;
+        try {
+          const json = JSON.parse(xhr.responseText);
+          detail = json.detail || detail;
+        } catch {}
+        reject(new Error(detail));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Network error during photo upload'));
+    xhr.ontimeout = () => reject(new Error('Photo upload timed out'));
+    xhr.send(formData);
+  });
+}
+
 export async function uploadCitizenSkyPhoto(formData: FormData): Promise<CitizenPhotoResponse> {
+  const baseUrl = getApiBaseUrl();
+  const targetUrl = `${baseUrl}/api/v1/citizen/photo`;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
 
   try {
-    const res = await fetch(`${API_BASE}/api/v1/citizen/photo`, {
+    const res = await fetch(targetUrl, {
       method: 'POST',
       body: formData,
       signal: controller.signal,
@@ -563,6 +601,20 @@ export async function uploadCitizenSkyPhoto(formData: FormData): Promise<Citizen
       throw new Error(detail);
     }
     return (await res.json()) as CitizenPhotoResponse;
+  } catch (err: any) {
+    // If fetch failed due to Expo Winter runtime's "Unsupported FormDataPart implementation"
+    // or native file URI in FormData, fallback to XMLHttpRequest which streams { uri, name, type }
+    // directly via native iOS RCTNetworking / Android OkHttp.
+    const isUnsupportedPart =
+      typeof err?.message === 'string' &&
+      (err.message.includes('FormDataPart') ||
+        err.message.includes('FormData implementation') ||
+        err.message.includes('Unsupported'));
+
+    if (isUnsupportedPart && typeof XMLHttpRequest !== 'undefined') {
+      return uploadViaXHR(targetUrl, formData, 25000);
+    }
+    throw err;
   } finally {
     clearTimeout(timeoutId);
   }
@@ -696,24 +748,24 @@ export async function registerMobilePushToken(payload: {
 
 /** Returns the URL to stream a draft notice PDF; open with Linking.openURL. */
 export function getNoticePdfUrl(noticeId: string): string {
-  return `${API_BASE}/api/v1/legal/notices/${encodeURIComponent(noticeId)}/document.pdf`;
+  return `${getApiBaseUrl()}/api/v1/legal/notices/${encodeURIComponent(noticeId)}/document.pdf`;
 }
 
 /** Returns the URL to stream an evidence-certificate draft PDF. */
 export function getEvidenceCertUrl(noticeId: string): string {
-  return `${API_BASE}/api/v1/legal/notices/${encodeURIComponent(noticeId)}/evidence-certificate.pdf`;
+  return `${getApiBaseUrl()}/api/v1/legal/notices/${encodeURIComponent(noticeId)}/evidence-certificate.pdf`;
 }
 
 /** Returns the URL to download a full evidence dossier ZIP for an incident. */
 export function getDossierZipUrl(incidentId: string): string {
-  return `${API_BASE}/api/v1/legal/dossiers/${encodeURIComponent(incidentId)}.zip`;
+  return `${getApiBaseUrl()}/api/v1/legal/dossiers/${encodeURIComponent(incidentId)}.zip`;
 }
 
 // ── Briefing RSS feed ─────────────────────────────────────────────────────────
 
 /** Returns the full URL of the atmospheric briefing RSS feed. */
 export function getBriefingFeedUrl(): string {
-  return `${API_BASE}/api/v1/briefings/feed.xml`;
+  return `${getApiBaseUrl()}/api/v1/briefings/feed.xml`;
 }
 
 // ── WebSocket connection helper ───────────────────────────────────────────────
@@ -755,7 +807,7 @@ export function connectWebSocket(
   onError?: (event: Event) => void,
 ): WebSocket {
   // Convert http(s) → ws(s) for any configured base URL
-  const wsBase = API_BASE.replace(/^http/, 'ws');
+  const wsBase = getApiBaseUrl().replace(/^http/, 'ws');
   const ws = new WebSocket(`${wsBase}/ws/${cityId}`);
 
   ws.onmessage = (event) => {

@@ -4,7 +4,7 @@ const { spawn } = require('child_process');
 
 const mobileRoot = path.resolve(__dirname, '..');
 const projectRoot = path.resolve(mobileRoot, '..');
-const backendHealth = 'http://127.0.0.1:8000/health';
+const backendHealth = 'http://0.0.0.0:8000/health';
 let backendProcess = null;
 let expoProcess = null;
 let closing = false;
@@ -16,7 +16,12 @@ async function backendIsReady() {
     const response = await fetch(backendHealth, { signal: AbortSignal.timeout(1500) });
     return response.ok;
   } catch {
-    return false;
+    try {
+      const fallback = await fetch('http://127.0.0.1:8000/health', { signal: AbortSignal.timeout(1500) });
+      return fallback.ok;
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -31,7 +36,7 @@ async function ensureBackend() {
   backendProcess = spawn(python, ['-m', 'backend.scripts.serve'], {
     cwd: projectRoot,
     stdio: 'inherit',
-    env: { ...process.env, HOST: '127.0.0.1', PORT: '8000' },
+    env: { ...process.env, HOST: '0.0.0.0', PORT: '8000' },
   });
   for (let attempt = 0; attempt < 30; attempt += 1) {
     if (await backendIsReady()) return;

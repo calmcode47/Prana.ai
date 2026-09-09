@@ -23,11 +23,6 @@ export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
   const isPlaying = playbackStatus.playing;
 
   useEffect(() => {
-    setAudioModeAsync({
-      playsInSilentMode: true,
-      shouldPlayInBackground: true,
-      interruptionMode: 'doNotMix',
-    }).catch(() => {});
     fetchLatestBriefing()
       .then((res) => {
         if (res && res.script) {
@@ -137,6 +132,8 @@ export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
       <View style={styles.shadowLayer} />
 
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Open atmospheric briefing details"
         onPress={() => setShowBriefingModal(true)}
         style={styles.container}
       >
@@ -170,6 +167,8 @@ export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
 
           {/* Chunky black Play/Pause button */}
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={isPlaying ? 'Pause briefing audio' : 'Play atmospheric briefing audio'}
             onPress={handleAudioPress}
             style={({ pressed }) => [
               styles.playButton,
@@ -199,7 +198,12 @@ export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
                 <MaterialCommunityIcons name="broadcast" size={20} color={Colors.terracottaDeep} />
                 <Text style={styles.modalTitle}>PRANA Atmospheric Briefing</Text>
               </View>
-              <Pressable onPress={() => setShowBriefingModal(false)} style={styles.modalCloseBtn}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close briefing modal"
+                onPress={() => setShowBriefingModal(false)}
+                style={styles.modalCloseBtn}
+              >
                 <MaterialCommunityIcons name="close" size={18} color={Colors.inkBlack} />
               </Pressable>
             </View>
@@ -216,11 +220,21 @@ export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
               </View>
               <View style={styles.modalFooterActions}>
                 {/* RSS Feed share button */}
-                <Pressable onPress={handleRssFeedPress} style={styles.rssFeedBtn}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Open RSS feed"
+                  onPress={handleRssFeedPress}
+                  style={styles.rssFeedBtn}
+                >
                   <MaterialCommunityIcons name="rss" size={14} color={Colors.inkBlack} />
                   <Text style={styles.rssFeedBtnText}>RSS</Text>
                 </Pressable>
-                <Pressable onPress={() => setShowBriefingModal(false)} style={styles.modalDismissBtn}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Close briefing dialog"
+                  onPress={() => setShowBriefingModal(false)}
+                  style={styles.modalDismissBtn}
+                >
                   <Text style={styles.modalDismissText}>Close</Text>
                 </Pressable>
               </View>

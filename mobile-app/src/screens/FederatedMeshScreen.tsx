@@ -7,6 +7,7 @@ import {
   Pressable,
   DimensionValue,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import Svg, { Path, Circle, Line, Text as SvgText, G } from 'react-native-svg';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -35,6 +36,7 @@ export const FederatedMeshScreen: React.FC = () => {
   const [statusData, setStatusData] = useState<FLStatusResponse | null>(null);
   const [runFeedback, setRunFeedback] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   const isMounted = useRef(true);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -67,6 +69,8 @@ export const FederatedMeshScreen: React.FC = () => {
       if (isMounted.current) {
         setRunFeedback(`Status unavailable: ${error instanceof Error ? error.message : 'backend error'}`);
       }
+    } finally {
+      if (isMounted.current) setIsLoading(false);
     }
   }, []);
 
@@ -153,6 +157,14 @@ export const FederatedMeshScreen: React.FC = () => {
         </View>
         <StarburstBadge label="FEDAVG MESH" rotation="-3deg" shadowColor={Colors.forestJade} />
       </View>
+
+      {/* Initial Loading Indicator */}
+      {isLoading && (
+        <View style={styles.loadingBanner}>
+          <ActivityIndicator size="small" color={Colors.terracottaDeep} />
+          <Text style={styles.loadingBannerText}>Fetching federated learning mesh status…</Text>
+        </View>
+      )}
 
       <ScrollView
         style={styles.scroll}
@@ -475,6 +487,25 @@ export const FederatedMeshScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  loadingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surfaceVanilla,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: Colors.inkBlack,
+    padding: 9,
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  loadingBannerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.inkBlack,
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.canvasCream,

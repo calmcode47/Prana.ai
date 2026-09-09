@@ -23,13 +23,13 @@ config.server.enhanceMiddleware = (middleware, metroServer) => {
     const backendPath = requestUrl.slice('/prana-api'.length) || '/';
     const headers = {
       ...request.headers,
-      host: request.headers.host || '127.0.0.1:8000',
+      host: request.headers.host || '0.0.0.0:8000',
       'x-forwarded-prefix': '/prana-api',
       'x-forwarded-proto': request.headers['x-forwarded-proto'] || 'https',
     };
     const proxyRequest = http.request({
-      hostname: '127.0.0.1',
-      port: 8000,
+      hostname: process.env.PRANA_BACKEND_HOST || '0.0.0.0',
+      port: Number(process.env.PRANA_BACKEND_PORT) || 8000,
       method: request.method,
       path: backendPath,
       headers,

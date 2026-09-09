@@ -42,8 +42,12 @@ export function useWebSocket(cityId: CityId): UseWebSocketResult {
     if (!isMounted.current) return;
 
     if (wsRef.current) {
+      wsRef.current.onopen = null;
+      wsRef.current.onmessage = null;
+      wsRef.current.onerror = null;
       wsRef.current.onclose = null;
       wsRef.current.close();
+      wsRef.current = null;
     }
 
     const ws = connectWebSocket(
@@ -79,11 +83,12 @@ export function useWebSocket(cityId: CityId): UseWebSocketResult {
       }
       if (!isMounted.current) return;
       setIsConnected(false);
+      const attempt = Math.min(reconnectAttempt.current, 10);
       const delay = Math.min(
-        BASE_RECONNECT_DELAY_MS * 2 ** reconnectAttempt.current,
+        BASE_RECONNECT_DELAY_MS * 2 ** attempt,
         MAX_RECONNECT_DELAY_MS,
       );
-      reconnectAttempt.current += 1;
+      reconnectAttempt.current = Math.min(reconnectAttempt.current + 1, 15);
       reconnectTimer.current = setTimeout(open, delay);
     };
 
@@ -98,8 +103,12 @@ export function useWebSocket(cityId: CityId): UseWebSocketResult {
       isMounted.current = false;
       clearReconnectTimer();
       if (wsRef.current) {
+        wsRef.current.onopen = null;
+        wsRef.current.onmessage = null;
+        wsRef.current.onerror = null;
         wsRef.current.onclose = null;
         wsRef.current.close();
+        wsRef.current = null;
       }
     };
   }, [open]);

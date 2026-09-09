@@ -7,6 +7,8 @@ import {
   TextInput,
   Pressable,
   RefreshControl,
+  ActivityIndicator,
+  DimensionValue,
 } from 'react-native';
 import Svg, { Path, Ellipse, Circle, G, Line, Rect, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -146,6 +148,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
   const [lagData, setLagData] = useState<FireAqiLagResponse | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   const loadData = useCallback(async () => {
     try {
@@ -168,6 +171,8 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
       if (sensorsRes.status === 'fulfilled') setSensorCount(sensorsRes.value['@iot.count']);
     } catch (err: unknown) {
       console.warn('[Dashboard] loadData:', err instanceof Error ? err.message : err);
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
@@ -288,12 +293,21 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
   const handleQuickDispatch = async () => {
     try {
       const incident = await createCurrentIncident();
+      let targetRef = 'PPCB Flying Squad Command, Dirba Sector';
+      let feedback = '⚡ Flying squad dispatched to Dirba sector';
+      if (selectedCorridorNode === 'transit_02') {
+        targetRef = 'HSPCB Highway Enforcement Unit, Panipat Gateway';
+        feedback = '⚡ Enforcement unit dispatched to Panipat corridor';
+      } else if (selectedCorridorNode === 'delhi_09') {
+        targetRef = 'DPCC Rapid Response Team, Anand Vihar Basin';
+        feedback = '⚡ Rapid response team dispatched to Anand Vihar';
+      }
       await queueLegalDispatch({
         incident_id: incident.incident_id,
         recipient_kind: 'flying_squad',
-        recipient_reference: 'PPCB Flying Squad Command, Dirba Sector',
+        recipient_reference: targetRef,
       });
-      setActionFeedback('⚡ Flying squad dispatched to Dirba sector');
+      setActionFeedback(feedback);
       setTimeout(() => setActionFeedback(null), 3000);
     } catch (error) {
       setActionFeedback(`Dispatch failed: ${error instanceof Error ? error.message : 'backend unavailable'}`);
@@ -304,10 +318,19 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
   const handleQuickNotice = async () => {
     try {
       const incident = await createCurrentIncident();
+      let issuingAuthority = 'Punjab Pollution Control Board (PPCB)';
+      let direction = 'Verify crop residue burning fires and enforce zero-emission compliance under Air Act Section 31A.';
+      if (selectedCorridorNode === 'transit_02') {
+        issuingAuthority = 'Haryana State Pollution Control Board (HSPCB)';
+        direction = 'Inspect NH-44 corridor transport emissions and mandate dust control under Air Act Section 31A.';
+      } else if (selectedCorridorNode === 'delhi_09') {
+        issuingAuthority = 'Delhi Pollution Control Committee (DPCC)';
+        direction = 'Review CEMS industrial stack discharge and mandate immediate scrubber activation under Air Act Section 31A.';
+      }
       const res = await createLegalNotice({
         incident_id: incident.incident_id,
-        issuing_authority: 'Delhi Pollution Control Committee (DPCC)',
-        requested_direction: 'Review CEMS industrial stack discharge and mandate immediate scrubber activation.',
+        issuing_authority: issuingAuthority,
+        requested_direction: direction,
       });
       setActionFeedback(`Notice ${res.notice_id.slice(0, 16)} ${formatBackendStatus(res.status)}`);
       setTimeout(() => setActionFeedback(null), 3000);
@@ -343,6 +366,14 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
           </View>
         </View>
       </View>
+
+      {/* Initial Loading Indicator */}
+      {isLoading && (
+        <View style={styles.loadingBanner}>
+          <ActivityIndicator size="small" color={Colors.terracottaDeep} />
+          <Text style={styles.loadingBannerText}>Fetching multi-node airshed telemetry…</Text>
+        </View>
+      )}
 
       <ScrollView
         style={styles.scroll}
@@ -442,7 +473,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
               <View style={styles.nodeLiveDot} />
               <View>
                 <View style={styles.nodeTitleFlexRow}>
-                  <Text style={styles.nodeTitleText}>{nodeData.id}</Text>
+                  <Text style={styles.nodeTitleText}>{nodeData.name}</Text>
                   <View style={styles.nodeIdBadge}>
                     <Text style={styles.nodeIdBadgeText}>{nodeData.id}</Text>
                   </View>
@@ -629,7 +660,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
                     style={[
                       styles.biomassFill,
                       {
-                        width: `${Math.min(100, r.frp_share_percent ?? 0)}%` as any,
+                        width: `${Math.min(100, r.frp_share_percent ?? 0)}%` as DimensionValue,
                         backgroundColor: r.region === 'Punjab' ? Colors.terracottaDeep : Colors.coralWatermelonVivid,
                       },
                     ]}
@@ -757,6 +788,25 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
 };
 
 const styles = StyleSheet.create({
+  loadingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surfaceVanilla,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: Colors.inkBlack,
+    padding: 9,
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  loadingBannerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.inkBlack,
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.canvasCream,

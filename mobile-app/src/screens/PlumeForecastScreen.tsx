@@ -6,6 +6,8 @@ import {
   ScrollView,
   Pressable,
   RefreshControl,
+  ActivityIndicator,
+  DimensionValue,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors } from '../theme/tokens';
@@ -40,18 +42,17 @@ export const PlumeForecastScreen: React.FC = () => {
   const [lagData, setLagData] = useState<FireAqiLagResponse | null>(null);
   const [biomassData, setBiomassData] = useState<BiomassEmissionsResponse | null>(null);
 
-  // Auto-play timer when playing
+  // Auto-play timer when playing (safe guard to prevent clearInterval(undefined))
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-    if (isPlaying) {
-      interval = setInterval(() => {
-        setCurrentHour((prev) => (prev >= 72 ? 0 : prev + 2));
-      }, 350);
-    }
+    if (!isPlaying) return;
+    const interval = setInterval(() => {
+      setCurrentHour((prev) => (prev >= 72 ? 0 : prev + 2));
+    }, 350);
     return () => clearInterval(interval);
   }, [isPlaying]);
 
   const [refreshing, setRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   const loadData = useCallback(async () => {
     try {
@@ -70,6 +71,8 @@ export const PlumeForecastScreen: React.FC = () => {
       if (biomassRes.status === 'fulfilled') setBiomassData(biomassRes.value);
     } catch (err: unknown) {
       console.warn('[PlumeForecast] loadData:', err instanceof Error ? err.message : err);
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
@@ -147,6 +150,14 @@ export const PlumeForecastScreen: React.FC = () => {
         </View>
         <StarburstBadge label={activeFeature ? `T+${activeFeature.properties.horizon_hours}H MODEL` : 'DATA PENDING'} rotation="-2deg" shadowColor={Colors.coralWatermelon} />
       </View>
+
+      {/* Initial Loading Indicator */}
+      {isLoading && (
+        <View style={styles.loadingBanner}>
+          <ActivityIndicator size="small" color={Colors.terracottaDeep} />
+          <Text style={styles.loadingBannerText}>Fetching 72h plume dispersion models…</Text>
+        </View>
+      )}
 
       <ScrollView
         style={styles.scroll}
@@ -268,13 +279,25 @@ export const PlumeForecastScreen: React.FC = () => {
 
               {/* Timeline Milestones */}
               <View style={styles.milestoneLabels}>
-                <Pressable onPress={() => setCurrentHour(0)}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Jump to hour 0"
+                  onPress={() => setCurrentHour(0)}
+                >
                   <Text style={[styles.milestoneText, currentHour < 15 && styles.milestoneActive]}>Selection (0h)</Text>
                 </Pressable>
-                <Pressable onPress={() => setCurrentHour(38)}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Jump to hour 38"
+                  onPress={() => setCurrentHour(38)}
+                >
                   <Text style={[styles.milestoneText, currentHour >= 15 && currentHour < 55 && styles.milestoneActive]}>Model midpoints</Text>
                 </Pressable>
-                <Pressable onPress={() => setCurrentHour(72)}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Jump to hour 72"
+                  onPress={() => setCurrentHour(72)}
+                >
                   <Text style={[styles.milestoneText, currentHour >= 55 && styles.milestoneActive]}>72h horizon</Text>
                 </Pressable>
               </View>
@@ -282,6 +305,8 @@ export const PlumeForecastScreen: React.FC = () => {
               {/* Play / Pause Toggle Button */}
               <View style={styles.playBar}>
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={isPlaying ? 'Pause 72h simulation' : 'Play 72h timeline simulation'}
                   onPress={() => setIsPlaying(!isPlaying)}
                   style={styles.playButton}
                 >
@@ -294,6 +319,8 @@ export const PlumeForecastScreen: React.FC = () => {
                 </Pressable>
 
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Reset timeline to hour 0"
                   onPress={() => setCurrentHour(0)}
                   style={styles.resetButton}
                 >
@@ -337,7 +364,7 @@ export const PlumeForecastScreen: React.FC = () => {
                       style={[
                         styles.wardBarFill,
                         {
-                          width: `${barPercent}%` as any,
+                          width: `${barPercent}%` as DimensionValue,
                           backgroundColor:
                             p.aqi_index > 400
                               ? Colors.aqiHazardous
@@ -437,6 +464,25 @@ export const PlumeForecastScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  loadingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surfaceVanilla,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: Colors.inkBlack,
+    padding: 9,
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  loadingBannerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.inkBlack,
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.canvasCream,
