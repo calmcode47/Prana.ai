@@ -39,3 +39,30 @@ export async function readApiCache<T>(
     return null;
   }
 }
+
+export interface CachedDataResult<T> {
+  value: T | null;
+  isStale: boolean;
+  savedAt: Date | null;
+}
+
+export async function readApiCacheWithMetadata<T>(
+  requestKey: string,
+  maxAgeMs: number = DEFAULT_CACHE_MAX_AGE_MS
+): Promise<CachedDataResult<T>> {
+  const serialized = await AsyncStorage.getItem(keyFor(requestKey));
+  if (!serialized) return { value: null, isStale: true, savedAt: null };
+  try {
+    const envelope = JSON.parse(serialized) as CacheEnvelope<T>;
+    if (!envelope || envelope.value === undefined) {
+      return { value: null, isStale: true, savedAt: null };
+    }
+    const savedAtDate = envelope.savedAt ? new Date(envelope.savedAt) : null;
+    const ageMs = savedAtDate ? Date.now() - savedAtDate.getTime() : Infinity;
+    const isStale = maxAgeMs > 0 && ageMs > maxAgeMs;
+    return { value: envelope.value ?? null, isStale, savedAt: savedAtDate };
+  } catch {
+    await AsyncStorage.removeItem(keyFor(requestKey));
+    return { value: null, isStale: true, savedAt: null };
+  }
+}

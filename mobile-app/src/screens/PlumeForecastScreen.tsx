@@ -14,6 +14,7 @@ import { Colors } from '../theme/tokens';
 import { NeoCard } from '../components/NeoCard';
 import { StarburstBadge } from '../components/StarburstBadge';
 import { DualUnitChip } from '../components/DualUnitChip';
+import Svg, { Path, Circle, Defs, LinearGradient, Stop, Text as SvgText, Rect, Ellipse } from 'react-native-svg';
 import {
   fetchForecastPlume,
   fetchMeteorology,
@@ -38,6 +39,7 @@ export const PlumeForecastScreen: React.FC = () => {
   const [plumeData, setPlumeData] = useState<PlumeResponse | null>(null);
   const [meteoData, setMeteoData] = useState<MeteorologyResponse | null>(null);
   const [mandateTriggered, setMandateTriggered] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<boolean>(false);
   const [surfaceData, setSurfaceData] = useState<SurfaceGridResponse | null>(null);
   const [lagData, setLagData] = useState<FireAqiLagResponse | null>(null);
   const [biomassData, setBiomassData] = useState<BiomassEmissionsResponse | null>(null);
@@ -56,6 +58,7 @@ export const PlumeForecastScreen: React.FC = () => {
 
   const loadData = useCallback(async () => {
     try {
+      setLoadError(false);
       const [meteoRes, plumeRes, surfaceRes, lagRes, biomassRes] = await Promise.allSettled([
         fetchMeteorology(),
         fetchForecastPlume(),
@@ -69,8 +72,13 @@ export const PlumeForecastScreen: React.FC = () => {
       if (surfaceRes.status === 'fulfilled') setSurfaceData(surfaceRes.value);
       if (lagRes.status === 'fulfilled') setLagData(lagRes.value);
       if (biomassRes.status === 'fulfilled') setBiomassData(biomassRes.value);
+
+      if (meteoRes.status === 'rejected' && plumeRes.status === 'rejected') {
+        setLoadError(true);
+      }
     } catch (err: unknown) {
       console.warn('[PlumeForecast] loadData:', err instanceof Error ? err.message : err);
+      setLoadError(true);
     } finally {
       setIsLoading(false);
     }
@@ -159,6 +167,17 @@ export const PlumeForecastScreen: React.FC = () => {
         </View>
       )}
 
+      {/* Connection Error Banner */}
+      {loadError && !isLoading && (
+        <View style={styles.errorBanner}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={16} color={Colors.coralWatermelonVivid} />
+          <Text style={styles.errorBannerText}>Dispersion telemetry unavailable. Displaying model defaults.</Text>
+          <Pressable onPress={loadData} style={styles.errorRetryBtn}>
+            <Text style={styles.errorRetryText}>RETRY</Text>
+          </Pressable>
+        </View>
+      )}
+
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -226,6 +245,148 @@ export const PlumeForecastScreen: React.FC = () => {
             </View>
             <Text style={styles.heroHeading}>Forecast Selection T+{currentHour}h</Text>
             <Text style={styles.heroLocation}>{currentStage}</Text>
+          </View>
+
+          {/* Visual SVG Trajectory & Plume Dispersion Map */}
+          <View style={styles.svgMapContainer}>
+            <View style={styles.svgMapHeader}>
+              <View style={styles.svgMapHeaderLeft}>
+                <MaterialCommunityIcons name="compass-outline" size={14} color={Colors.sandGold} />
+                <Text style={styles.svgMapTitle}>AIRSHED DISPERSION VECTOR (NW → SE)</Text>
+              </View>
+              <Text style={styles.svgMapFrontBadge}>FRONT: T+{currentHour}h</Text>
+            </View>
+            <Svg width="100%" height={180} viewBox="0 0 320 180" style={styles.svgCanvas}>
+              <Defs>
+                <LinearGradient id="plumeSkyGrad" x1="0" y1="0" x2="1" y2="1">
+                  <Stop offset="0%" stopColor="#0F172A" />
+                  <Stop offset="100%" stopColor="#1E293B" />
+                </LinearGradient>
+                <LinearGradient id="plumeGrad24" x1="0" y1="0" x2="1" y2="1">
+                  <Stop offset="0%" stopColor="#F59E0B" stopOpacity="0.8" />
+                  <Stop offset="100%" stopColor="#F59E0B" stopOpacity="0.05" />
+                </LinearGradient>
+                <LinearGradient id="plumeGrad48" x1="0" y1="0" x2="1" y2="1">
+                  <Stop offset="0%" stopColor="#EA580C" stopOpacity="0.75" />
+                  <Stop offset="100%" stopColor="#EA580C" stopOpacity="0.05" />
+                </LinearGradient>
+                <LinearGradient id="plumeGrad72" x1="0" y1="0" x2="1" y2="1">
+                  <Stop offset="0%" stopColor="#FF5376" stopOpacity="0.85" />
+                  <Stop offset="100%" stopColor="#FF5376" stopOpacity="0.05" />
+                </LinearGradient>
+              </Defs>
+
+              {/* Atmospheric Background */}
+              <Rect width="320" height="180" fill="url(#plumeSkyGrad)" rx={6} />
+
+              {/* Coordinate Grid Lines */}
+              <Path d="M 0 45 L 320 45 M 0 90 L 320 90 M 0 135 L 320 135" stroke="rgba(255,255,255,0.06)" strokeWidth="1" strokeDasharray="4 4" />
+              <Path d="M 80 0 L 80 180 M 160 0 L 160 180 M 240 0 L 240 180" stroke="rgba(255,255,255,0.06)" strokeWidth="1" strokeDasharray="4 4" />
+
+              {/* 72H Plume Ellipse (Broad Downwind Stagnation) */}
+              <Ellipse
+                cx="245"
+                cy="135"
+                rx="65"
+                ry="38"
+                fill="url(#plumeGrad72)"
+                stroke={currentHour >= 48 ? Colors.coralWatermelonVivid : 'rgba(255,83,118,0.3)'}
+                strokeWidth={currentHour >= 48 ? 2 : 1}
+                strokeDasharray={currentHour >= 48 ? undefined : '3 3'}
+                opacity={currentHour >= 36 ? Math.min(1, Math.max(0.2, (currentHour - 20) / 40)) : 0.15}
+              />
+
+              {/* 48H Plume Ellipse (Transit Corridor) */}
+              <Ellipse
+                cx="160"
+                cy="92"
+                rx="55"
+                ry="32"
+                fill="url(#plumeGrad48)"
+                stroke={currentHour >= 24 && currentHour < 55 ? Colors.terracottaDeep : 'rgba(234,88,12,0.3)'}
+                strokeWidth={currentHour >= 24 && currentHour < 55 ? 2 : 1}
+                strokeDasharray={currentHour >= 24 && currentHour < 55 ? undefined : '3 3'}
+                opacity={currentHour >= 12 ? Math.min(1, Math.max(0.25, (currentHour - 8) / 36)) : 0.2}
+              />
+
+              {/* 24H Plume Ellipse (Punjab Origin Ingress) */}
+              <Ellipse
+                cx="75"
+                cy="48"
+                rx="42"
+                ry="24"
+                fill="url(#plumeGrad24)"
+                stroke={currentHour < 30 ? Colors.sandGold : 'rgba(245,158,11,0.3)'}
+                strokeWidth={currentHour < 30 ? 2 : 1}
+                strokeDasharray={currentHour < 30 ? undefined : '3 3'}
+                opacity={Math.max(0.3, Math.min(1, 1.2 - currentHour / 80))}
+              />
+
+              {/* Wind Streamline Curves (NW -> SE Flow) */}
+              <Path
+                d="M 25 30 Q 110 50, 160 90 T 290 145"
+                fill="none"
+                stroke="rgba(255,255,255,0.25)"
+                strokeWidth="2"
+                strokeDasharray="6 4"
+              />
+              <Path
+                d="M 45 42 Q 130 65, 175 100 T 295 155"
+                fill="none"
+                stroke="#60A5FA"
+                strokeWidth="1.5"
+                strokeDasharray="4 3"
+              />
+
+              {/* Plume Front Dynamic Position */}
+              <Circle
+                cx={45 + (265 - 45) * (currentHour / 72)}
+                cy={35 + (145 - 35) * (currentHour / 72)}
+                r={7}
+                fill={Colors.coralWatermelonVivid}
+                stroke="#FFFFFF"
+                strokeWidth="2"
+              />
+              <Circle
+                cx={45 + (265 - 45) * (currentHour / 72)}
+                cy={35 + (145 - 35) * (currentHour / 72)}
+                r={14}
+                fill="none"
+                stroke={Colors.coralWatermelonVivid}
+                strokeWidth="1.5"
+                opacity={0.6}
+              />
+
+              {/* Corridor Node Pins & Labels */}
+              {/* Punjab Origin Node */}
+              <Circle cx="45" cy="35" r={4.5} fill="#EF4444" stroke="#FAF6EE" strokeWidth="1.5" />
+              <SvgText x="45" y="24" fontSize="8.5" fill="#FAF6EE" fontWeight="bold" textAnchor="middle">
+                PB-04 Punjab
+              </SvgText>
+
+              {/* Transit Node */}
+              <Circle cx="160" cy="90" r={4} fill="#F59E0B" stroke="#FAF6EE" strokeWidth="1.5" />
+              <SvgText x="160" y="80" fontSize="8.5" fill="#FAF6EE" fontWeight="bold" textAnchor="middle">
+                TR-02 Transit
+              </SvgText>
+
+              {/* Delhi Sink Node */}
+              <Circle cx="275" cy="145" r={5} fill="#8B5CF6" stroke="#FAF6EE" strokeWidth="1.5" />
+              <SvgText x="275" y="165" fontSize="8.5" fill="#FAF6EE" fontWeight="bold" textAnchor="middle">
+                DL-09 Delhi NCR
+              </SvgText>
+
+              {/* Horizon Zone Tags */}
+              <SvgText x="85" y="68" fontSize="7.5" fill="rgba(255,255,255,0.7)" fontWeight="700">
+                T+24h Envelope
+              </SvgText>
+              <SvgText x="175" y="112" fontSize="7.5" fill="rgba(255,255,255,0.7)" fontWeight="700">
+                T+48h Envelope
+              </SvgText>
+              <SvgText x="235" y="125" fontSize="7.5" fill="rgba(255,255,255,0.7)" fontWeight="700">
+                T+72h Envelope
+              </SvgText>
+            </Svg>
           </View>
 
           {/* Telemetry Chips & Story */}
@@ -329,6 +490,82 @@ export const PlumeForecastScreen: React.FC = () => {
                 </Pressable>
               </View>
             </View>
+          </View>
+        </NeoCard>
+
+        {/* Corridor Horizon Comparison Matrix (T+24h / T+48h / T+72h) */}
+        <NeoCard backgroundColor={Colors.surfaceVanilla} style={styles.horizonCard}>
+          <View style={styles.horizonHeader}>
+            <View style={styles.horizonTitleRow}>
+              <MaterialCommunityIcons name="layers-triple-outline" size={18} color={Colors.cobaltDeep} />
+              <Text style={styles.horizonCardTitle}>Corridor Horizon Comparison</Text>
+            </View>
+            <View style={styles.badgeMini}>
+              <Text style={styles.badgeMiniText}>MULTI-TEMPORAL</Text>
+            </View>
+          </View>
+
+          <View style={styles.horizonGrid}>
+            {[
+              {
+                h: 24,
+                title: 'T+24h Origin Ingress',
+                location: 'Punjab → Haryana Border',
+                maxPm: '320 µg/m³',
+                aqi: '380 • Very Poor',
+                wind: '14.2 km/h NW',
+                status: 'High FRP emission source',
+                color: Colors.sandGold,
+              },
+              {
+                h: 48,
+                title: 'T+48h Transit Channeling',
+                location: 'GT Road / Karnal Belt',
+                maxPm: '465 µg/m³',
+                aqi: '440 • Severe',
+                wind: '8.5 km/h NW',
+                status: 'Channeling downwind',
+                color: Colors.terracottaDeep,
+              },
+              {
+                h: 72,
+                title: 'T+72h Basin Stagnation',
+                location: 'Delhi NCR & Yamuna Basin',
+                maxPm: '592 µg/m³',
+                aqi: '495 • Severe+',
+                wind: '3.1 km/h (Calm)',
+                status: 'Nocturnal inversion lock',
+                color: Colors.coralWatermelonVivid,
+              },
+            ].map((item) => (
+              <Pressable
+                key={item.h}
+                onPress={() => handleSelectHorizon(item.h)}
+                style={[
+                  styles.horizonBox,
+                  selectedHorizon === item.h && { borderColor: item.color, borderWidth: 2 },
+                ]}
+              >
+                <View style={styles.horizonBoxTop}>
+                  <View style={[styles.horizonDot, { backgroundColor: item.color }]} />
+                  <Text style={styles.horizonBoxTitle}>{item.title}</Text>
+                  {selectedHorizon === item.h && (
+                    <View style={[styles.activeTag, { backgroundColor: item.color }]}>
+                      <Text style={styles.activeTagText}>ACTIVE</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.horizonBoxLoc}>{item.location}</Text>
+                <View style={styles.horizonMetricRow}>
+                  <Text style={styles.horizonPmVal}>{item.maxPm}</Text>
+                  <Text style={[styles.horizonAqiVal, { color: item.color }]}>{item.aqi}</Text>
+                </View>
+                <View style={styles.horizonFooter}>
+                  <Text style={styles.horizonStatusText}>{item.status}</Text>
+                  <Text style={styles.horizonWindText}>{item.wind}</Text>
+                </View>
+              </Pressable>
+            ))}
           </View>
         </NeoCard>
 
@@ -937,5 +1174,169 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     color: Colors.terracottaDeep,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+    borderColor: Colors.coralWatermelonVivid,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginHorizontal: 16,
+    marginTop: 8,
+    gap: 8,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.coralWatermelonVivid,
+  },
+  errorRetryBtn: {
+    backgroundColor: Colors.coralWatermelonVivid,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  errorRetryText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: Colors.canvasCream,
+  },
+  svgMapContainer: {
+    backgroundColor: '#0F172A',
+    borderBottomWidth: 1.5,
+    borderBottomColor: Colors.inkBlack,
+    overflow: 'hidden',
+  },
+  svgMapHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  svgMapHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  svgMapTitle: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#94A3B8',
+    letterSpacing: 0.5,
+  },
+  svgMapFrontBadge: {
+    fontSize: 9.5,
+    fontWeight: '900',
+    color: Colors.coralWatermelonVivid,
+    backgroundColor: 'rgba(255,83,118,0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  svgCanvas: {
+    backgroundColor: '#0F172A',
+  },
+  horizonCard: {
+    padding: 14,
+    gap: 12,
+  },
+  horizonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  horizonTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  horizonCardTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: Colors.inkBlack,
+  },
+  horizonGrid: {
+    gap: 10,
+  },
+  horizonBox: {
+    backgroundColor: Colors.canvasCream,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#E8E3D7',
+    padding: 10,
+    gap: 6,
+  },
+  horizonBoxTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  horizonDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  horizonBoxTitle: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '800',
+    color: Colors.inkBlack,
+  },
+  activeTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  activeTagText: {
+    fontSize: 8.5,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  horizonBoxLoc: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.inkMuted,
+  },
+  horizonMetricRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+  },
+  horizonPmVal: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: Colors.inkBlack,
+  },
+  horizonAqiVal: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  horizonFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(24,24,27,0.06)',
+    paddingTop: 4,
+  },
+  horizonStatusText: {
+    fontSize: 9.5,
+    fontWeight: '600',
+    color: Colors.inkMuted,
+  },
+  horizonWindText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: Colors.inkBlack,
   },
 });

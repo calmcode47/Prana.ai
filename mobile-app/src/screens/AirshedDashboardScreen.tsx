@@ -40,6 +40,7 @@ import {
   formatDataSource,
   formatBackendStatus,
 } from '../api/client';
+import { getPreference, setPreference } from '../services/preferences';
 
 export interface AirshedDashboardScreenProps {
   onOpenScanner: () => void;
@@ -149,6 +150,22 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(false);
+
+  // Load default corridor node preference on mount
+  useEffect(() => {
+    getPreference('defaultCorridorNode').then((node) => {
+      if (node === 'punjab') setSelectedCorridorNode('pb_04');
+      else if (node === 'transit') setSelectedCorridorNode('transit_02');
+      else if (node === 'delhi') setSelectedCorridorNode('delhi_09');
+    });
+  }, []);
+
+  const handleSelectCorridorNode = (key: CorridorNodeKey) => {
+    setSelectedCorridorNode(key);
+    const pref = key === 'pb_04' ? 'punjab' : key === 'transit_02' ? 'transit' : 'delhi';
+    setPreference('defaultCorridorNode', pref);
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -162,6 +179,11 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
         fetchSensorThings(),
       ]);
 
+      const anyRejected = [hotspotsRes, meteoRes, stationsRes, biomassRes, lagRes, surfaceRes, sensorsRes].some(
+        (r) => r.status === 'rejected'
+      );
+      setIsOffline(anyRejected);
+
       if (hotspotsRes.status === 'fulfilled') setHotspots(hotspotsRes.value);
       if (meteoRes.status === 'fulfilled') setMeteorology(meteoRes.value);
       if (stationsRes.status === 'fulfilled') setStations(stationsRes.value?.value ?? []);
@@ -171,6 +193,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
       if (sensorsRes.status === 'fulfilled') setSensorCount(sensorsRes.value['@iot.count']);
     } catch (err: unknown) {
       console.warn('[Dashboard] loadData:', err instanceof Error ? err.message : err);
+      setIsOffline(true);
     } finally {
       setIsLoading(false);
     }
@@ -375,6 +398,14 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
         </View>
       )}
 
+      {/* Offline Mode Banner */}
+      {isOffline && (
+        <View style={styles.offlineBanner}>
+          <MaterialCommunityIcons name="cloud-off-outline" size={16} color={Colors.sandGold} />
+          <Text style={styles.offlineBannerText}>Offline Mode: Displaying cached telemetry</Text>
+        </View>
+      )}
+
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -465,37 +496,40 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
           </View>
         </View>
 
-        {/* Big Central Card: AIRSHED NODE 04 (Multi-Node Corridor Console) */}
-        <NeoCard backgroundColor={Colors.surfaceVanilla} style={styles.nodeCard}>
-          {/* Card Header */}
-          <View style={styles.nodeCardHeader}>
-            <View style={styles.nodeStatusRow}>
-              <View style={styles.nodeLiveDot} />
+        {/* Action Feedback Banner */}
+        {actionFeedback && (
+          <View style={styles.feedbackBanner}>
+            <MaterialCommunityIcons name="check-circle" size={14} color={Colors.forestJade} />
+            <Text style={styles.feedbackBannerText}>{actionFeedback}</Text>
+          </View>
+        )}
+
+        {/* SECTION 1: Tri-Node Atmospheric Corridor Vector Strip */}
+        <NeoCard backgroundColor={Colors.surfaceVanilla} style={styles.sectionCard}>
+          {/* Card Meta Header */}
+          <View style={styles.sectionHeaderRow}>
+            <View style={styles.sectionHeaderLeft}>
+              <View style={styles.iconCircle}>
+                <MaterialCommunityIcons name="vector-polyline" size={18} color={Colors.cobaltDeep} />
+              </View>
               <View>
-                <View style={styles.nodeTitleFlexRow}>
-                  <Text style={styles.nodeTitleText}>{nodeData.name}</Text>
-                  <View style={styles.nodeIdBadge}>
-                    <Text style={styles.nodeIdBadgeText}>{nodeData.id}</Text>
-                  </View>
-                </View>
-                <Text style={styles.nodeSubText}>{nodeData.category} • OGC SensorThings</Text>
+                <Text style={styles.sectionCardTitle}>Northern Atmospheric Air Corridor</Text>
+                <Text style={styles.sectionCardSubtitle}>Live OGC SensorThings &bull; NASA FIRMS &bull; Open-Meteo</Text>
               </View>
             </View>
-            <View style={styles.liveTelemetryChip}>
-              <View style={styles.telemetryDot} />
-              <Text style={styles.liveTelemetryText}>{surface ? 'BACKEND DATA' : 'DATA PENDING'}</Text>
+            <View style={styles.badgeMini}>
+              <Text style={styles.badgeMiniText}>INFLOW CORRIDOR</Text>
             </View>
           </View>
 
-          {/* 3-Node Corridor Switcher Tabs */}
+          {/* Corridor Node Selection Tabs */}
           <View style={styles.nodeTabsRow}>
             {(['pb_04', 'transit_02', 'delhi_09'] as const).map((key) => {
               const isSelected = selectedCorridorNode === key;
-              const n = CORRIDOR_NODES[key];
               return (
                 <Pressable
                   key={key}
-                  onPress={() => setSelectedCorridorNode(key)}
+                  onPress={() => handleSelectCorridorNode(key)}
                   style={[
                     styles.nodeTabButton,
                     isSelected ? styles.nodeTabButtonActive : styles.nodeTabButtonInactive,
@@ -557,6 +591,38 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
                 <Text style={styles.telemetryVal}>{nodeData.metric4.val}</Text>
                 <Text style={styles.telemetrySub}>{nodeData.metric4.sub}</Text>
               </View>
+            </View>
+
+            {/* 24-Hour Diurnal Trend Sparkline */}
+            <View style={styles.trendSparklineCard}>
+              <View style={styles.trendHeader}>
+                <Text style={styles.trendTitle}>24-HOUR DIURNAL PM2.5 PROFILE</Text>
+                <Text style={styles.trendSub}>Nocturnal inversion peak 04:00 IST</Text>
+              </View>
+              <Svg width="100%" height="52" viewBox="0 0 300 52">
+                <Defs>
+                  <LinearGradient id="stationTrendGrad" x1="0" y1="0" x2="0" y2="1">
+                    <Stop offset="0%" stopColor={nodeData.aqiColor} stopOpacity="0.45" />
+                    <Stop offset="100%" stopColor={nodeData.aqiColor} stopOpacity="0.0" />
+                  </LinearGradient>
+                </Defs>
+                <Path
+                  d="M 10 36 Q 50 12, 90 16 T 170 32 T 240 14 T 290 22 L 290 50 L 10 50 Z"
+                  fill="url(#stationTrendGrad)"
+                />
+                <Path
+                  d="M 10 36 Q 50 12, 90 16 T 170 32 T 240 14 T 290 22"
+                  fill="none"
+                  stroke={nodeData.aqiColor}
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+                <Circle cx="90" cy="16" r="3.5" fill={Colors.coralWatermelonVivid} />
+                <SvgText x="10" y="50" fontSize="8" fill={Colors.inkMuted} fontWeight="bold">00:00</SvgText>
+                <SvgText x="78" y="10" fontSize="8" fill={Colors.coralWatermelonVivid} fontWeight="bold">04:00 (Peak)</SvgText>
+                <SvgText x="155" y="50" fontSize="8" fill={Colors.inkMuted} fontWeight="bold">12:00</SvgText>
+                <SvgText x="270" y="50" fontSize="8" fill={Colors.inkMuted} fontWeight="bold">23:00</SvgText>
+              </Svg>
             </View>
 
             {/* Atmospheric Dynamics Banner */}
@@ -1727,5 +1793,96 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
     color: Colors.inkBlack,
+  },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.inkBlack,
+    borderBottomWidth: 2,
+    borderBottomColor: Colors.coralWatermelonVivid,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  offlineBannerText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.canvasCream,
+    textTransform: 'uppercase',
+  },
+  offlineRetryBtn: {
+    backgroundColor: Colors.coralWatermelonVivid,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  offlineRetryText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: Colors.canvasCream,
+  },
+  trendSparklineCard: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(24,24,27,0.1)',
+  },
+  trendHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  trendTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: Colors.inkBlack,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  trendSub: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: Colors.inkMuted,
+  },
+  feedbackBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1.5,
+    borderColor: '#16A34A',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  feedbackBannerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#16A34A',
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  sectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  iconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.surfaceVanillaStrong,
+    borderWidth: 1.2,
+    borderColor: Colors.inkBlack,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

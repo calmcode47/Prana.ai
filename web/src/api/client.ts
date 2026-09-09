@@ -472,12 +472,59 @@ export interface CemsForensicsResponse {
 }
 
 // API Config
-const configuredApi = typeof window !== 'undefined' && (window as any).PRANA_API_URL;
+let authToken: string | null = null;
+export function setAuthToken(token: string | null) {
+  authToken = token;
+}
+export function getAuthToken(): string | null {
+  return authToken;
+}
+
+const configuredApi =
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL) ||
+  (typeof window !== 'undefined' && (window as any).PRANA_API_URL);
 const isLocalWeb = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
 const browserOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-const API_BASE = configuredApi || (isLocalWeb ? 'http://127.0.0.1:8000' : browserOrigin || 'http://127.0.0.1:8000');
+export const API_BASE = configuredApi || (isLocalWeb ? 'http://127.0.0.1:8000' : browserOrigin || 'http://127.0.0.1:8000');
+
+export async function fetchWithRetry(
+  url: string,
+  options?: RequestInit,
+  retries = 2,
+  backoffMs = 400
+): Promise<Response> {
+  let lastError: unknown;
+  const headers = new Headers(options?.headers);
+  if (authToken && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${authToken}`);
+  }
+  const mergedOptions: RequestInit = {
+    ...options,
+    headers,
+  };
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, mergedOptions);
+      if (res.ok || res.status < 500) {
+        return res;
+      }
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, backoffMs * 2 ** attempt));
+      } else {
+        return res;
+      }
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, backoffMs * 2 ** attempt));
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
 async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { credentials: 'omit', ...options });
+  const res = await fetchWithRetry(`${API_BASE}${path}`, { credentials: 'omit', ...options });
   if (!res.ok) {
     let detail = `${res.status} ${res.statusText}`;
     try {
@@ -531,7 +578,7 @@ export async function fetchAlerts(severity?: string, limit: number = 20): Promis
 }
 
 export async function fetchLatestAlert(lang: 'en' | 'hi' | 'pa' = 'en'): Promise<LatestAlertResponse | null> {
-  const res = await fetch(`${API_BASE}/api/v1/alerts/latest?lang=${lang}`, { credentials: 'omit' });
+  const res = await fetchWithRetry(`${API_BASE}/api/v1/alerts/latest?lang=${lang}`, { credentials: 'omit' });
   if (res.status === 204) return null;
   if (!res.ok) {
     const detail = await res.text();
@@ -610,7 +657,7 @@ export async function fetchLatestBriefing(): Promise<BriefingResponse> {
 }
 
 export async function fetchLatestMobileRelease(): Promise<MobileReleaseResponse | null> {
-  const res = await fetch(`${API_BASE}/api/v1/mobile/releases/latest`, { credentials: 'omit' });
+  const res = await fetchWithRetry(`${API_BASE}/api/v1/mobile/releases/latest`, { credentials: 'omit' });
   if (res.status === 204) return null;
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return (await res.json()) as MobileReleaseResponse;
@@ -653,7 +700,7 @@ export async function fetchLegalRegistry(): Promise<LegalRegistryResponse> {
 }
 
 export async function downloadLegalDossier(incidentId: string): Promise<void> {
-  const res = await fetch(
+  const res = await fetchWithRetry(
     `${API_BASE}/api/v1/legal/dossiers/${encodeURIComponent(incidentId)}.zip`,
     { credentials: 'omit' }
   );

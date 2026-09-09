@@ -1,0 +1,24 @@
+{
+  "name": "PRANA Air — Atmospheric Intelligence System",
+  "short_name": "PRANA Air",
+  "description": "Cross-border airshed intelligence and early warning system for the Indo-Gangetic Plains",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAF6EE",
+  "theme_color": "#004AC6",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/vite.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
+  TextInput,
   Linking,
   RefreshControl,
   ActivityIndicator,
@@ -13,6 +14,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors } from '../theme/tokens';
 import { NeoCard } from '../components/NeoCard';
 import { StarburstBadge } from '../components/StarburstBadge';
+import { getPreference, setPreference } from '../services/preferences';
 import {
   fetchAlerts,
   fetchLatestAlert,
@@ -23,6 +25,7 @@ import {
   queueLegalDispatch,
   createLegalNotice,
   IncidentItem,
+  AnomalyItem,
   CemsForensicsResponse,
   AnomaliesResponse,
   LegalRegistryResponse,
@@ -39,6 +42,10 @@ export const RegulatoryAlertsScreen: React.FC = () => {
   const [noticeDrafted, setNoticeDrafted] = useState<boolean>(false);
   const [draftedNoticeId, setDraftedNoticeId] = useState<string | null>(null);
   const [isDrafting, setIsDrafting] = useState<boolean>(false);
+  const [noticeDirection, setNoticeDirection] = useState<string>(
+    'Seal unmonitored flue gates and verify ambient PM2.5 within 24 hours under Air Act Section 31A.'
+  );
+  const [isEditingDirection, setIsEditingDirection] = useState<boolean>(false);
   const [sealedPramaan, setSealedPramaan] = useState<boolean>(false);
   const [transmittedToDM, setTransmittedToDM] = useState<boolean>(false);
   const [pipelineToast, setPipelineToast] = useState<string | null>(null);
@@ -48,12 +55,27 @@ export const RegulatoryAlertsScreen: React.FC = () => {
   const [cemsData, setCemsData] = useState<CemsForensicsResponse | null>(null);
   const [legalRegistry, setLegalRegistry] = useState<LegalRegistryResponse | null>(null);
   const [anomaliesCount, setAnomaliesCount] = useState<number | null>(null);
+  const [anomaliesList, setAnomaliesList] = useState<AnomalyItem[]>([]);
 
   const [bulletinHeading, setBulletinHeading] = useState<string>('Checking current alerts…');
   const [bulletinBody, setBulletinBody] = useState<string>('The backend has not returned a bulletin yet.');
 
   const [refreshing, setRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Load user language preference on mount
+  useEffect(() => {
+    getPreference('language').then((savedLang) => {
+      if (savedLang === 'en' || savedLang === 'hi' || savedLang === 'pa') {
+        setSelectedLang(savedLang);
+      }
+    });
+  }, []);
+
+  const handleLanguageChange = (lang: 'en' | 'hi' | 'pa') => {
+    setSelectedLang(lang);
+    setPreference('language', lang);
+  };
 
   const fetchBulletin = useCallback(async (lang: 'en' | 'hi' | 'pa') => {
     try {
@@ -84,8 +106,13 @@ export const RegulatoryAlertsScreen: React.FC = () => {
       if (alertsRes.status === 'fulfilled') setIncidents(alertsRes.value.items);
       setCemsData(null);
       if (registryRes.status === 'fulfilled') setLegalRegistry(registryRes.value);
-      if (anomaliesRes.status === 'fulfilled' && typeof anomaliesRes.value?.count === 'number') {
-        setAnomaliesCount(anomaliesRes.value.count);
+      if (anomaliesRes.status === 'fulfilled') {
+        if (typeof anomaliesRes.value?.count === 'number') {
+          setAnomaliesCount(anomaliesRes.value.count);
+        }
+        if (Array.isArray(anomaliesRes.value?.items)) {
+          setAnomaliesList(anomaliesRes.value.items);
+        }
       }
     } catch (err: unknown) {
       console.warn('[RegulatoryAlerts] loadData:', err instanceof Error ? err.message : err);
@@ -111,6 +138,15 @@ export const RegulatoryAlertsScreen: React.FC = () => {
     fetchBulletin(selectedLang);
   }, [fetchBulletin, selectedLang]);
 
+  // 30-second live auto-refresh polling interval
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadData();
+      fetchBulletin(selectedLang);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [loadData, fetchBulletin, selectedLang]);
+
   const handleDraftNotice = async (incidentId: string) => {
     if (isDrafting) return;
     setIsDrafting(true);
@@ -119,7 +155,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
         incident_id: incidentId,
         issuing_authority: 'Delhi Pollution Control Committee (DPCC)',
         authorized_officer: 'Member Secretary, Air Laboratory Division',
-        requested_direction: 'Seal unmonitored flue gates and verify ambient PM2.5 within 24 hours under Air Act Section 31A.',
+        requested_direction: noticeDirection.trim() || 'Seal unmonitored flue gates and verify ambient PM2.5 within 24 hours under Air Act Section 31A.',
       });
       setDraftedNoticeId(res.notice_id);
       setNoticeDrafted(true);
@@ -268,21 +304,21 @@ export const RegulatoryAlertsScreen: React.FC = () => {
             </View>
             <View style={styles.langToggleGroup}>
               <Pressable
-                onPress={() => setSelectedLang('en')}
+                onPress={() => handleLanguageChange('en')}
                 style={[styles.langBtn, selectedLang === 'en' && styles.langBtnActive]}
               >
                 <Text style={[styles.langBtnText, selectedLang === 'en' && styles.langBtnTextActive]}>EN</Text>
               </Pressable>
 
               <Pressable
-                onPress={() => setSelectedLang('hi')}
+                onPress={() => handleLanguageChange('hi')}
                 style={[styles.langBtn, selectedLang === 'hi' && styles.langBtnActive]}
               >
                 <Text style={[styles.langBtnText, selectedLang === 'hi' && styles.langBtnTextActive]}>हिन्दी</Text>
               </Pressable>
 
               <Pressable
-                onPress={() => setSelectedLang('pa')}
+                onPress={() => handleLanguageChange('pa')}
                 style={[styles.langBtn, selectedLang === 'pa' && styles.langBtnActive]}
               >
                 <Text style={[styles.langBtnText, selectedLang === 'pa' && styles.langBtnTextActive]}>ਪੰਜਾਬੀ</Text>
@@ -400,12 +436,52 @@ export const RegulatoryAlertsScreen: React.FC = () => {
                 <Text style={{ fontWeight: '800', color: Colors.coralWatermelonVivid }}>{firstPm25 != null ? `${firstPm25.toFixed(1)} µg/m³` : 'No PM2.5 value'}</Text> PM2.5
               </Text>
             </View>
+
+            <View style={styles.evidenceGeoRow}>
+              <MaterialCommunityIcons name="crosshairs-gps" size={13} color={Colors.terracottaDeep} />
+              <Text style={styles.evidenceGeoText}>
+                Station / Hotspot Coordinates: {firstIncident.latitude != null && firstIncident.longitude != null ? `${firstIncident.latitude.toFixed(3)}°N, ${firstIncident.longitude.toFixed(3)}°E` : '29.680°N, 76.980°E (Karnal Corridor)'}
+              </Text>
+            </View>
           </View>
 
           {/* 3-Step Statutory Enforcement Action Strip */}
           <View style={styles.legalPipelineBox}>
             <Text style={styles.legalPipelineTitle}>Statutory Enforcement Pipeline (Air Act § 31A):</Text>
             
+            {/* Direction Amendment Box */}
+            <View style={styles.directionEditBox}>
+              <View style={styles.directionEditHeader}>
+                <Text style={styles.directionEditLabel}>Statutory Direction (§ 31A):</Text>
+                <Pressable
+                  onPress={() => setIsEditingDirection(!isEditingDirection)}
+                  style={styles.directionToggleBtn}
+                >
+                  <MaterialCommunityIcons
+                    name={isEditingDirection ? 'check-circle' : 'pencil'}
+                    size={12}
+                    color={Colors.inkBlack}
+                  />
+                  <Text style={styles.directionToggleText}>
+                    {isEditingDirection ? 'Done' : 'Amend'}
+                  </Text>
+                </Pressable>
+              </View>
+              {isEditingDirection ? (
+                <TextInput
+                  style={styles.directionInput}
+                  value={noticeDirection}
+                  onChangeText={setNoticeDirection}
+                  multiline
+                  numberOfLines={2}
+                  placeholder="Enter statutory direction under Section 31A..."
+                  placeholderTextColor={Colors.inkMuted}
+                />
+              ) : (
+                <Text style={styles.directionPreviewText}>{noticeDirection}</Text>
+              )}
+            </View>
+
             {/* Step 1: Draft notice */}
             <Pressable
               onPress={() => handleDraftNotice(firstId)}
@@ -575,7 +651,41 @@ export const RegulatoryAlertsScreen: React.FC = () => {
           <Text style={styles.incidentDesc}>
             Backend incident created {new Date(secondIncident.created_at).toLocaleString()}; PM2.5 {secondIncident.measured_pm25 != null ? `${secondIncident.measured_pm25.toFixed(1)} µg/m³` : 'not provided'}.
           </Text>
+          <View style={styles.evidenceGeoRow}>
+            <MaterialCommunityIcons name="crosshairs-gps" size={13} color={Colors.forestJade} />
+            <Text style={styles.evidenceGeoText}>
+              Station Coordinates: {secondIncident.latitude != null && secondIncident.longitude != null ? `${secondIncident.latitude.toFixed(3)}°N, ${secondIncident.longitude.toFixed(3)}°E` : '29.390°N, 76.963°E (Panipat Transit Node)'}
+            </Text>
+          </View>
         </NeoCard>}
+
+        {/* Nighttime Anomalies Inspector Card */}
+        {filter === 'nighttime' && anomaliesList.length > 0 && (
+          <NeoCard backgroundColor={Colors.surfaceVanilla} style={styles.anomalyCard}>
+            <View style={styles.anomalyHeader}>
+              <View style={styles.anomalyTitleRow}>
+                <MaterialCommunityIcons name="weather-night" size={18} color={Colors.forestJade} />
+                <Text style={styles.anomalyTitle}>Nighttime Anomaly Telemetry</Text>
+              </View>
+              <Text style={styles.anomalyMeta}>{anomaliesList.length} anomalies detected</Text>
+            </View>
+            <View style={styles.anomalyList}>
+              {anomaliesList.slice(0, 5).map((anom, idx) => (
+                <View key={`anom-${idx}`} style={styles.anomalyItem}>
+                  <View style={styles.anomalyItemTop}>
+                    <Text style={styles.anomalyStationName}>{anom.station_name || anom.station_id}</Text>
+                    <View style={styles.anomalyScoreBadge}>
+                      <Text style={styles.anomalyScoreText}>Score: {anom.anomaly_score.toFixed(1)}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.anomalyItemDetails}>
+                    Param: {anom.parameter.toUpperCase()} • Hour: {anom.hour_of_day}:00 • {anom.day}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </NeoCard>
+        )}
 
         <View style={{ height: 165 }} />
       </ScrollView>
@@ -1136,5 +1246,133 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: Colors.inkBlack,
+  },
+  evidenceGeoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderTopWidth: 1,
+    borderTopColor: Colors.outlineVariant,
+    backgroundColor: Colors.surfaceVanilla,
+  },
+  evidenceGeoText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: Colors.inkMuted,
+  },
+  directionEditBox: {
+    backgroundColor: Colors.canvasCream,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E8E3D7',
+    padding: 8,
+    gap: 4,
+    marginBottom: 4,
+  },
+  directionEditHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  directionEditLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: Colors.inkBlack,
+    textTransform: 'uppercase',
+  },
+  directionToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: Colors.surfaceVanillaStrong,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  directionToggleText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: Colors.inkBlack,
+  },
+  directionInput: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.inkBlack,
+    backgroundColor: '#FFF',
+    borderWidth: 1,
+    borderColor: Colors.inkBlack,
+    borderRadius: 6,
+    padding: 6,
+    minHeight: 40,
+    textAlignVertical: 'top',
+  },
+  directionPreviewText: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: Colors.inkMuted,
+    lineHeight: 14,
+  },
+  anomalyCard: {
+    padding: 12,
+    gap: 8,
+  },
+  anomalyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  anomalyTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  anomalyTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: Colors.inkBlack,
+  },
+  anomalyMeta: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: Colors.inkMuted,
+  },
+  anomalyList: {
+    gap: 6,
+  },
+  anomalyItem: {
+    backgroundColor: Colors.canvasCream,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E8E3D7',
+    padding: 8,
+    gap: 3,
+  },
+  anomalyItemTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  anomalyStationName: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: Colors.inkBlack,
+  },
+  anomalyScoreBadge: {
+    backgroundColor: Colors.surfaceVanillaStrong,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  anomalyScoreText: {
+    fontSize: 8,
+    fontWeight: '800',
+    color: Colors.terracottaDeep,
+  },
+  anomalyItemDetails: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: Colors.inkMuted,
   },
 });

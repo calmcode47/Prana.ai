@@ -44,11 +44,11 @@ export const LandingPage: React.FC = () => {
   const [federated, setFederated] = useState<FLStatusResponse | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
-
   useEffect(() => {
+    document.title = 'PRANA Air — Atmospheric Intelligence & Early Warning System';
     fetchLatestBriefing().then(setBriefing).catch(() => setBriefing(null));
     fetchLatestMobileRelease().then(setMobileRelease).catch(() => setMobileRelease(null));
-    fetchHotspots(24, 'nominal').then(setHotspots).catch(() => setHotspots(null));
+    fetchHotspots(24, 'nominal').then(setHotspotsData => setHotspots(setHotspotsData)).catch(() => setHotspots(null));
     fetchStations('pm25').then(setStations).catch(() => setStations(null));
     fetchAqiSurface(0.5).then(setSurface).catch(() => setSurface(null));
     fetchMeteorology().then(setMeteorology).catch(() => setMeteorology(null));
@@ -149,6 +149,9 @@ export const LandingPage: React.FC = () => {
     ? Math.max(...forecast.features.map((feature) => feature.properties.horizon_hours))
     : null;
   const dp = federated?.privacy?.dp_sgd;
+  const originStation = stations?.value.find((s) => /sangrur|tarn taran|ludhiana|patiala|bathinda|amritsar/i.test(s.name)) || stations?.value[0];
+  const transitStation = stations?.value.find((s) => /panipat|karnal|kurukshetra|sonipat/i.test(s.name));
+  const sinkStation = stations?.value.find((s) => /anand vihar|delhi|ito|rk puram|mandir marg/i.test(s.name));
 
   return (
     <div className="w-full bg-canvas-cream min-h-screen relative overflow-x-hidden pt-20">
@@ -359,7 +362,7 @@ export const LandingPage: React.FC = () => {
               {/* Step 1: Upwind Source (Punjab) */}
               <div className="flex-1 rounded-xl bg-surface-vanilla p-space-md shadow-[3px_3px_0px_#18181B] flex flex-col justify-between relative">
                 <div className="absolute -top-3 left-4 px-2 py-0.5 rounded-md bg-terracotta-deep text-on-tertiary font-label-md text-label-md font-bold uppercase shadow-[1px_1px_0px_#18181B]">
-                  Origin: Sangrur / Tarn Taran
+                  Origin: {originStation ? originStation.name : 'Sangrur / Tarn Taran'}
                 </div>
                 <div className="pt-space-xs">
                   <div className="flex items-center justify-between">
@@ -389,7 +392,7 @@ export const LandingPage: React.FC = () => {
               {/* Step 2: Transit & Chemical Aging */}
               <div className="flex-1 rounded-xl bg-surface-vanilla p-space-md shadow-[3px_3px_0px_#18181B] flex flex-col justify-between relative">
                 <div className="absolute -top-3 left-4 px-2 py-0.5 rounded-md bg-cobalt-deep text-on-primary font-label-md text-label-md font-bold uppercase shadow-[1px_1px_0px_#18181B]">
-                  Transit: Karnal / Panipat
+                  Transit: {transitStation ? transitStation.name : 'Karnal / Panipat'}
                 </div>
                 <div className="pt-space-xs">
                   <div className="flex items-center justify-between">
@@ -419,7 +422,7 @@ export const LandingPage: React.FC = () => {
               {/* Step 3: Terminal Inversion Trap */}
               <div className="flex-1 rounded-xl bg-surface-vanilla p-space-md shadow-[3px_3px_0px_#18181B] flex flex-col justify-between relative">
                 <div className="absolute -top-3 left-4 px-2 py-0.5 rounded-md bg-coral-watermelon-vivid text-on-secondary font-label-md text-label-md font-bold uppercase shadow-[1px_1px_0px_#18181B]">
-                  Sink: Anand Vihar / IGI Trap
+                  Sink: {sinkStation ? sinkStation.name : 'Anand Vihar / IGI Trap'}
                 </div>
                 <div className="pt-space-xs">
                   <div className="flex items-center justify-between">

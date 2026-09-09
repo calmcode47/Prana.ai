@@ -26,6 +26,7 @@ export const Colors = {
   tertiaryContainer: '#B54E00',
   onTertiary: '#FFFFFF',
   forestJade: '#10B981',
+  sandGold: '#F59E0B',
 
   // Semantic AQI
   aqiGood: '#10B981',
@@ -34,6 +35,45 @@ export const Colors = {
   aqiSevere: '#FF5376',
   aqiHazardous: '#7C2D12',
 };
+
+export const DarkColors: typeof Colors = {
+  // Foundation substrates (Nocturnal dark mode)
+  canvasCream: '#121214',
+  surfaceVanilla: '#1A1A1E',
+  surfaceVanillaStrong: '#24242A',
+  surfaceWhite: '#27272D',
+
+  // Structural & Neutral Inks
+  inkBlack: '#FAF6EE',
+  inkMuted: '#A1A1AA',
+  outline: '#71717A',
+  outlineVariant: '#3F3F46',
+
+  // Vibrant Graphic Accents
+  cobaltDeep: '#3B82F6',
+  primary: '#60A5FA',
+  primaryContainer: '#1E3A8A',
+  onPrimaryContainer: '#DBEAFE',
+  primaryFixedDim: '#93C5FD',
+
+  // Human & Warm Accents
+  coralWatermelonVivid: '#FF5376',
+  coralWatermelon: '#FF5376',
+  terracottaDeep: '#F97316',
+  tertiaryContainer: '#7C2D12',
+  onTertiary: '#FFFFFF',
+  forestJade: '#34D399',
+  sandGold: '#FBBF24',
+
+  // Semantic AQI
+  aqiGood: '#34D399',
+  aqiModerate: '#FBBF24',
+  aqiUnhealthy: '#FB923C',
+  aqiSevere: '#FF5376',
+  aqiHazardous: '#991B1B',
+};
+
+export type ThemeColors = typeof Colors;
 
 export const Shadows = {
   elevation1: {

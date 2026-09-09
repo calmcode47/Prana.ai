@@ -15,6 +15,7 @@ import {
   getAqiCategoryAndColor,
   queueLegalDispatch,
 } from '../api/client';
+import { LeafletMap } from '../components/map/LeafletMap';
 
 const formatWindDirection = (degrees: number): string => {
   const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
@@ -32,9 +33,11 @@ export const ForecastPage: React.FC = () => {
   const [biomassData, setBiomassData] = useState<BiomassEmissionsResponse | null>(null);
   const [surfaceData, setSurfaceData] = useState<SurfaceGridResponse | null>(null);
   const [meteorologyData, setMeteorologyData] = useState<MeteorologyResponse | null>(null);
+  const [viewMode, setViewMode] = useState<'map' | 'vector'>('map');
 
   // Fetch real plume data from backend (GET /api/v1/forecast/plume)
   useEffect(() => {
+    document.title = '72h Plume Forecast — PRANA Air Quality Platform';
     fetchForecastPlume().then(setPlumeData).catch(() => {});
     fetchFireAqiLag(7).then(setLagData).catch(() => {});
     fetchBiomassEmissions(7).then(setBiomassData).catch(() => {});
@@ -43,13 +46,15 @@ export const ForecastPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    let timer: any = null;
+    let timer: ReturnType<typeof setInterval> | null = null;
     if (isPlaying) {
       timer = setInterval(() => {
         setCurrentHour((prev) => (prev >= 72 ? 0 : prev + 1));
       }, 300);
     }
-    return () => clearInterval(timer);
+    return () => {
+      if (timer) clearInterval(timer);
+    };
   }, [isPlaying]);
 
   const handleScrubberClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -112,6 +117,21 @@ export const ForecastPage: React.FC = () => {
     const y = 70 + ((maxPlumeLatitude - latitude) / Math.max(maxPlumeLatitude - minPlumeLatitude, 0.0001)) * 330;
     return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ') + (plumeCoordinates.length ? ' Z' : '');
+
+  const mapPlumes = (plumeData?.features || []).map((f) => ({
+    clusterId: f.properties.cluster_id,
+    horizonHours: f.properties.horizon_hours,
+    coordinates: (f.geometry.coordinates[0] || []) as [number, number][],
+    avgPm25: f.properties.max_pm25_est,
+    label: `${f.properties.horizon_hours}h Forecast Plume Envelope`,
+  }));
+
+  const mapSurfacePoints = (surfaceData?.features || []).map((f) => ({
+    lat: f.geometry.coordinates[1],
+    lon: f.geometry.coordinates[0],
+    pm25: f.properties.pm25_estimate,
+    aqi: f.properties.aqi_index,
+  }));
 
   const handleGeoJsonExport = () => {
     if (!plumeData) return;
@@ -268,6 +288,30 @@ export const ForecastPage: React.FC = () => {
               </span>
             </div>
 
+            {/* View Mode Toggle */}
+            <div className="flex items-center rounded-lg border border-ink-black overflow-hidden shadow-[1px_1px_0px_#18181B]">
+              <button
+                onClick={() => setViewMode('map')}
+                className={`px-3 py-1 text-xs font-bold ${
+                  viewMode === 'map'
+                    ? 'bg-primary text-on-primary'
+                    : 'bg-surface-vanilla text-ink-black hover:bg-surface-vanilla-strong'
+                }`}
+              >
+                GIS Map Overlay
+              </button>
+              <button
+                onClick={() => setViewMode('vector')}
+                className={`px-3 py-1 text-xs font-bold ${
+                  viewMode === 'vector'
+                    ? 'bg-primary text-on-primary'
+                    : 'bg-surface-vanilla text-ink-black hover:bg-surface-vanilla-strong'
+                }`}
+              >
+                Kinematic Vector
+              </button>
+            </div>
+
             {/* Mixing Layer & Boundary Metric Dual-Chips */}
             <div className="flex items-center gap-2 flex-wrap">
               <div className="flex items-center rounded-full bg-canvas-cream px-3 py-1 shadow-[2px_2px_0px_#18181B] border border-ink-black text-label-md font-label-md">
@@ -282,7 +326,23 @@ export const ForecastPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Interactive Plume Canvas Screen */}
+          {/* Interactive Plume Canvas Screen or GIS Map */}
+          {viewMode === 'map' ? (
+            <div className="relative w-full h-[460px] rounded-xl overflow-hidden shadow-[2px_2px_0px_#18181B] border border-ink-black">
+              <LeafletMap
+                height={460}
+                plumes={mapPlumes}
+                surfacePoints={mapSurfacePoints}
+                showPlumes={true}
+                showSurface={true}
+                showStations={false}
+                showHotspots={false}
+              />
+              <div className="absolute bottom-3 left-3 z-[400] bg-surface-vanilla/90 backdrop-blur-md p-2 rounded border border-ink-black text-xs font-bold">
+                Plume Polygons: 24h (Orange), 48h (Pink), 72h (Hazardous Deep Red)
+              </div>
+            </div>
+          ) : (
           <div className="relative w-full h-[460px] rounded-xl bg-canvas-cream overflow-hidden shadow-[2px_2px_0px_#18181B] border border-ink-black flex flex-col justify-between p-6 select-none">
             {/* Grid Pattern */}
             <div className="absolute inset-0 opacity-40 pointer-events-none">
@@ -443,6 +503,7 @@ export const ForecastPage: React.FC = () => {
               </div>
             </div>
           </div>
+        )}
 
           {/* Time-Lapse Audio Scrubber & Trajectory Playback Strip */}
           <div className="mt-4 bg-canvas-cream rounded-xl p-4 shadow-[2px_2px_0px_#18181B] border border-ink-black flex flex-col md:flex-row items-center justify-between gap-4">

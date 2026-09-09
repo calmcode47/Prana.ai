@@ -7,17 +7,32 @@ import {
   formatDataSource,
   getAqiCategoryAndColor,
 } from '../api/client';
+import { LeafletMap } from '../components/map/LeafletMap';
 
 export const AirCorridorMapPage: React.FC = () => {
   const [trajectoryHours, setTrajectoryHours] = useState<number>(0);
   const [selectedNode, setSelectedNode] = useState<'origin' | 'transit' | 'sink'>('sink');
-  const [layers, setLayers] = useState({
-    plume: true,
-    streamlines: true,
-    cpcbBams: true,
-    viirsFRP: true,
+  const [layers, setLayers] = useState<{
+    plume: boolean;
+    streamlines: boolean;
+    cpcbBams: boolean;
+    viirsFRP: boolean;
+  }>(() => {
+    try {
+      const saved = localStorage.getItem('prana_corridor_layers');
+      return saved
+        ? JSON.parse(saved)
+        : { plume: true, streamlines: true, cpcbBams: true, viirsFRP: true };
+    } catch {
+      return { plume: true, streamlines: true, cpcbBams: true, viirsFRP: true };
+    }
   });
   const [isPlaying, setIsPlaying] = useState(false);
+  const [mapMode, setMapMode] = useState<'leaflet' | 'schematic'>('leaflet');
+
+  useEffect(() => {
+    localStorage.setItem('prana_corridor_layers', JSON.stringify(layers));
+  }, [layers]);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -39,6 +54,7 @@ export const AirCorridorMapPage: React.FC = () => {
   const [plumeData, setPlumeData] = useState<PlumeResponse | null>(null);
 
   useEffect(() => {
+    document.title = 'Air Corridor Map — PRANA Air Quality Platform';
     fetchAqiSurface(0.5).then(setSurfaceData).catch(() => {});
     fetchSensorThings().then(setSensorThingsData).catch(() => {});
     fetchHotspots(24, 'nominal').then(setHotspotsData).catch(() => {});
@@ -57,6 +73,43 @@ export const AirCorridorMapPage: React.FC = () => {
     return Math.hypot(lon - 77.2, lat - 28.6) < Math.hypot(closestLon - 77.2, closestLat - 28.6)
       ? feature : closest;
   }, surfaceData.features[0]);
+
+  const mapStations = (sensorThingsData?.value || []).map((s) => {
+    const coords = s.Locations?.[0]?.location?.coordinates;
+    const obs = (s as any).Datastreams?.[0]?.Observations?.[0] ?? s.properties;
+    return {
+      id: s['@iot.id'] || s.name,
+      name: s.name,
+      lat: coords ? coords[1] : 28.6,
+      lon: coords ? coords[0] : 77.2,
+      pm25: obs?.pm25_ugm3 ?? obs?.pm25 ?? null,
+      aqi: obs?.aqi_index ?? obs?.aqi ?? null,
+      source: 'CPCB CAAQMS',
+    };
+  });
+
+  const mapHotspots = (hotspotsData?.features || []).map((f) => ({
+    lat: f.geometry.coordinates[1],
+    lon: f.geometry.coordinates[0],
+    frp: f.properties.frp ?? undefined,
+    confidence: f.properties.confidence,
+    acq_date: f.properties.acq_datetime,
+  }));
+
+  const mapSurfacePoints = (surfaceData?.features || []).map((f) => ({
+    lat: f.geometry.coordinates[1],
+    lon: f.geometry.coordinates[0],
+    pm25: f.properties.pm25_estimate,
+    aqi: f.properties.aqi_index,
+  }));
+
+  const mapPlumes = (plumeData?.features || []).map((f) => ({
+    clusterId: f.properties.cluster_id,
+    horizonHours: f.properties.horizon_hours,
+    coordinates: (f.geometry.coordinates[0] || []) as [number, number][],
+    avgPm25: f.properties.max_pm25_est,
+    label: `${f.properties.horizon_hours}h Advection Plume`,
+  }));
 
   return (
     <div className="w-full bg-canvas-cream min-h-screen relative overflow-x-hidden pt-20">
@@ -134,6 +187,29 @@ export const AirCorridorMapPage: React.FC = () => {
           {/* Layer Bar & Controls */}
           <div className="flex flex-wrap items-center justify-between gap-space-sm relative z-10 pb-space-sm border-b border-ink-black/10">
             <div className="flex items-center flex-wrap gap-space-xs">
+              <div className="flex items-center rounded-full border border-ink-black overflow-hidden shadow-[1px_1px_0px_#18181B] bg-surface-vanilla mr-2">
+                <button
+                  onClick={() => setMapMode('leaflet')}
+                  className={`px-3 py-1.5 text-xs font-bold ${
+                    mapMode === 'leaflet'
+                      ? 'bg-primary text-on-primary'
+                      : 'bg-surface-vanilla text-ink-black hover:bg-surface-vanilla-strong'
+                  }`}
+                >
+                  GIS Satellite Map
+                </button>
+                <button
+                  onClick={() => setMapMode('schematic')}
+                  className={`px-3 py-1.5 text-xs font-bold ${
+                    mapMode === 'schematic'
+                      ? 'bg-primary text-on-primary'
+                      : 'bg-surface-vanilla text-ink-black hover:bg-surface-vanilla-strong'
+                  }`}
+                >
+                  Corridor Schematic
+                </button>
+              </div>
+
               <button
                 onClick={() => toggleLayer('plume')}
                 className={`px-space-sm py-1.5 rounded-full font-label-md text-label-md shadow-sm transition-all flex items-center gap-1 cursor-pointer ${
@@ -191,7 +267,63 @@ export const AirCorridorMapPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Interactive Atmospheric Canvas */}
+          {/* Interactive Atmospheric Canvas or GIS Map */}
+          {mapMode === 'leaflet' ? (
+            <div className="w-full flex flex-col gap-3 select-none">
+              <div className="w-full h-[520px] rounded-xl overflow-hidden shadow-inner border border-ink-black/20">
+                <LeafletMap
+                  height={520}
+                  stations={mapStations}
+                  hotspots={mapHotspots}
+                  surfacePoints={mapSurfacePoints}
+                  plumes={mapPlumes}
+                  showStations={layers.cpcbBams}
+                  showHotspots={layers.viirsFRP}
+                  showPlumes={layers.plume}
+                  showSurface={true}
+                />
+              </div>
+
+              {/* Bottom Scrubber Strip */}
+              <div className="relative z-10 w-full bg-surface-vanilla-strong rounded-xl p-space-sm shadow-[2px_2px_0px_#18181B] border border-ink-black flex flex-col gap-2">
+                <div className="flex items-center justify-between text-body-sm font-semibold">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setIsPlaying(!isPlaying)}
+                      className="w-7 h-7 rounded-full bg-ink-black text-canvas-cream flex items-center justify-center shadow-[1px_1px_0px_#18181B] hover:bg-cobalt-deep cursor-pointer transition-transform"
+                      type="button"
+                      aria-label="Toggle trajectory playback"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">
+                        {isPlaying ? 'pause' : 'play_arrow'}
+                      </span>
+                    </button>
+                    <span className="text-ink-black font-label-md text-label-md uppercase tracking-wider flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[16px] text-cobalt-deep">timeline</span>
+                      Forward Trajectory Transit Scrubber
+                    </span>
+                  </div>
+                  <span className="font-label-lg text-label-lg text-cobalt-deep font-bold">
+                    T + {trajectoryHours.toFixed(1)} Hours Forward
+                  </span>
+                </div>
+                <input
+                  className="w-full h-2 bg-surface-container rounded-lg appearance-none cursor-pointer accent-cobalt-deep"
+                  max={72}
+                  min={0}
+                  type="range"
+                  value={trajectoryHours}
+                  onChange={(e) => setTrajectoryHours(parseFloat(e.target.value))}
+                />
+                <div className="flex justify-between text-label-md text-ink-muted font-bold">
+                  <span>T+0h Origin (Punjab)</span>
+                  <span>T+24h Forecast</span>
+                  <span>T+48h Forecast</span>
+                  <span>T+72h Forecast</span>
+                </div>
+              </div>
+            </div>
+          ) : (
           <div className="w-full h-[520px] bg-canvas-cream rounded-xl relative overflow-hidden shadow-inner p-space-lg flex flex-col justify-between border border-ink-black/20 select-none">
             {/* Background Map Streamlines SVG */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none" fill="none" preserveAspectRatio="none" viewBox="0 0 1000 520">
@@ -367,6 +499,7 @@ export const AirCorridorMapPage: React.FC = () => {
               </div>
             </div>
           </div>
+          )}
         </div>
 
         {/* Selected Corridor Node Detail Ledger */}

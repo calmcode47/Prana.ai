@@ -7,16 +7,22 @@ import {
   formatFederatedImplementation,
   formatFederatedMetric,
 } from '../api/client';
+import { ConvergenceChart, DataPoint } from '../components/ui/ConvergenceChart';
 
 export const FederatedPage: React.FC = () => {
   const [currentRound, setCurrentRound] = useState<number>(0);
   const [globalLoss, setGlobalLoss] = useState<number | null>(null);
   const [isRunningSim, setIsRunningSim] = useState<boolean>(false);
+  const [activeChart, setActiveChart] = useState<'accuracy' | 'loss'>('accuracy');
 
   const [flStatus, setFlStatus] = useState<FLStatusResponse | null>(null);
 
   const [simBtnText, setSimBtnText] = useState<string | null>(null);
   const hasFieldDataset = Boolean(flStatus?.dataset && !/(synthetic|demo|sample)/i.test(flStatus.dataset));
+
+  useEffect(() => {
+    document.title = 'PRANA — Federated Learning & Edge Mesh';
+  }, []);
 
   // Fetch FL status from backend on mount (GET /api/v1/federated/status)
   useEffect(() => {
@@ -60,9 +66,9 @@ export const FederatedPage: React.FC = () => {
           setCurrentRound(roundObj.round_number);
           setGlobalLoss(roundObj.global_loss ?? null);
           if (step < total) {
-            setSimBtnText(`Displaying Backend Round ${roundObj.round_number}...`);
+            setSimBtnText(`Displaying Round ${roundObj.round_number}/${total}...`);
           } else {
-            setSimBtnText(`Displaying Backend Round ${roundObj.round_number}...`);
+            setSimBtnText('Finalizing Aggregation...');
           }
         } else {
           clearInterval(stepInterval);
@@ -86,15 +92,13 @@ export const FederatedPage: React.FC = () => {
   const secureAggregation = flStatus?.privacy?.secure_aggregation;
   const rounds = hasFieldDataset ? (flStatus?.rounds ?? []) : [];
   const latestRound = rounds[rounds.length - 1];
-  const chartX = (index: number) => 60 + (index / Math.max(1, rounds.length - 1)) * 585;
-  // Accuracy is a 0–1 score. Plot the complete range so sub-50% values remain
-  // distinct instead of being collapsed onto a misleading 50% baseline.
-  const chartY = (accuracy: number) => 195 - Math.max(0, Math.min(1, accuracy)) * 165;
-  const chartPath = (field: 'punjab_accuracy' | 'delhi_accuracy' | 'global_accuracy') =>
-    rounds.map((round, index) => `${index === 0 ? 'M' : 'L'}${chartX(index).toFixed(1)},${chartY(round[field]).toFixed(1)}`).join(' ');
-  const globalAreaPath = rounds.length > 0
-    ? `${chartPath('global_accuracy')} L${chartX(rounds.length - 1).toFixed(1)},195 L60,195 Z`
-    : '';
+  const convergenceData: DataPoint[] = rounds.map((round) => ({
+    round: round.round_number,
+    globalAcc: round.global_accuracy,
+    delhiAcc: round.delhi_accuracy,
+    punjabAcc: round.punjab_accuracy,
+    loss: round.global_loss,
+  }));
   const latestGain = latestRound
     ? latestRound.global_accuracy - Math.max(latestRound.punjab_accuracy, latestRound.delhi_accuracy)
     : null;
@@ -404,135 +408,85 @@ export const FederatedPage: React.FC = () => {
               <div>
                 <div className="flex items-center gap-space-2xs">
                   <span className="font-headline-sm text-headline-sm text-ink-black font-bold">
-                    Federated Model Prediction Score
+                    Federated Model Convergence &amp; Accuracy
                   </span>
                   <span className="px-2 py-0.5 rounded-full bg-coral-watermelon-vivid text-on-secondary text-label-md font-label-md font-bold shadow-[1px_1px_0px_#18181B]">
                     {formatFederatedMetric(flStatus?.metric)}
                   </span>
                 </div>
                 <p className="font-body-sm text-body-sm text-ink-muted mt-0.5">
-                  Normalized backend prediction scores across {totalRounds} completed federated round{totalRounds === 1 ? '' : 's'}
+                  Normalized backend prediction curves across {totalRounds} completed federated round{totalRounds === 1 ? '' : 's'}
                 </p>
               </div>
-              {/* Custom Legend Badges */}
-              <div className="flex flex-wrap items-center gap-space-xs">
-                <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
-                  <span className="w-3 h-1.5 rounded-sm bg-coral-watermelon-vivid"></span>
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Custom Legend Badges */}
+                <div className="flex flex-wrap items-center gap-space-xs">
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
+                    <span className="w-3 h-1.5 rounded-sm bg-coral-watermelon-vivid"></span>
                     <span className="font-bold text-ink-black">Global FL ({latestRound ? `${(latestRound.global_accuracy * 100).toFixed(1)}%` : 'N/A'})</span>
-                </div>
-                <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
-                  <span className="w-3 h-1.5 rounded-sm bg-cobalt-deep"></span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
+                    <span className="w-3 h-1.5 rounded-sm bg-cobalt-deep"></span>
                     <span className="text-ink-muted font-semibold">Delhi Silo ({latestRound ? `${(latestRound.delhi_accuracy * 100).toFixed(1)}%` : 'N/A'})</span>
-                </div>
-                <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
-                  <span className="w-3 h-1.5 rounded-sm bg-terracotta-deep"></span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
+                    <span className="w-3 h-1.5 rounded-sm bg-terracotta-deep"></span>
                     <span className="text-ink-muted font-semibold">Punjab Silo ({latestRound ? `${(latestRound.punjab_accuracy * 100).toFixed(1)}%` : 'N/A'})</span>
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Inline SVG Visualization */}
-            <div className="w-full bg-canvas-cream rounded-xl p-space-md shadow-[2px_2px_0px_#18181B] border border-ink-black/20 relative flex flex-col justify-end min-h-[320px]">
-              {/* Floating Accolade */}
-              <div className="absolute top-4 right-4 p-space-xs rounded-xl bg-surface-vanilla shadow-[2px_2px_0px_#18181B] border border-ink-black flex items-center gap-space-xs max-w-xs">
-                  <span className={`material-symbols-outlined text-[20px] ${latestGain != null && latestGain < 0 ? 'text-terracotta-deep' : 'text-forest-jade'}`}>
-                    {latestGain != null && latestGain < 0 ? 'trending_down' : 'trending_up'}
-                  </span>
-                <div>
-                  <span className="font-label-md text-label-md font-bold text-ink-black block">{latestGain == null ? 'Awaiting backend run' : `${latestGain >= 0 ? '+' : ''}${(latestGain * 100).toFixed(1)} points vs best local`}</span>
-                  <span className="font-body-sm text-body-sm text-ink-muted block text-xs">
-                    {formatFederatedMetric(flStatus?.metric)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Line Chart */}
-              <svg className="w-full h-56 overflow-visible" preserveAspectRatio="none" viewBox="0 0 700 240">
-                <defs>
-                  <linearGradient id="flGlow" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stopColor="#FF5376" stopOpacity="0.25" />
-                    <stop offset="100%" stopColor="#FF5376" stopOpacity="0.0" />
-                  </linearGradient>
-                </defs>
-                <line stroke="#E4E1E6" strokeDasharray="4 4" strokeWidth="1.5" x1="40" x2="680" y1="30" y2="30" />
-                <text fill="#737686" fontFamily="Plus Jakarta Sans" fontSize="10" textAnchor="end" x="32" y="34">100%</text>
-                <line stroke="#E4E1E6" strokeDasharray="4 4" strokeWidth="1.5" x1="40" x2="680" y1="71.25" y2="71.25" />
-                <text fill="#737686" fontFamily="Plus Jakarta Sans" fontSize="10" textAnchor="end" x="32" y="75.25">75%</text>
-                <line stroke="#E4E1E6" strokeDasharray="4 4" strokeWidth="1.5" x1="40" x2="680" y1="112.5" y2="112.5" />
-                <text fill="#737686" fontFamily="Plus Jakarta Sans" fontSize="10" textAnchor="end" x="32" y="116.5">50%</text>
-                <line stroke="#E4E1E6" strokeDasharray="4 4" strokeWidth="1.5" x1="40" x2="680" y1="153.75" y2="153.75" />
-                <text fill="#737686" fontFamily="Plus Jakarta Sans" fontSize="10" textAnchor="end" x="32" y="157.75">25%</text>
-                <line stroke="#18181B" strokeWidth="1.5" x1="40" x2="680" y1="195" y2="195" />
-                <text fill="#737686" fontFamily="Plus Jakarta Sans" fontSize="10" textAnchor="end" x="32" y="199">0%</text>
-
-                {/* X Axis Labels */}
-                {rounds.map((round, idx) => (
-                  <text
-                    key={round.round_number}
-                    fill="#52525B"
-                    fontFamily="Plus Jakarta Sans"
-                    fontSize="11"
-                    fontWeight="700"
-                    x={chartX(idx)}
-                    y="215"
+                {/* Metric View Toggle */}
+                <div className="flex items-center gap-1.5 bg-canvas-cream p-1 rounded-xl border border-ink-black/20 shadow-[1px_1px_0px_#18181B]">
+                  <button
+                    type="button"
+                    onClick={() => setActiveChart('accuracy')}
+                    className={`px-3 py-1 rounded-lg font-label-md text-label-md font-bold transition-all cursor-pointer ${
+                      activeChart === 'accuracy'
+                        ? 'bg-ink-black text-canvas-cream shadow-[1px_1px_0px_#18181B]'
+                        : 'text-ink-black hover:bg-surface-vanilla'
+                    }`}
                   >
-                    R{round.round_number}
-                  </text>
-                ))}
-
-                {/* Punjab Silo (Terracotta) */}
-                <path
-                  className="animate-dash-flow"
-                  d={chartPath('punjab_accuracy')}
-                  fill="none"
-                  stroke="#EA580C"
-                  strokeDasharray="5 3"
-                  strokeWidth="2.5"
-                />
-
-                {/* Delhi Silo (Cobalt) */}
-                <path
-                  className="animate-dash-flow-reverse"
-                  d={chartPath('delhi_accuracy')}
-                  fill="none"
-                  stroke="#1D4ED8"
-                  strokeDasharray="5 3"
-                  strokeWidth="2.5"
-                />
-
-                {/* Global FL Area Fill & Line (Watermelon) */}
-                <path
-                  d={globalAreaPath}
-                  fill="url(#flGlow)"
-                />
-                <path
-                  d={chartPath('global_accuracy')}
-                  fill="none"
-                  stroke="#FF5376"
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                />
-
-                {/* Dynamic Current Round Marker */}
-                {latestRound && <g
-                  className="transition-all duration-300 ease-out"
-                  transform={`translate(${chartX(Math.max(0, rounds.findIndex((round) => round.round_number === currentRound)))}, ${chartY((rounds.find((round) => round.round_number === currentRound) ?? latestRound).global_accuracy)})`}
-                >
-                  <circle
-                    className="animate-ping"
-                    r="12"
-                    fill="#FF5376"
-                    opacity="0.35"
-                  />
-                  <circle
-                    fill="#18181B"
-                    r="6"
-                    stroke="#FF5376"
-                    strokeWidth="3"
-                  />
-                </g>}
-              </svg>
+                    Accuracy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveChart('loss')}
+                    className={`px-3 py-1 rounded-lg font-label-md text-label-md font-bold transition-all cursor-pointer ${
+                      activeChart === 'loss'
+                        ? 'bg-ink-black text-canvas-cream shadow-[1px_1px_0px_#18181B]'
+                        : 'text-ink-black hover:bg-surface-vanilla'
+                    }`}
+                  >
+                    Loss Curve
+                  </button>
+                </div>
+              </div>
             </div>
+
+            {/* Performance Accolade Banner */}
+            <div className="p-space-xs rounded-xl bg-canvas-cream shadow-[2px_2px_0px_#18181B] border border-ink-black/30 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className={`material-symbols-outlined text-[20px] ${latestGain != null && latestGain < 0 ? 'text-terracotta-deep' : 'text-forest-jade'}`}>
+                  {latestGain != null && latestGain < 0 ? 'trending_down' : 'trending_up'}
+                </span>
+                <span className="font-label-md text-label-md font-bold text-ink-black">
+                  {latestGain == null
+                    ? 'Awaiting backend federated execution'
+                    : `${latestGain >= 0 ? '+' : ''}${(latestGain * 100).toFixed(1)} points vs best regional silo`}
+                </span>
+              </div>
+              <span className="font-body-sm text-body-sm text-ink-muted text-xs">
+                Round {currentRound} of {totalRounds}
+              </span>
+            </div>
+
+            {/* Reusable Interactive Convergence Chart */}
+            <ConvergenceChart
+              data={convergenceData}
+              metricType={activeChart}
+              height={290}
+              title={activeChart === 'accuracy' ? 'Accuracy Convergence by Silo' : 'Global Optimization Loss (MSE)'}
+            />
           </div>
 
           {/* Right 5-Cols: Configured Privacy Controls */}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { Sun, Moon } from 'lucide-react';
 import {
   connectCorridorWebSocket,
   downloadLegalDossier,
@@ -24,6 +25,22 @@ export const Header: React.FC = () => {
   const [firmsSource, setFirmsSource] = useState('Checking feed');
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [wsStatus, setWsStatus] = useState<'connecting' | 'open' | 'closed'>('connecting');
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('prana_theme') === 'dark';
+  });
+
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('prana_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('prana_theme', 'light');
+    }
+  }, [isDark]);
+
+  const toggleTheme = () => setIsDark((prev) => !prev);
 
   useEffect(() => {
     fetchReady()
@@ -177,6 +194,16 @@ export const Header: React.FC = () => {
 
         {/* Actions & Avatar */}
         <div className="flex items-center gap-space-sm">
+          {/* Theme Toggle */}
+          <button
+            onClick={toggleTheme}
+            className="p-2 rounded-full border border-ink-black bg-surface-vanilla text-ink-black shadow-[2px_2px_0px_#18181B] hover:bg-surface-vanilla-strong transition-colors"
+            title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            aria-label="Toggle Theme"
+          >
+            {isDark ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-cobalt-deep" />}
+          </button>
+
           <button
             onClick={handleExportDossier}
             className="inline-flex items-center gap-space-xs px-space-md py-2.5 rounded-full bg-ink-black text-canvas-cream font-label-lg text-label-lg shadow-[3px_3px_0px_#1D4ED8] hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 transition-transform"

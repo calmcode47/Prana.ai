@@ -12,12 +12,39 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors } from '../theme/tokens';
 import { NeoCard } from '../components/NeoCard';
 import { NeoButton } from '../components/NeoButton';
 import { StarburstBadge } from '../components/StarburstBadge';
 import { uploadCitizenSkyPhoto, CitizenPhotoResponse } from '../api/client';
+
+export interface PastScanRecord {
+  id: string;
+  timestamp: string;
+  latitude: string;
+  longitude: string;
+  pm25: number;
+  aqi: number;
+  category: string;
+  color: string;
+  confidence: string;
+  presetName: string;
+}
+
+export interface QueuedScanItem {
+  id: string;
+  timestamp: string;
+  latitude: string;
+  longitude: string;
+  photoUri?: string;
+  photoBase64?: string | null;
+  photoMimeType: string;
+}
+
+const SCANS_STORAGE_KEY = '@prana_citizen_scans';
+const OFFLINE_QUEUE_KEY = '@prana_citizen_offline_queue';
 
 interface CitizenScannerScreenProps {
   onClose?: () => void;
@@ -99,11 +126,18 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
   const [longitude, setLongitude] = useState<string>('77.3160');
 
   const [isInferring, setIsInferring] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [progressStage, setProgressStage] = useState<string>('');
   const [hasResult, setHasResult] = useState<boolean>(false);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [photoMimeType, setPhotoMimeType] = useState<string>('image/jpeg');
   const [reportSubmitted, setReportSubmitted] = useState<boolean>(false);
+
+  // Past scans and offline queue
+  const [pastScans, setPastScans] = useState<PastScanRecord[]>([]);
+  const [offlineQueue, setOfflineQueue] = useState<QueuedScanItem[]>([]);
+  const [isSyncingQueue, setIsSyncingQueue] = useState<boolean>(false);
 
   // Optical and PM2.5 results
   const [pm25Est, setPm25Est] = useState<number>(0);
@@ -115,6 +149,26 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const [locationStatus, setLocationStatus] = useState<string>('Saved observation coordinates');
+
+  // Load past scans and offline queue on mount
+  useEffect(() => {
+    AsyncStorage.getItem(SCANS_STORAGE_KEY).then((data) => {
+      if (data) {
+        try {
+          const parsed = JSON.parse(data);
+          if (Array.isArray(parsed)) setPastScans(parsed);
+        } catch {}
+      }
+    });
+    AsyncStorage.getItem(OFFLINE_QUEUE_KEY).then((data) => {
+      if (data) {
+        try {
+          const parsed = JSON.parse(data);
+          if (Array.isArray(parsed)) setOfflineQueue(parsed);
+        } catch {}
+      }
+    });
+  }, []);
 
   const applyDeviceLocation = async (requestPermission: boolean) => {
     if (isLocating) return;
@@ -214,6 +268,24 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
     setIsInferring(true);
     setReportSubmitted(false);
     setAnalysisError(null);
+    setUploadProgress(15);
+    setProgressStage('Validating & stripping EXIF metadata...');
+
+    const progressTimer = setInterval(() => {
+      setUploadProgress((prev) => {
+        if (prev < 40) {
+          setProgressStage('Uploading 224×224 RGB tensor to DCP server...');
+          return prev + 10;
+        } else if (prev < 75) {
+          setProgressStage('Running Dark Channel Prior (DCP) decomposition...');
+          return prev + 8;
+        } else if (prev < 92) {
+          setProgressStage('Computing atmospheric extinction τ and CPCB AQI...');
+          return prev + 4;
+        }
+        return prev;
+      });
+    }, 200);
 
     try {
       const filename = photoMimeType === 'image/png' ? 'sky_photo.png' : 'sky_photo.jpg';
@@ -281,7 +353,8 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
 
       const res: CitizenPhotoResponse = await uploadCitizenSkyPhoto(formData);
       if (res && typeof res.pm25_estimate === 'number') {
-        setPm25Est(Math.round(res.pm25_estimate));
+        const roundedPm25 = Math.round(res.pm25_estimate);
+        setPm25Est(roundedPm25);
         setAqiIndex(res.aqi_index);
         setAqiCategory(res.aqi_category);
         setAqiColor(res.aqi_color);
@@ -289,14 +362,114 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
         setInferenceTimeMs(res.processing_time_ms);
         setReportSubmitted(true);
         setHasResult(true);
+
+        const newRecord: PastScanRecord = {
+          id: `scan_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          latitude,
+          longitude,
+          pm25: roundedPm25,
+          aqi: res.aqi_index,
+          category: res.aqi_category,
+          color: res.aqi_color,
+          confidence: res.confidence,
+          presetName: PRESETS[selectedPreset]?.name ?? 'Ground Observation',
+        };
+        setPastScans((prev) => {
+          const updated = [newRecord, ...prev.slice(0, 19)];
+          AsyncStorage.setItem(SCANS_STORAGE_KEY, JSON.stringify(updated)).catch(() => {});
+          return updated;
+        });
       }
     } catch (error) {
       setHasResult(false);
       setReportSubmitted(false);
-      setAnalysisError(error instanceof Error ? error.message : 'Photo analysis failed.');
+      const errMsg = error instanceof Error ? error.message : 'Photo analysis failed.';
+      setAnalysisError(errMsg);
+
+      // Save to offline queue so user can retry when online
+      const queuedItem: QueuedScanItem = {
+        id: `queue_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        latitude,
+        longitude,
+        photoUri: photoUri ?? undefined,
+        photoBase64: photoBase64 ?? undefined,
+        photoMimeType,
+      };
+      setOfflineQueue((prev) => {
+        const updated = [queuedItem, ...prev.slice(0, 9)];
+        AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(updated)).catch(() => {});
+        return updated;
+      });
     } finally {
-      setIsInferring(false);
+      clearInterval(progressTimer);
+      setUploadProgress(100);
+      setProgressStage('Analysis complete');
+      setTimeout(() => {
+        setIsInferring(false);
+        setUploadProgress(0);
+        setProgressStage('');
+      }, 350);
     }
+  };
+
+  const handleSyncOfflineQueue = async () => {
+    if (isSyncingQueue || offlineQueue.length === 0) return;
+    setIsSyncingQueue(true);
+    try {
+      const remaining: QueuedScanItem[] = [];
+      for (const item of offlineQueue) {
+        try {
+          const formData = new FormData();
+          const filename = item.photoMimeType === 'image/png' ? 'sky_photo.png' : 'sky_photo.jpg';
+          if (item.photoBase64) {
+            const bytes = base64ToUint8Array(item.photoBase64);
+            formData.append('photo', { name: filename, type: item.photoMimeType, bytes: async () => bytes } as any, filename);
+          } else if (item.photoUri) {
+            formData.append('photo', { uri: item.photoUri, name: filename, type: item.photoMimeType } as any);
+          }
+          formData.append('latitude', item.latitude);
+          formData.append('longitude', item.longitude);
+
+          const res = await uploadCitizenSkyPhoto(formData);
+          if (res && typeof res.pm25_estimate === 'number') {
+            const syncedScan: PastScanRecord = {
+              id: item.id,
+              timestamp: item.timestamp,
+              latitude: item.latitude,
+              longitude: item.longitude,
+              pm25: Math.round(res.pm25_estimate),
+              aqi: res.aqi_index,
+              category: res.aqi_category,
+              color: res.aqi_color,
+              confidence: res.confidence,
+              presetName: 'Offline Synchronised',
+            };
+            setPastScans((prev) => {
+              const updated = [syncedScan, ...prev.slice(0, 19)];
+              AsyncStorage.setItem(SCANS_STORAGE_KEY, JSON.stringify(updated)).catch(() => {});
+              return updated;
+            });
+          } else {
+            remaining.push(item);
+          }
+        } catch {
+          remaining.push(item);
+        }
+      }
+      setOfflineQueue(remaining);
+      await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
+    } catch {
+      // ignore
+    } finally {
+      setIsSyncingQueue(false);
+    }
+  };
+
+  const handleClearHistory = async () => {
+    setPastScans([]);
+    await AsyncStorage.removeItem(SCANS_STORAGE_KEY);
   };
 
   const activePreset = PRESETS[selectedPreset];
@@ -557,6 +730,49 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
         </NeoButton>
         {analysisError && <Text style={styles.presetExplainer}>{analysisError}</Text>}
 
+        {/* Visual Upload & DCP Inference Progress Bar */}
+        {(isInferring || uploadProgress > 0) && (
+          <View style={styles.progressContainer}>
+            <View style={styles.progressHeaderRow}>
+              <View style={styles.progressLabelRow}>
+                <MaterialCommunityIcons name="cloud-upload" size={14} color={Colors.coralWatermelonVivid} />
+                <Text style={styles.progressStageText}>{progressStage || 'Processing sky image...'}</Text>
+              </View>
+              <Text style={styles.progressPercentText}>{uploadProgress}%</Text>
+            </View>
+            <View style={styles.progressTrack}>
+              <View
+                style={[
+                  styles.progressBar,
+                  { width: `${Math.min(uploadProgress, 100)}%` as DimensionValue },
+                ]}
+              />
+            </View>
+          </View>
+        )}
+
+        {/* Offline Sync Queue Banner */}
+        {offlineQueue.length > 0 && (
+          <View style={styles.offlineQueueBanner}>
+            <View style={styles.offlineQueueLeft}>
+              <MaterialCommunityIcons name="cloud-sync-outline" size={18} color={Colors.canvasCream} />
+              <View>
+                <Text style={styles.offlineQueueTitle}>Offline Queue ({offlineQueue.length} Pending)</Text>
+                <Text style={styles.offlineQueueSub}>Stored locally for background sync</Text>
+              </View>
+            </View>
+            <Pressable
+              onPress={handleSyncOfflineQueue}
+              disabled={isSyncingQueue}
+              style={styles.syncQueueBtn}
+            >
+              <Text style={styles.syncQueueBtnText}>
+                {isSyncingQueue ? 'Syncing...' : 'Retry Sync'}
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
         {/* Live Ground Receptor Estimation Result Card */}
         {hasResult && (
           <NeoCard backgroundColor={Colors.surfaceVanilla} style={styles.resultCard}>
@@ -728,6 +944,56 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
             </Text>
           </View>
         </View>
+
+        {/* Past Observations History Card */}
+        <NeoCard backgroundColor={Colors.surfaceVanilla} style={styles.historyCard}>
+          <View style={styles.historyHeader}>
+            <View style={styles.historyTitleRow}>
+              <MaterialCommunityIcons name="history" size={18} color={Colors.cobaltDeep} />
+              <Text style={styles.historyTitle}>Past Observations History</Text>
+            </View>
+            <View style={styles.historyHeaderRight}>
+              <Text style={styles.historyCountBadge}>{pastScans.length} scans</Text>
+              {pastScans.length > 0 && (
+                <Pressable onPress={handleClearHistory} style={styles.clearHistoryBtn}>
+                  <Text style={styles.clearHistoryText}>Clear</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+
+          {pastScans.length === 0 ? (
+            <Text style={styles.emptyHistoryText}>
+              No past photo scans recorded yet. Capture a sky image and run inference to begin building your local observation ledger.
+            </Text>
+          ) : (
+            <View style={styles.historyList}>
+              {pastScans.slice(0, 5).map((scan) => (
+                <View key={scan.id} style={styles.historyItem}>
+                  <View style={styles.historyItemTop}>
+                    <View style={styles.historyItemLocation}>
+                      <MaterialCommunityIcons name="map-marker-outline" size={13} color={Colors.inkMuted} />
+                      <Text style={styles.historyItemCoords} numberOfLines={1}>
+                        {scan.presetName || `${scan.latitude}°N, ${scan.longitude}°E`}
+                      </Text>
+                    </View>
+                    <View style={[styles.historyAqiBadge, { backgroundColor: scan.color || Colors.aqiModerate }]}>
+                      <Text style={styles.historyAqiText}>AQI {scan.aqi}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.historyItemBottom}>
+                    <Text style={styles.historyTimeText}>
+                      {new Date(scan.timestamp).toLocaleDateString()} {new Date(scan.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                    <Text style={styles.historyPm25Text}>
+                      PM2.5: <Text style={{ fontWeight: '800', color: Colors.coralWatermelonVivid }}>{scan.pm25} µg/m³</Text> • {scan.category}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </NeoCard>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -1570,5 +1836,189 @@ const styles = StyleSheet.create({
   formulaSubCaption: {
     fontSize: 9,
     color: Colors.inkMuted,
+  },
+  progressContainer: {
+    backgroundColor: Colors.surfaceVanilla,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: Colors.inkBlack,
+    padding: 10,
+    gap: 6,
+  },
+  progressHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  progressLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  progressStageText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.inkBlack,
+    flex: 1,
+  },
+  progressPercentText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: Colors.coralWatermelonVivid,
+  },
+  progressTrack: {
+    height: 6,
+    backgroundColor: Colors.surfaceVanillaStrong,
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: Colors.inkBlack,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: Colors.coralWatermelonVivid,
+  },
+  offlineQueueBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.terracottaDeep,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: Colors.inkBlack,
+    padding: 10,
+    gap: 8,
+  },
+  offlineQueueLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  offlineQueueTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.canvasCream,
+  },
+  offlineQueueSub: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: Colors.canvasCream,
+    opacity: 0.85,
+  },
+  syncQueueBtn: {
+    backgroundColor: Colors.canvasCream,
+    borderWidth: 1.2,
+    borderColor: Colors.inkBlack,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  syncQueueBtnText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: Colors.inkBlack,
+  },
+  historyCard: {
+    padding: 12,
+    gap: 8,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  historyTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  historyTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: Colors.inkBlack,
+  },
+  historyHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  historyCountBadge: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: Colors.inkMuted,
+    backgroundColor: Colors.surfaceVanillaStrong,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  clearHistoryBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  clearHistoryText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: Colors.coralWatermelonVivid,
+  },
+  emptyHistoryText: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: Colors.inkMuted,
+    lineHeight: 15,
+  },
+  historyList: {
+    gap: 6,
+  },
+  historyItem: {
+    backgroundColor: Colors.canvasCream,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E8E3D7',
+    padding: 8,
+    gap: 4,
+  },
+  historyItemTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  historyItemLocation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+    marginRight: 6,
+  },
+  historyItemCoords: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.inkBlack,
+  },
+  historyAqiBadge: {
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  historyAqiText: {
+    fontSize: 8,
+    fontWeight: '900',
+    color: '#FFF',
+  },
+  historyItemBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  historyTimeText: {
+    fontSize: 9,
+    fontWeight: '500',
+    color: Colors.inkMuted,
+  },
+  historyPm25Text: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: Colors.inkBlack,
   },
 });
