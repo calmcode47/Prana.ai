@@ -11,7 +11,7 @@ from backend.ingesters.ingest_openmeteo_air import fetch_air_quality_grid
 from backend.ingesters.memo import cached_snapshot
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import numpy as np
@@ -93,11 +93,14 @@ async def run_downscaler(resolution_deg: float = 0.5) -> Dict[str, Any]:
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
-                    SELECT DISTINCT ON (station_id) latitude, longitude, pm25_ugm3, source
-                    FROM aqi_readings WHERE parameter = 'pm25' AND ($1::boolean OR source='OPENAQ_LIVE') AND latitude IS NOT NULL AND longitude IS NOT NULL
+                    SELECT DISTINCT ON (station_id) latitude, longitude, pm25_ugm3, source, measured_at
+                    FROM aqi_readings WHERE parameter = 'pm25' AND ($1::boolean OR source='OPENAQ_LIVE')
+                      AND latitude IS NOT NULL AND longitude IS NOT NULL
+                      AND measured_at >= $2 AND measured_at <= $3
                     ORDER BY station_id, measured_at DESC
                     LIMIT 100;
-                    """, demo_enabled()
+                    """, demo_enabled(), datetime.now(timezone.utc) - timedelta(hours=24),
+                    datetime.now(timezone.utc) + timedelta(minutes=15)
                 )
                 readings = [dict(r) for r in rows]
         except Exception:
@@ -105,6 +108,11 @@ async def run_downscaler(resolution_deg: float = 0.5) -> Dict[str, Any]:
 
     if not readings:
         readings = await fetch_openaq_stations()
+    if not demo_enabled():
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        readings = [row for row in readings if row.get("measured_at") and
+                    cutoff <= datetime.fromisoformat(str(row["measured_at"]).replace("Z", "+00:00"))
+                    <= datetime.now(timezone.utc) + timedelta(minutes=15)]
 
     aod_data = await fetch_air_quality_grid()
     aod_features = aod_data["features"]
@@ -148,9 +156,13 @@ def _compute_surface(readings, aod_features, resolution_deg, source):
     y_train = []
 
     for st in readings:
-        lat = float(st.get("latitude") or 28.6)
-        lon = float(st.get("longitude") or 77.2)
-        pm25 = float(st.get("pm25_ugm3", 150.0))
+        if st.get("latitude") is None or st.get("longitude") is None or st.get("pm25_ugm3") is None:
+            continue
+        lat = float(st["latitude"])
+        lon = float(st["longitude"])
+        pm25 = float(st["pm25_ugm3"])
+        if not all(math.isfinite(value) for value in (lat, lon, pm25)) or pm25 < 0:
+            continue
 
         aod_val = get_interpolated_aod(lon, lat, aod_features)
         # Distance to other nearest station
@@ -160,6 +172,8 @@ def _compute_surface(readings, aod_features, resolution_deg, source):
         x_train.append([lon, lat, aod_val, dist_nearest, hour_sin, hour_cos, season_flag])
         y_train.append(pm25)
 
+    if not x_train:
+        raise ValueError("No valid ground observations are available for calibration")
     x_train_np = np.array(x_train)
     y_train_np = np.array(y_train)
 
@@ -188,7 +202,7 @@ def _compute_surface(readings, aod_features, resolution_deg, source):
     idx = 0
     for lat in lats:
         for lon in lons:
-            pm25_est = max(float(preds[idx]), 15.0)  # Lower bound for ambient air
+            pm25_est = max(float(preds[idx]), 0.0)
             std_val = float(stds[idx])
             aqi_idx = compute_cpcb_aqi(pm25_est)
 

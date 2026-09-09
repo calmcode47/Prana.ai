@@ -1,6 +1,6 @@
 """
 OGC SensorThings Tests (REQ-014)
-Verifies SensorThings Things schema and 2-node corridor representation.
+Verifies SensorThings Things schema derived from current observations.
 """
 
 from fastapi.testclient import TestClient
@@ -15,13 +15,9 @@ def test_things_schema(client: TestClient):
     data = resp.json()
 
     assert "@iot.count" in data
-    assert data["@iot.count"] == 2
     assert "value" in data
-    assert len(data["value"]) == 2
-
-    node_ids = [n["@iot.id"] for n in data["value"]]
-    assert "punjab-node-001" in node_ids
-    assert "delhi-node-001" in node_ids
+    assert data["@iot.count"] == len(data["value"])
+    assert data["@iot.count"] > 0
 
     for node in data["value"]:
         assert "Locations" in node
@@ -29,3 +25,5 @@ def test_things_schema(client: TestClient):
         assert loc["encodingType"] == "application/geo+json"
         assert loc["location"]["type"] == "Point"
         assert len(loc["location"]["coordinates"]) == 2
+        assert node["properties"]["source"]
+        assert node["properties"]["measured_at"]

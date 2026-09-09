@@ -541,7 +541,7 @@ export const ForecastPage: React.FC = () => {
               <div className="grid grid-cols-3 gap-2 mb-5">
                 <div className="bg-canvas-cream p-3 rounded-xl shadow-[2px_2px_0px_#18181B] border border-ink-black">
                   <span className="block font-label-md text-label-md text-ink-muted font-bold">Pearson r</span>
-                  <span className="font-telemetry-val text-telemetry-val text-cobalt-deep">{strongestLag?.pearson_r.toFixed(3) ?? '—'}</span>
+                  <span className="font-telemetry-val text-telemetry-val text-cobalt-deep">{strongestLag?.pearson_r.toFixed(3) ?? 'N/A'}</span>
                   <span className="block text-[10px] text-forest-jade font-bold">{lagData?.status === 'computed' ? 'Computed' : 'Insufficient data'}</span>
                 </div>
                 <div className="bg-canvas-cream p-3 rounded-xl shadow-[2px_2px_0px_#18181B] border border-ink-black">

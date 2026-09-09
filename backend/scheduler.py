@@ -84,7 +84,7 @@ async def generate_threshold_alerts():
     """Create at most one warning per station per day, using live readings only."""
     from datetime import timedelta
     from backend.database import get_db_pool, get_in_memory_store, compute_cpcb_aqi
-    from backend.routers.alerts import fetch_alerts, create_incident
+    from backend.routers.alerts import fetch_alerts, create_incident_internal
     from backend.models import IncidentCreate
     now = datetime.now(timezone.utc)
     recent = (await fetch_alerts(limit=100, since=now - timedelta(days=1)))["items"]
@@ -111,7 +111,7 @@ async def generate_threshold_alerts():
         aqi = compute_cpcb_aqi(reading["pm25_ugm3"])
         location = reading.get("station_name") or reading.get("name") or reading["station_id"]
         if aqi > 300 and location not in locations:
-            await create_incident(IncidentCreate(severity="emergency" if aqi > 400 else "warning",
+            await create_incident_internal(IncidentCreate(severity="emergency" if aqi > 400 else "warning",
                 location_text=location, latitude=reading.get("latitude"), longitude=reading.get("longitude"),
                 measured_pm25=reading["pm25_ugm3"], satellite_source=None))
             locations.add(location)

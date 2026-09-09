@@ -96,8 +96,8 @@ async def get_federated_status():
 
 
 @router.post("/run", response_model=FLStatusResponse)
-@limiter.limit("5/minute")
-async def trigger_federated_run(request: Request, num_rounds: int = Query(10, ge=1, le=100)):
+@limiter.limit("2/hour")
+async def trigger_federated_run(request: Request, num_rounds: int = Query(10, ge=1, le=10)):
     """
     Triggers a 10-round Federated Averaging simulation across Punjab and Delhi nodes.
     Updates fl_rounds in the database and in-memory store.

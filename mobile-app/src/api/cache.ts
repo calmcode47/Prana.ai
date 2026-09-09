@@ -28,7 +28,8 @@ export async function readApiCache<T>(
 
     if (envelope.savedAt && maxAgeMs > 0) {
       const ageMs = Date.now() - new Date(envelope.savedAt).getTime();
-      if (ageMs > maxAgeMs) {
+      if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > maxAgeMs) {
+        await AsyncStorage.removeItem(keyFor(requestKey));
         return null;
       }
     }

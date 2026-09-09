@@ -286,7 +286,7 @@ export const LandingPage: React.FC = () => {
               <div className="flex items-center justify-between lg:justify-start gap-space-sm px-space-md py-space-xs rounded-lg bg-surface-vanilla shadow-[2px_2px_0px_#18181B]">
                 <span className="text-xl">🔥</span>
                 <div>
-                  <div className="font-telemetry-val text-telemetry-val text-terracotta-deep">{hotspots?.count ?? '—'}</div>
+                  <div className="font-telemetry-val text-telemetry-val text-terracotta-deep">{hotspots?.count ?? 'N/A'}</div>
                   <div className="font-label-md text-label-md text-ink-muted">Active Stubble Fires (VIIRS)</div>
                 </div>
               </div>
@@ -294,7 +294,7 @@ export const LandingPage: React.FC = () => {
               <div className="flex items-center justify-between lg:justify-start gap-space-sm px-space-md py-space-xs rounded-lg bg-surface-vanilla shadow-[2px_2px_0px_#18181B]">
                 <span className="text-xl">📡</span>
                 <div>
-                  <div className="font-telemetry-val text-telemetry-val text-cobalt-deep">{stations?.['@iot.count'] ?? '—'}</div>
+                  <div className="font-telemetry-val text-telemetry-val text-cobalt-deep">{stations?.['@iot.count'] ?? 'N/A'}</div>
                   <div className="font-label-md text-label-md text-ink-muted">CAAQMS Stations Online</div>
                 </div>
               </div>
@@ -303,7 +303,7 @@ export const LandingPage: React.FC = () => {
                 <span className="text-xl">🌫️</span>
                 <div>
                   <div className="flex items-center gap-space-2xs">
-                    <span className="font-telemetry-val text-telemetry-val text-aqi-hazardous">{delhiPm25 == null ? '—' : delhiPm25.toFixed(1)}</span>
+                    <span className="font-telemetry-val text-telemetry-val text-aqi-hazardous">{delhiPm25 == null ? 'N/A' : delhiPm25.toFixed(1)}</span>
                     <span className="font-telemetry-unit text-telemetry-unit text-ink-muted">µg/m³ PM2.5</span>
                   </div>
                   <div className="font-label-md text-label-md font-bold text-aqi-hazardous">
@@ -338,7 +338,7 @@ export const LandingPage: React.FC = () => {
               <div>
                 <div className="font-label-md text-label-md text-ink-muted">Boundary Mixing Height</div>
                 <div className="font-telemetry-val text-title-md text-ink-black font-extrabold">
-                  {delhiMeteo ? `${delhiMeteo.mixing_layer_height_m_agl.toFixed(0)}m` : '—'} <span className="font-body-sm text-body-sm font-normal text-terracotta-deep">(Live Boundary Layer)</span>
+                  {delhiMeteo ? `${delhiMeteo.mixing_layer_height_m_agl.toFixed(0)}m` : 'N/A'} <span className="font-body-sm text-body-sm font-normal text-terracotta-deep">(Live Boundary Layer)</span>
                 </div>
               </div>
             </div>
@@ -372,7 +372,7 @@ export const LandingPage: React.FC = () => {
                 </div>
                 <div className="mt-space-md pt-space-xs border-t border-dashed border-outline-variant flex justify-between font-label-md text-label-md">
                   <span className="text-ink-muted">Thermal Radiative Power:</span>
-                  <span className="font-bold text-terracotta-deep">{totalFrp == null ? '—' : `${totalFrp.toFixed(1)} MW`}</span>
+                  <span className="font-bold text-terracotta-deep">{totalFrp == null ? 'N/A' : `${totalFrp.toFixed(1)} MW`}</span>
                 </div>
               </div>
 
@@ -575,24 +575,24 @@ export const LandingPage: React.FC = () => {
             </h2>
             <p className="font-body-lg text-body-lg text-ink-muted">
               Open-Meteo reports {punjabMeteo ? `${punjabMeteo.wind_speed_ms.toFixed(2)} m/s winds from ${punjabMeteo.wind.direction_from_deg.toFixed(0)}° over Punjab` : 'wind data is loading'}.
-              NASA FIRMS currently reports {hotspots?.count ?? '—'} matching fire detections, while the CAMS surface provides {surface?.features.length ?? '—'} current model grid points.
+              NASA FIRMS currently reports {hotspots?.count ?? 'N/A'} matching fire detections, while the CAMS surface provides {surface?.features.length ?? 'N/A'} current model grid points.
             </p>
 
             {/* Mini-stats row */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-space-sm mt-space-sm">
               <div className="p-space-sm rounded-xl bg-surface-vanilla shadow-[2px_2px_0px_#18181B]">
                 <div className="font-label-md text-label-md text-ink-muted">Plume Envelopes</div>
-                <div className="font-telemetry-val text-telemetry-val text-cobalt-deep mt-1">{forecast?.features.length ?? '—'}</div>
+                <div className="font-telemetry-val text-telemetry-val text-cobalt-deep mt-1">{forecast?.features.length ?? 'N/A'}</div>
                 <div className="font-label-md text-label-md text-forest-jade font-semibold">current backend forecast</div>
               </div>
               <div className="p-space-sm rounded-xl bg-surface-vanilla shadow-[2px_2px_0px_#18181B]">
                 <div className="font-label-md text-label-md text-ink-muted">Surface Grid</div>
-                <div className="font-telemetry-val text-telemetry-val text-terracotta-deep mt-1">{surface?.features.length ?? '—'}</div>
+                <div className="font-telemetry-val text-telemetry-val text-terracotta-deep mt-1">{surface?.features.length ?? 'N/A'}</div>
                 <div className="font-label-md text-label-md text-ink-muted">current model points</div>
               </div>
               <div className="p-space-sm rounded-xl bg-surface-vanilla shadow-[2px_2px_0px_#18181B] col-span-2 sm:col-span-1">
                 <div className="font-label-md text-label-md text-ink-muted">Backend Incidents</div>
-                <div className="font-telemetry-val text-telemetry-val text-ink-black mt-1">{alerts?.count ?? '—'}</div>
+                <div className="font-telemetry-val text-telemetry-val text-ink-black mt-1">{alerts?.count ?? 'N/A'}</div>
                 <div className="font-label-md text-label-md text-secondary font-semibold">currently recorded</div>
               </div>
             </div>
@@ -642,7 +642,7 @@ export const LandingPage: React.FC = () => {
                 {/* Dual-Unit Telemetry Chip inside Device */}
                 <div className="w-full flex items-center justify-between p-space-xs rounded-full bg-surface-vanilla shadow-[2px_2px_0px_#18181B] text-ink-black">
                   <div className="flex items-center gap-space-2xs pl-space-sm">
-                    <span className="font-telemetry-val text-body-lg font-bold">{delhiPm25 == null ? '—' : delhiPm25.toFixed(1)}</span>
+                    <span className="font-telemetry-val text-body-lg font-bold">{delhiPm25 == null ? 'N/A' : delhiPm25.toFixed(1)}</span>
                     <span className="font-telemetry-unit text-label-md text-ink-muted">µg/m³</span>
                   </div>
                   <div className="w-px h-6 bg-outline-variant"></div>

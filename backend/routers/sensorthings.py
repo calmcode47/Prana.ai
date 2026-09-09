@@ -5,6 +5,7 @@ Serves standard OGC SensorThings API compliant definitions for PRANA corridor no
 
 from fastapi import APIRouter
 from backend.models import SensorThingsResponse
+from backend.routers.aqi import get_aqi_stations
 
 router = APIRouter(prefix="/api/v1/sensorthings", tags=["OGC SensorThings"])
 
@@ -12,31 +13,24 @@ router = APIRouter(prefix="/api/v1/sensorthings", tags=["OGC SensorThings"])
 @router.get("/Things", response_model=SensorThingsResponse)
 async def get_sensorthings_things():
     """
-    Returns standard OGC SensorThings API Things entities for PRANA corridor.
-    Two nodes: Punjab (source) and Delhi (receptor).
+    Returns SensorThings entities derived from current provider observations.
     """
-    return {
-        "@iot.count": 2,
-        "value": [
-            {
-                "@iot.id": "punjab-node-001",
-                "name": "Punjab Federated Node",
-                "description": "Agricultural burn and air quality monitoring node — Punjab state",
-                "properties": { "node_type": "federated_client", "state": "Punjab" },
-                "Locations": [{
-                    "encodingType": "application/geo+json",
-                    "location": { "type": "Point", "coordinates": [75.8, 30.9] }
-                }]
+    stations = await get_aqi_stations(parameter="pm25", state=None)
+    things = []
+    for station in stations["value"]:
+        observation = station["Datastreams"][0]["Observations"][0]
+        things.append({
+            "@iot.id": station["@iot.id"],
+            "name": station["name"],
+            "description": "Air-quality monitoring station from the current provider feed",
+            "properties": {
+                "source": observation.get("source"),
+                "measured_at": observation.get("phenomenonTime"),
+                "result_quality": observation.get("resultQuality"),
             },
-            {
-                "@iot.id": "delhi-node-001",
-                "name": "Delhi Receptor Node",
-                "description": "Urban receptor and air quality monitoring node — NCR",
-                "properties": { "node_type": "federated_client", "state": "Delhi" },
-                "Locations": [{
-                    "encodingType": "application/geo+json",
-                    "location": { "type": "Point", "coordinates": [77.209, 28.614] }
-                }]
-            }
-        ]
-    }
+            "Locations": [{
+                "encodingType": "application/geo+json",
+                "location": station["Locations"][0]["location"],
+            }],
+        })
+    return {"@iot.count": len(things), "value": things}

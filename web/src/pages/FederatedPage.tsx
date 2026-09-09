@@ -16,19 +16,26 @@ export const FederatedPage: React.FC = () => {
   const [flStatus, setFlStatus] = useState<FLStatusResponse | null>(null);
 
   const [simBtnText, setSimBtnText] = useState<string | null>(null);
+  const hasFieldDataset = Boolean(flStatus?.dataset && !/(synthetic|demo|sample)/i.test(flStatus.dataset));
 
   // Fetch FL status from backend on mount (GET /api/v1/federated/status)
   useEffect(() => {
     fetchFederatedStatus().then((status) => {
       setFlStatus(status);
-      const latest = status.rounds[status.rounds.length - 1];
+      const fieldDataset = Boolean(status.dataset && !/(synthetic|demo|sample)/i.test(status.dataset));
+      const latest = fieldDataset ? status.rounds[status.rounds.length - 1] : undefined;
       setCurrentRound(latest?.round_number ?? 0);
       setGlobalLoss(latest?.global_loss ?? null);
+      if (!fieldDataset) setSimBtnText('N/A — real field partitions are not configured');
     }).catch(() => {});
   }, []);
 
   const handleRunSimulation = async () => {
     if (isRunningSim) return;
+    if (!hasFieldDataset) {
+      setSimBtnText('N/A — real field partitions are not configured');
+      return;
+    }
     setIsRunningSim(true);
     setSimBtnText('Running backend training...');
     setCurrentRound(0);
@@ -73,11 +80,11 @@ export const FederatedPage: React.FC = () => {
     }
   };
 
-  const totalRounds = flStatus?.total_rounds ?? 0;
+  const totalRounds = hasFieldDataset ? (flStatus?.total_rounds ?? 0) : 0;
   const progressWidth = totalRounds > 0 ? Math.min(100, (currentRound / totalRounds) * 100) : 0;
   const dp = flStatus?.privacy?.dp_sgd;
   const secureAggregation = flStatus?.privacy?.secure_aggregation;
-  const rounds = flStatus?.rounds ?? [];
+  const rounds = hasFieldDataset ? (flStatus?.rounds ?? []) : [];
   const latestRound = rounds[rounds.length - 1];
   const chartX = (index: number) => 60 + (index / Math.max(1, rounds.length - 1)) * 585;
   // Accuracy is a 0–1 score. Plot the complete range so sub-50% values remain
@@ -176,7 +183,7 @@ export const FederatedPage: React.FC = () => {
                   </div>
                   <div className="text-right">
                     <span className="font-telemetry-val text-telemetry-val text-cobalt-deep font-extrabold" id="sim-loss-display">
-                      {globalLoss == null ? '—' : globalLoss.toFixed(4)}
+                      {globalLoss == null ? 'N/A' : globalLoss.toFixed(4)}
                     </span>
                     <p className="font-telemetry-unit text-telemetry-unit text-ink-muted uppercase font-bold">
                       Global MSE Loss
@@ -195,11 +202,11 @@ export const FederatedPage: React.FC = () => {
 
                 <div className="flex items-center justify-between pt-1">
                   <span className="font-body-sm text-body-sm text-ink-muted font-semibold">
-                    Noise σ: {dp?.noise_multiplier?.toFixed(2) ?? '—'} | Clip C={dp?.max_grad_norm ?? '—'}
+                    Noise σ: {dp?.noise_multiplier?.toFixed(2) ?? 'N/A'} | Clip C={dp?.max_grad_norm ?? 'N/A'}
                   </span>
                   <button
                     onClick={handleRunSimulation}
-                    disabled={isRunningSim}
+                    disabled={isRunningSim || !hasFieldDataset}
                     className={`inline-flex items-center gap-space-xs px-space-md py-2 rounded-full text-canvas-cream font-label-lg text-label-lg shadow-[3px_3px_0px_#1D4ED8] hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 transition-all cursor-pointer disabled:opacity-75 font-bold ${
                       simBtnText?.includes('Converged') ? 'bg-forest-jade' : 'bg-ink-black'
                     }`}
@@ -277,15 +284,15 @@ export const FederatedPage: React.FC = () => {
                   </div>
                   <div className="p-space-xs rounded-lg bg-surface-vanilla border border-ink-black/20">
                     <span className="font-label-md text-label-md text-ink-muted block uppercase font-bold">Local Loss</span>
-                    <span className="font-telemetry-val text-telemetry-val text-terracotta-deep font-bold">{latestRound?.punjab_loss?.toFixed(4) ?? '—'}</span>
-                    <span className="font-body-sm text-body-sm text-forest-jade block font-semibold">Prediction score {latestRound ? `${(latestRound.punjab_accuracy * 100).toFixed(1)}%` : '—'}</span>
+                    <span className="font-telemetry-val text-telemetry-val text-terracotta-deep font-bold">{latestRound?.punjab_loss?.toFixed(4) ?? 'N/A'}</span>
+                    <span className="font-body-sm text-body-sm text-forest-jade block font-semibold">Prediction score {latestRound ? `${(latestRound.punjab_accuracy * 100).toFixed(1)}%` : 'N/A'}</span>
                   </div>
                 </div>
 
                 <div className="mt-space-xs p-space-xs rounded-lg bg-canvas-cream shadow-[inset_1px_1px_0px_#18181B] border border-ink-black/20 flex items-center justify-between font-label-md text-label-md">
                   <span className="text-ink-muted flex items-center gap-space-2xs font-semibold">
                     <span className="w-2 h-2 rounded-full bg-forest-jade"></span>
-                    Backend round: {latestRound?.round_number ?? '—'}
+                    Backend round: {latestRound?.round_number ?? 'N/A'}
                   </span>
                   <span className="text-cobalt-deep font-bold font-telemetry-unit">Metrics only</span>
                 </div>
@@ -352,15 +359,15 @@ export const FederatedPage: React.FC = () => {
                   </div>
                   <div className="p-space-xs rounded-lg bg-surface-vanilla border border-ink-black/20">
                     <span className="font-label-md text-label-md text-ink-muted block uppercase font-bold">Local Loss</span>
-                    <span className="font-telemetry-val text-telemetry-val text-cobalt-deep font-bold">{latestRound?.delhi_loss?.toFixed(4) ?? '—'}</span>
-                    <span className="font-body-sm text-body-sm text-forest-jade block font-semibold">Prediction score {latestRound ? `${(latestRound.delhi_accuracy * 100).toFixed(1)}%` : '—'}</span>
+                    <span className="font-telemetry-val text-telemetry-val text-cobalt-deep font-bold">{latestRound?.delhi_loss?.toFixed(4) ?? 'N/A'}</span>
+                    <span className="font-body-sm text-body-sm text-forest-jade block font-semibold">Prediction score {latestRound ? `${(latestRound.delhi_accuracy * 100).toFixed(1)}%` : 'N/A'}</span>
                   </div>
                 </div>
 
                 <div className="mt-space-xs p-space-xs rounded-lg bg-canvas-cream shadow-[inset_1px_1px_0px_#18181B] border border-ink-black/20 flex items-center justify-between font-label-md text-label-md">
                   <span className="text-ink-muted flex items-center gap-space-2xs font-semibold">
                     <span className="w-2 h-2 rounded-full bg-forest-jade"></span>
-                    Backend round: {latestRound?.round_number ?? '—'}
+                    Backend round: {latestRound?.round_number ?? 'N/A'}
                   </span>
                   <span className="text-cobalt-deep font-bold font-telemetry-unit">Metrics only</span>
                 </div>
@@ -411,15 +418,15 @@ export const FederatedPage: React.FC = () => {
               <div className="flex flex-wrap items-center gap-space-xs">
                 <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
                   <span className="w-3 h-1.5 rounded-sm bg-coral-watermelon-vivid"></span>
-                    <span className="font-bold text-ink-black">Global FL ({latestRound ? `${(latestRound.global_accuracy * 100).toFixed(1)}%` : '—'})</span>
+                    <span className="font-bold text-ink-black">Global FL ({latestRound ? `${(latestRound.global_accuracy * 100).toFixed(1)}%` : 'N/A'})</span>
                 </div>
                 <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
                   <span className="w-3 h-1.5 rounded-sm bg-cobalt-deep"></span>
-                    <span className="text-ink-muted font-semibold">Delhi Silo ({latestRound ? `${(latestRound.delhi_accuracy * 100).toFixed(1)}%` : '—'})</span>
+                    <span className="text-ink-muted font-semibold">Delhi Silo ({latestRound ? `${(latestRound.delhi_accuracy * 100).toFixed(1)}%` : 'N/A'})</span>
                 </div>
                 <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
                   <span className="w-3 h-1.5 rounded-sm bg-terracotta-deep"></span>
-                    <span className="text-ink-muted font-semibold">Punjab Silo ({latestRound ? `${(latestRound.punjab_accuracy * 100).toFixed(1)}%` : '—'})</span>
+                    <span className="text-ink-muted font-semibold">Punjab Silo ({latestRound ? `${(latestRound.punjab_accuracy * 100).toFixed(1)}%` : 'N/A'})</span>
                 </div>
               </div>
             </div>

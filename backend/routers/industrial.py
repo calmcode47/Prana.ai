@@ -7,7 +7,6 @@ from typing import List, Optional
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from pydantic import AwareDatetime, BaseModel, Field
 
-from backend.config import production_mode
 from backend.database import get_db_pool, get_in_memory_store
 from backend.routers.citizen import limiter
 
@@ -25,15 +24,13 @@ class CEMSReading(BaseModel):
 
 
 class CEMSBatch(BaseModel):
-    readings: List[CEMSReading] = Field(min_length=1, max_length=5000)
+    readings: List[CEMSReading] = Field(min_length=1, max_length=500)
 
 
 def _authorized(supplied):
     expected = os.getenv("CEMS_INGEST_API_KEY")
     if not expected:
-        if production_mode():
-            raise HTTPException(503, "CEMS ingestion is not configured")
-        return
+        raise HTTPException(503, "CEMS ingestion is not configured")
     if not supplied or not hmac.compare_digest(supplied, expected):
         raise HTTPException(401, "Invalid CEMS credential")
 
@@ -84,7 +81,11 @@ def detect_bypass(rows):
 
 
 @router.get("/cems/{facility_id}/forensics")
-async def cems_forensics(facility_id: str, hours: int = Query(24, ge=1, le=24 * 31)):
+@limiter.limit("30/minute")
+async def cems_forensics(request: Request, facility_id: str,
+                         hours: int = Query(24, ge=1, le=24 * 31),
+                         x_cems_key: Optional[str] = Header(None)):
+    _authorized(x_cems_key)
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
     pool = get_db_pool()
     if pool:

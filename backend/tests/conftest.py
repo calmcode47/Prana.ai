@@ -67,6 +67,7 @@ def isolated_runtime(monkeypatch, request):
     from backend.database import get_in_memory_store
     from backend.ingesters.memo import _cache
     from backend.routers.citizen import limiter
+    from backend.routers.websocket import _snapshot_cache
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("FIRMS_MAP_KEY", raising=False)
     monkeypatch.delenv("OPENAQ_API_KEY", raising=False)
@@ -82,8 +83,10 @@ def isolated_runtime(monkeypatch, request):
     if request.node.name not in ("test_openaq_fetch_mocked", "test_meteo_fetch_mocked"):
         monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", no_live_network)
     _cache.clear()
+    _snapshot_cache.clear()
     for records in get_in_memory_store().values():
         records.clear()
     limiter.reset()
     yield
     _cache.clear()
+    _snapshot_cache.clear()

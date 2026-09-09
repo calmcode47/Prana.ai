@@ -9,11 +9,12 @@ import json
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Literal
-from fastapi import APIRouter, Query, Response, status, HTTPException
+from fastapi import APIRouter, Query, Request, Response, status, HTTPException
 from pydantic import AwareDatetime
 
 from backend.models import AlertsResponse, LatestAlertResponse, IncidentCreate, IncidentItem
 from backend.database import get_db_pool, get_in_memory_store, compute_cpcb_aqi
+from backend.routers.citizen import limiter
 
 logger = logging.getLogger("prana.routers.alerts")
 
@@ -122,17 +123,18 @@ async def get_latest_alert(response: Response, lang: Literal["en", "hi", "pa"] =
         response.status_code = status.HTTP_204_NO_CONTENT
         return None
 
-    title = f"Air Quality {top['severity'].capitalize()} — {top.get('location_text', 'Corridor')}"
-    body = f"AQI {top.get('measured_aqi', 'Elevated')} ({top.get('pollutant', 'PM2.5')}: {(top.get('measured_pm25') or 0):.1f} µg/m³)."
+    title = f"Air Quality {top['severity'].capitalize()} — {top.get('location_text') or 'N/A'}"
+    aqi_text = str(top["measured_aqi"]) if top.get("measured_aqi") is not None else "N/A"
+    pm25_text = f"{top['measured_pm25']:.1f} µg/m³" if top.get("measured_pm25") is not None else "N/A"
+    body = f"AQI {aqi_text} ({top.get('pollutant') or 'PM2.5'}: {pm25_text})."
 
-    location = top.get("location_text") or "Corridor"
-    pm25 = top.get("measured_pm25") or 0
+    location = top.get("location_text") or "N/A"
     if lang == "hi":
         title = f"वायु गुणवत्ता चेतावनी — {location}"
-        body = f"अनुमानित AQI {top.get('measured_aqi')}; PM2.5: {pm25:.1f} µg/m³।"
+        body = f"अनुमानित AQI {aqi_text}; PM2.5: {pm25_text}।"
     elif lang == "pa":
         title = f"ਹਵਾ ਦੀ ਗੁਣਵੱਤਾ ਚੇਤਾਵਨੀ — {location}"
-        body = f"ਅਨੁਮਾਨਿਤ AQI {top.get('measured_aqi')}; PM2.5: {pm25:.1f} µg/m³।"
+        body = f"ਅਨੁਮਾਨਿਤ AQI {aqi_text}; PM2.5: {pm25_text}।"
     return {
         "incident_id": top["incident_id"],
         "severity": top["severity"],
@@ -143,11 +145,17 @@ async def get_latest_alert(response: Response, lang: Literal["en", "hi", "pa"] =
 
 
 @router.post("/incident", status_code=status.HTTP_201_CREATED, response_model=IncidentItem)
-async def create_incident(payload: IncidentCreate):
+@limiter.limit("10/minute")
+async def create_incident(request: Request, payload: IncidentCreate):
     """
     Creates a new SPCB incident ticket.
     Computes measured_aqi from measured_pm25 server-side.
     """
+    return await create_incident_internal(payload)
+
+
+async def create_incident_internal(payload: IncidentCreate):
+    """Persist and deliver an incident created by a trusted internal job."""
     today_str = datetime.now(timezone.utc).strftime("%Y%m%d")
     inc_id = f"INC-{today_str}-{uuid.uuid4().hex[:12].upper()}"
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -193,9 +201,12 @@ async def create_incident(payload: IncidentCreate):
         except Exception as ex:
             raise HTTPException(503, "Incident could not be saved") from None
 
-    # In-memory store
-    store = get_in_memory_store()
-    store.setdefault("incidents", []).insert(0, item.model_dump())
+    # The local store is the database only when PostgreSQL is unavailable. Do
+    # not mirror production incidents into an unbounded process list.
+    if pool is None:
+        incidents = get_in_memory_store().setdefault("incidents", [])
+        incidents.insert(0, item.model_dump())
+        del incidents[10_000:]
 
     from backend.routers.websocket import broadcast_alert
     await broadcast_alert(item.model_dump())

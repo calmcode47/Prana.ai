@@ -11,7 +11,6 @@ import {
   createLegalNotice,
   fetchAlerts,
   fetchAnomalies,
-  fetchCemsForensics,
   fetchHotspots,
   fetchLatestAlert,
   fetchLegalRegistry,
@@ -49,7 +48,7 @@ export const AlertsPage: React.FC = () => {
   useEffect(() => {
     fetchAlerts(undefined, 10).then(setAlertsData).catch(() => {});
     fetchLegalRegistry().then(setLegalRegistry).catch(() => {});
-    fetchCemsForensics('CEMS-FLUE-MAN8', 24).then(setCemsData).catch(() => {});
+    setCemsData(null);
     fetchHotspots(24).then(setHotspotsData).catch(() => {});
   }, [filter]);
   const [noticeText, setNoticeText] = useState('Select a current backend incident to prepare a statutory notice.');
@@ -137,15 +136,10 @@ export const AlertsPage: React.FC = () => {
   ].slice(0, 6);
 
   const handleLoadCemsDossier = async () => {
-    const data = await fetchCemsForensics('CEMS-FLUE-MAN8', 24);
-    setCemsData(data);
+    setCemsData(null);
     setSelectedIncident('');
     setCurrentNotice(null);
-    setNoticeText(
-      data.status === 'REVIEW_REQUIRED'
-        ? `CEMS FORENSIC REVIEW REQUIRED.\n\nFacility: ${data.facility_id}\nReview windows: ${data.review_windows.length}\nMethod: ${data.method}`
-        : `CEMS FORENSIC RESULT.\n\nFacility: ${data.facility_id}\nReadings received: ${data.readings.length}\nNo bypass pattern was detected.\nMethod: ${data.method}`
-    );
+    setNoticeText('N/A — authenticated CEMS facility selection is not configured in this public client.');
   };
 
   const cemsReadings = cemsData?.readings ?? [];
@@ -430,13 +424,13 @@ export const AlertsPage: React.FC = () => {
 
                   {/* Dual-Unit Telemetry Chip */}
                   <div className="inline-flex items-center rounded-full bg-surface-container-lowest border-2 border-ink-black px-3 py-1 shadow-[2px_2px_0px_#18181B] self-start">
-                    <span className="font-telemetry-val text-telemetry-val text-terracotta-deep pr-2 font-bold">{primaryAlert?.measured_pm25?.toFixed(1) ?? '—'}</span>
+                    <span className="font-telemetry-val text-telemetry-val text-terracotta-deep pr-2 font-bold">{primaryAlert?.measured_pm25?.toFixed(1) ?? 'N/A'}</span>
                     <span className="font-telemetry-unit text-telemetry-unit text-ink-muted pr-3 border-r border-ink-black/30 font-semibold">
                       µg/m³ PM2.5
                     </span>
                     <span className="font-telemetry-val text-telemetry-val text-ink-black pl-3 flex items-center gap-1 font-bold">
                       <span className="w-2.5 h-2.5 rounded-full bg-aqi-hazardous"></span>
-                      {primaryAlert?.measured_aqi ?? '—'} <span className="font-telemetry-unit text-telemetry-unit text-ink-muted font-normal">AQI</span>
+                      {primaryAlert?.measured_aqi ?? 'N/A'} <span className="font-telemetry-unit text-telemetry-unit text-ink-muted font-normal">AQI</span>
                     </span>
                   </div>
                 </div>

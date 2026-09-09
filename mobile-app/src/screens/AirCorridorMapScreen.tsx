@@ -864,7 +864,7 @@ export const AirCorridorMapScreen: React.FC = () => {
             >
               <MaterialCommunityIcons name="fire" size={14} color={layers.frp ? Colors.canvasCream : Colors.terracottaDeep} />
               <Text style={[styles.layerChipText, layers.frp && styles.layerChipTextActive]}>
-                FRP Hotspots ({hotspots?.count ?? '—'})
+                FRP Hotspots ({hotspots?.count ?? 'N/A'})
               </Text>
             </Pressable>
 
@@ -894,7 +894,7 @@ export const AirCorridorMapScreen: React.FC = () => {
 
             <View style={styles.sensorBadgeChip}>
               <MaterialCommunityIcons name="radio-tower" size={12} color={Colors.forestJade} />
-              <Text style={styles.sensorBadgeText}>Sensors: {sensorCount ?? '—'}</Text>
+              <Text style={styles.sensorBadgeText}>Sensors: {sensorCount ?? 'N/A'}</Text>
             </View>
           </View>
         </NeoCard>
@@ -1006,7 +1006,7 @@ export const AirCorridorMapScreen: React.FC = () => {
             </View>
 
             <View style={styles.inspectorAqiBadge}>
-              <Text style={styles.inspectorAqiValue}>{selectedNode.aqi ?? '—'}</Text>
+              <Text style={styles.inspectorAqiValue}>{selectedNode.aqi ?? 'N/A'}</Text>
               <Text style={styles.inspectorAqiLabel}>AQI</Text>
             </View>
           </View>
@@ -1015,17 +1015,17 @@ export const AirCorridorMapScreen: React.FC = () => {
           <View style={styles.inspectorMetricsGrid}>
             <View style={styles.inspectorMetricItem}>
               <Text style={styles.metricLabel}>Particulate Mass</Text>
-              <Text style={styles.metricVal}>{selectedNode.pm25 != null ? selectedNode.pm25.toFixed(1) : '—'} <Text style={styles.metricUnit}>µg/m³ model</Text></Text>
+              <Text style={styles.metricVal}>{selectedNode.pm25 != null ? selectedNode.pm25.toFixed(1) : 'N/A'} <Text style={styles.metricUnit}>µg/m³ model</Text></Text>
             </View>
 
             <View style={styles.inspectorMetricItem}>
               <Text style={styles.metricLabel}>Wind Velocity</Text>
-              <Text style={styles.metricVal}>{selectedNode.windSpeed != null ? selectedNode.windSpeed.toFixed(1) : '—'} <Text style={styles.metricUnit}>km/h</Text></Text>
+              <Text style={styles.metricVal}>{selectedNode.windSpeed != null ? selectedNode.windSpeed.toFixed(1) : 'N/A'} <Text style={styles.metricUnit}>km/h</Text></Text>
             </View>
 
             <View style={styles.inspectorMetricItem}>
               <Text style={styles.metricLabel}>Thermal Radiation</Text>
-              <Text style={styles.metricVal}>{selectedNode.frp != null ? selectedNode.frp.toFixed(1) : '—'} <Text style={styles.metricUnit}>MW within 100 km</Text></Text>
+              <Text style={styles.metricVal}>{selectedNode.frp != null ? selectedNode.frp.toFixed(1) : 'N/A'} <Text style={styles.metricUnit}>MW within 100 km</Text></Text>
             </View>
 
             <View style={styles.inspectorMetricItem}>

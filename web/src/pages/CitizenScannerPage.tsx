@@ -317,7 +317,7 @@ export const CitizenScannerPage: React.FC = () => {
               <div className="flex items-baseline justify-between pt-2">
                 <div>
                   <div className="font-telemetry-val text-[48px] leading-none font-extrabold text-ink-black tracking-tight">
-                    {result?.pm25_estimate ?? '—'}
+                    {result?.pm25_estimate ?? 'N/A'}
                   </div>
                   <div className="font-telemetry-unit text-telemetry-unit text-ink-muted uppercase font-bold mt-1">
                     PM2.5 Mass Concentration (µg/m³)
@@ -329,7 +329,7 @@ export const CitizenScannerPage: React.FC = () => {
                     className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-white font-label-lg text-label-lg font-bold shadow-[2px_2px_0px_#18181B]"
                     style={{ backgroundColor: result?.aqi_color ?? '#52525B' }}
                   >
-                    <span>AQI {result?.aqi_index ?? '—'}</span>
+                    <span>AQI {result?.aqi_index ?? 'N/A'}</span>
                   </div>
                   <div className="font-label-md text-label-md text-ink-black font-bold mt-1 uppercase">
                     {result ? `${result.aqi_category} Tier` : 'Awaiting Analysis'}

@@ -1,84 +1,47 @@
 # Backend verification report
 
-Verified locally on 8 September 2026. This report supersedes the previous unsupported “94% production ready” checklist.
+Verified locally on 9 September 2026. This report records only checks performed against the current working tree and replaces older environment-specific claims.
 
-## Result
-
-The backend runs at **http://127.0.0.1:8000**. The current user-supplied configuration leaves `DATABASE_URL` empty, so this running process uses ephemeral in-memory storage. The isolated **PostgreSQL 16.15 / PostGIS 3.6.2** database on loopback port 55432 remains available and passed the dedicated persistence suite, but it is not selected by the current environment file. Backend work only was performed in this task; no frontend changes were made.
-
-The current scope is local backend completion plus connection of the existing web and mobile clients. Cloud deployment is explicitly excluded at the user's request. All new verification artifacts and temporary files are kept inside this repository.
+## Current result
 
 | Verification | Result |
 | --- | --- |
-| Unit and regression suite | **102 passed**, one PostGIS test skipped when no test URL is supplied |
-| Dedicated real PostGIS suite | **1 passed** after applying the expanded schema |
-| External NASA integration test | Deselected; a live API key is required |
-| Preflight checks with local PostGIS | **25 passed**, zero failures |
-| Concurrent load benchmark | **298 successful requests**, zero request errors |
-| Actual HTTP process | Health/readiness and backend REST routes respond successfully |
-| Repeatable local deployment verifier | **7 passed**, including all four WebSocket channels |
-| Local production-mode HTTPS/WSS checks | **12 passed**, including TLS trust, CORS, and unavailable-input handling |
-| WebSockets | Snapshot, ping/pong, incident broadcasts, periodic telemetry implemented and tested |
-| Dependency consistency and critical Python lint | Passed |
-| Docker execution | Not run locally: Docker is not installed |
-| Cloud deployment | Outside current scope; no deployment performed |
+| Backend unit/regression suite | **112 passed, 1 skipped** |
+| Python dependency consistency | **Passed** |
+| Mobile TypeScript | **Passed** |
+| Mobile Jest suite | **42 passed** |
+| Web production build | **Passed** |
+| Docker Compose validation | Not run: Docker is not installed on this machine |
+| Live provider verification | Not run in the isolated test suite; missing/unavailable inputs return explicit unavailable responses |
 
-### Live provider check after credential configuration
+## Data-integrity behavior
 
-| Provider | Result |
-| --- | --- |
-| NASA FIRMS | Passed; 4 current corridor hotspots returned |
-| Open-Meteo weather | Passed; current Punjab and Delhi records returned |
-| Open-Meteo CAMS global air quality | Passed; 24 current corridor grid cells returned |
-| OpenAQ v3 | Passed; 5 current Indian stations met the 24-hour freshness rule. Older and non-Indian provider records are excluded. |
+- Demo data is disabled by default in local examples and Docker configuration. Synthetic federated metrics are hidden in both frontends unless a real field dataset is identified.
+- Station observations must have a provider timestamp within the last 24 hours and no more than 15 minutes in the future before they are exposed as current data.
+- SensorThings entities are derived from the current station feed; the previous fixed Punjab and Delhi node records were removed.
+- The surface model no longer imposes an invented 15 µg/m³ minimum or substitutes coordinates and PM2.5 values for incomplete stations.
+- Frontends use **N/A** for missing values and no longer interpret “provider not configured” as a completed signature or dispatch.
+- Public frontends no longer query a fixed demonstration CEMS facility. They show N/A until an authenticated facility-selection workflow is implemented.
+- Mobile offline cache entries expire after five minutes and are used only for transport failures. A backend 4xx/5xx response is never concealed by cached data.
 
-The suite has four dependency deprecation warnings; no test failures. It tests behavior, not 100% code coverage.
+## Reliability and abuse controls
 
-## Completed corrections
+- HTTP request bodies are bounded before application parsing; photo upload retains its separate 5 MiB allowance.
+- Incident creation, legal mutations/exports, push enrollment, and federated execution have request limits. Local incident, legal, CEMS, and push registries are capped.
+- CEMS ingestion fails closed when its credential is absent.
+- Public briefing reads never trigger a paid TTS provider request. Existing generated audio is served when present; otherwise the API reports N/A. An operator-key-protected endpoint performs explicit generation.
+- Push enrollment is capped, expired tokens are excluded, and push fan-out is bounded.
+- WebSocket connections are capped globally, per channel, and per peer; inbound frames and idle time are bounded, and broadcasts run concurrently with send timeouts.
 
-- Added persistent citizen reports with sanitized image hashes, coordinate validation, and duplicate protection. Original photos and EXIF metadata are not stored. Uploads are bounded before multipart buffering, including chunked requests; decoded image dimensions are bounded too.
-- Added backend-only legal draft generation, downloadable PDFs, current-law electronic-record certificate drafts, evidence dossier/GeoJSON export, dispatch tracking, and a truthful registry with no fabricated warrants.
-- Added authenticated CEMS telemetry ingestion and reproducible scrubber-bypass review indicators based on stored readings.
-- Added live weather vector/boundary-layer telemetry, stored-data fire/AQI lag correlation, regional FRP shares, briefing text/RSS, mobile release metadata, and an external-integration requirements endpoint.
-- Added real 2048-bit Paillier homomorphic aggregation, record-level DP-SGD with configurable epsilon/delta, a conservative accountant, and persisted measured training-loss telemetry.
-- Added an offline real-world evaluation command that calculates MAE, RMSE, bias, R², and Pearson correlation from user-supplied paired observations without fetching data.
-- Made database initialization transactional and fail when a configured database cannot connect or initialize. Added an actual readiness probe, observation deduplication, and NO2/SO2 history storage. There are eight application tables, in addition to PostGIS-owned objects.
-- Verified incident, photo, observation, forecast geometry, and federated-result persistence against real PostGIS, including reconnecting with empty process caches.
-- Made federated round batches transactional and updated process metrics only after the database commit. Verified a rejected second round rolls back the entire batch without publishing partial results. Duplicate in-memory rounds now update their scores consistently with PostgreSQL.
-- Corrected live-mode WebSocket fire counts to exclude demonstration records, rejected empty production CORS lists, and removed database credential output from the legacy smoke-check script.
-- Corrected OpenAQ v3 ingestion to join actual location-level latest sensor observations. Removed invented readings, retained measurement times, excluded non-Indian stations, and separated NO2/SO2 history from PM2.5.
-- Corrected Open-Meteo wind units, current/hourly field handling, and boundary-layer-height selection. Live weather retrieval succeeded for Punjab and Delhi.
-- Replaced Earth Engine with the keyless Open-Meteo CAMS global air-quality endpoint for AOD, surface NO₂, PM2.5, dust, SO₂, and ozone. The implementation preserves the scientific distinction between AOD and Sentinel-5P AAI.
-- Removed fabricated federated convergence curves. Returned scores now come from trained models and independent local-only baselines evaluated on the same synthetic corridor test set.
-- Added per-channel snapshots, 60-second telemetry, incident broadcasts, dead-connection removal, and duplicate-send protection. Startup ingestion runs immediately and refreshes every 15 minutes.
-- Removed manufactured incident tickets and satellite proof. Incident evidence is calculated from recent live fire observations when available. Added date filtering and validation, empty-state responses, trilingual latest alerts, and rate-limit regression coverage.
-- Separated labeled historical/synthetic demo data from live observations. Disabled demo mode returns unavailable inputs instead of replacing failures with synthetic data. Successful empty provider results stay empty.
-- Corrected the PM2.5 sub-index to the 0–500 CPCB display range, rejected non-finite values, and labeled instantaneous readings as estimates rather than official daily AQI.
-- Added atomic file caches and shared ingestion requests. Offloaded model training from the API event loop, bounded federated run lengths, and prevented overlapping simulation runs.
-- Corrected container build context, dynamic port handling, single-worker startup, CI PostGIS testing, and failure exit codes in verification commands. Added a verified dependency lock and local run instructions.
+## Deployment notes
 
-## Load evidence
+- The backend must bind to `0.0.0.0` for physical phones. Expo web origins on ports 8081 and 19006 are included in the example CORS configuration.
+- A durable PostgreSQL/PostGIS `DATABASE_URL` is expected for production. The backend also supports its durable local store for development.
+- `npm run start:tunnel` proxies the HTTP API through the Expo tunnel. WebSocket upgrades require a deployed backend URL or another tunnel that explicitly supports WebSockets.
+- TTS credentials supplied outside `backend/.env` are not copied automatically. Configure the documented `TTS_PROVIDER_*` values in the backend environment without committing secrets.
 
-Measured on this machine with the dedicated test PostGIS database and an ASGI concurrency harness on 7 September. All 298 requests succeeded. These timings include initial computation/upstream weather retrieval. Surface p95 was 1.03 seconds, slightly above the harness's one-second warning threshold; it is not a sub-second guarantee.
+## Remaining security boundary
 
-| Endpoint | Requests | p95 milliseconds |
-| --- | ---: | ---: |
-| Health | 100 | 5.91 |
-| Hotspots | 50 | 286.73 |
-| Surface | 30 | 1029.62 |
-| Plume | 30 | 1078.71 |
-| Anomalies | 30 | 38.99 |
-| Photo upload | 8 | 778.53 |
-| Federated status | 50 | 12.53 |
+Operator identity is not implemented. Incident creation, legal workflow operations, CEMS forensic reads, and federated execution therefore must not be exposed to untrusted networks as a production control plane. Rate limits and resource caps reduce abuse but are not authorization. A real identity issuer and role model are required before those routes can be treated as production-authorized operations; embedding a shared secret in the web or Expo bundle would not be a valid fix.
 
-## Boundaries of verification
-
-The 102-test unit/regression suite and the dedicated real PostGIS test pass. Live-provider verification rejects fallback, stale, foreign-corridor data and reports missing credentials; fresh weather passed for both regions. Read-only verification covers HTTP readiness, required routes, and all four WebSocket channels. The plume model no longer substitutes invented fire power, missing weather, or a minimum pollution floor; tests cover physical behavior and invalid inputs. Deployment documentation is retained for future use and is outside the current local-only scope.
-
-- NASA FIRMS and OpenAQ keys are configured locally. Open-Meteo weather and CAMS air quality require no key. Historical demo data is explicitly identified and disabled in the current local configuration.
-- This is a single-server backend. Multiple API workers/replicas require shared rate limiting, scheduling, and WebSocket messaging. Celery/Redis and remote deployment were not added.
-- The atmospheric and image models are prototypes. The photo estimator is a DCP heuristic, the plume model is simplified, and federated results are measured on synthetic datasets. Scientific field accuracy is not established until representative paired observations are supplied. The DP accountant covers this simulator's full-batch Gaussian mechanism; deployment-level privacy requires separated trust domains and operational review.
-- Federated learning uses **NumPy FedAvg**, not Flower. The SensorThings endpoint is a read-only Things adapter, not a certified implementation of the complete OGC standard.
-- Instantaneous PM2.5 sub-index estimates are not official 24-hour multi-pollutant AQI. No government notifications or portal submissions are sent.
-
-See [README.md](README.md) for startup, configuration, test commands, and official adapter references.
+No government filing, legal signature, dispatch, or enforcement action is performed automatically. Model outputs remain estimates and must not be described as official regulatory measurements.

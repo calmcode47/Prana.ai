@@ -7,7 +7,7 @@ and continuous PM2.5 surface grid.
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, Query, HTTPException
@@ -33,6 +33,8 @@ async def get_aqi_stations(
     Every observation includes BOTH pm25_ugm3 and aqi_index (India CPCB scale).
     """
     readings = []
+    freshness_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    future_cutoff = datetime.now(timezone.utc) + timedelta(minutes=15)
     pool = get_db_pool()
 
     if pool:
@@ -43,10 +45,11 @@ async def get_aqi_stations(
                     station_id, station_name, city, state, latitude, longitude, pm25_ugm3, measured_at, source
                 FROM aqi_readings
                 WHERE parameter = $1 AND ($2::boolean OR source = 'OPENAQ_LIVE')
+                  AND measured_at >= $3 AND measured_at <= $4
                 ORDER BY station_id, measured_at DESC
                 LIMIT 200;
                 """
-                rows = await conn.fetch(query, parameter, demo_enabled())
+                rows = await conn.fetch(query, parameter, demo_enabled(), freshness_cutoff, future_cutoff)
                 for r in rows:
                     if state:
                         st_val = (r["state"] or "").lower()
@@ -71,12 +74,22 @@ async def get_aqi_stations(
             row for row in get_in_memory_store()["aqi_readings"]
             if row.get("parameter", "pm25") == parameter
             and (demo_enabled() or row.get("source") == "OPENAQ_LIVE")
+            and _is_fresh(row.get("measured_at"), freshness_cutoff)
         ]
-        if not raw:
-            try:
-                raw = await fetch_openaq_stations()
-            except Exception:
-                raise HTTPException(503, "Station data unavailable") from None
+    else:
+        raw = readings
+
+    if not readings and not raw:
+        try:
+            raw = await fetch_openaq_stations(force_refresh=True)
+        except Exception:
+            raise HTTPException(503, "Station data unavailable") from None
+
+    if not readings:
+        if not demo_enabled():
+            raw = [r for r in raw if _is_fresh(r.get("measured_at"), freshness_cutoff)]
+            if not raw:
+                raise HTTPException(503, "Station data unavailable")
         for r in raw:
             if state:
                 st_val = (r.get("state") or "").lower()
@@ -91,7 +104,7 @@ async def get_aqi_stations(
                 "pm25_ugm3": pm25_val,
                 "aqi_index": r.get("aqi_index", compute_cpcb_aqi(pm25_val)),
                 "source": r.get("source", "unknown"),
-                "measured_at": r.get("measured_at", datetime.now(timezone.utc).isoformat())
+                "measured_at": r.get("measured_at")
             })
 
     # Assemble OGC SensorThings structure
@@ -113,7 +126,7 @@ async def get_aqi_stations(
                     "aqi_index": r["aqi_index"],
                     "phenomenonTime": r["measured_at"],
                     "source": r.get("source", "unknown"),
-                    "resultQuality": "demo" if "DEMO" in r.get("source", "") else "unverified"
+                    "resultQuality": "demonstration" if "DEMO" in r.get("source", "") else "provider-reported"
                 }]
             }]
         })
@@ -122,6 +135,22 @@ async def get_aqi_stations(
         "@iot.count": len(value),
         "value": value
     }
+
+
+def _is_fresh(value, cutoff: datetime) -> bool:
+    """Return true only for parseable, timezone-aware recent observations."""
+    if isinstance(value, datetime):
+        measured = value
+    elif isinstance(value, str):
+        try:
+            measured = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+    else:
+        return False
+    if measured.tzinfo is None:
+        return False
+    return cutoff <= measured <= datetime.now(timezone.utc) + timedelta(minutes=15)
 
 
 @router.get("/surface", response_model=SurfaceGridResponse)

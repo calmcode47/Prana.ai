@@ -778,7 +778,7 @@ export const DashboardPage: React.FC = () => {
                   <span className={`px-2 py-0.5 rounded-full font-label-md text-label-md font-bold ${
                     readyData?.status === 'ready' ? 'bg-forest-jade/20 text-forest-jade' : 'bg-terracotta-deep/10 text-terracotta-deep'
                   }`}>
-                    {readyData ? `${readyData.status.toUpperCase()} · ${readyData.demo_mode ? 'Demo Mode' : 'Live DB'}` : 'Checking...'}
+                    {readyData ? `${readyData.status.toUpperCase()} · ${readyData.db || 'N/A'} · ${readyData.demo_mode ? 'Demo Mode' : 'Demo Data Off'}` : 'Checking...'}
                   </span>
                 </div>
 

@@ -472,7 +472,10 @@ export interface CemsForensicsResponse {
 }
 
 // API Config
-const API_BASE = (typeof window !== 'undefined' && (window as any).PRANA_API_URL) || 'http://127.0.0.1:8000';
+const configuredApi = typeof window !== 'undefined' && (window as any).PRANA_API_URL;
+const isLocalWeb = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const browserOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+const API_BASE = configuredApi || (isLocalWeb ? 'http://127.0.0.1:8000' : browserOrigin || 'http://127.0.0.1:8000');
 async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { credentials: 'omit', ...options });
   if (!res.ok) {
@@ -684,9 +687,11 @@ export function connectCorridorWebSocket(
   const wsUrl = API_BASE.replace(/^http/, 'ws') + `/ws/${cityId.toLowerCase()}`;
   let ws: WebSocket | null = null;
   let heartbeatTimer: any = null;
+  let reconnectTimer: any = null;
   let isClosedManually = false;
 
-  try {
+  const open = () => {
+    try {
     if (onStatusChange) onStatusChange('connecting');
     ws = new WebSocket(wsUrl);
 
@@ -715,8 +720,8 @@ export function connectCorridorWebSocket(
       if (onStatusChange) onStatusChange('closed');
       if (!isClosedManually) {
         // Reconnect attempt after 5s
-        setTimeout(() => {
-          if (!isClosedManually) connectCorridorWebSocket(cityId, onMessage, onStatusChange);
+        reconnectTimer = setTimeout(() => {
+          if (!isClosedManually) open();
         }, 5000);
       }
     };
@@ -724,13 +729,17 @@ export function connectCorridorWebSocket(
     ws.onerror = () => {
       if (onStatusChange) onStatusChange('closed');
     };
-  } catch (e) {
-    if (onStatusChange) onStatusChange('closed');
-  }
+    } catch (e) {
+      if (onStatusChange) onStatusChange('closed');
+      if (!isClosedManually) reconnectTimer = setTimeout(open, 5000);
+    }
+  };
+  open();
 
   return () => {
     isClosedManually = true;
     if (heartbeatTimer) clearInterval(heartbeatTimer);
+    if (reconnectTimer) clearTimeout(reconnectTimer);
     if (ws) ws.close();
   };
 }

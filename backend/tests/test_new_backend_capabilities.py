@@ -46,7 +46,8 @@ def test_legal_drafts_registry_and_dossier(client):
         assert set(archive.namelist()) == {"incident.json", "notices.json", "evidence.geojson", "manifest.json"}
 
 
-def test_cems_ingestion_and_forensic_indicator(client):
+def test_cems_ingestion_and_forensic_indicator(client, monkeypatch):
+    monkeypatch.setenv("CEMS_INGEST_API_KEY", "unit-test-cems-key")
     now = datetime.now(timezone.utc)
     readings = []
     for index in range(4):
@@ -54,11 +55,22 @@ def test_cems_ingestion_and_forensic_indicator(client):
                          "stack_velocity_ms": 10, "scrubber_load_kw": 100, "source": "test"})
     readings.append({"facility_id": "FAC-1", "measured_at": now.isoformat(),
                      "stack_velocity_ms": 15, "scrubber_load_kw": 10, "source": "test"})
-    response = client.post("/api/v1/industrial/cems/readings", json={"readings": readings})
+    response = client.post("/api/v1/industrial/cems/readings", json={"readings": readings},
+                           headers={"X-CEMS-Key": "unit-test-cems-key"})
     assert response.status_code == 202 and response.json()["accepted"] == 5
-    result = client.get("/api/v1/industrial/cems/FAC-1/forensics").json()
+    result = client.get("/api/v1/industrial/cems/FAC-1/forensics",
+                        headers={"X-CEMS-Key": "unit-test-cems-key"}).json()
     assert result["status"] == "REVIEW_REQUIRED"
     assert result["review_windows"][0]["classification"] == "REVIEW_REQUIRED"
+
+
+def test_cems_ingestion_fails_closed_without_a_key(client, monkeypatch):
+    monkeypatch.delenv("CEMS_INGEST_API_KEY", raising=False)
+    response = client.post("/api/v1/industrial/cems/readings", json={"readings": [{
+        "facility_id": "FAC-1", "measured_at": datetime.now(timezone.utc).isoformat(),
+        "stack_velocity_ms": 10, "scrubber_load_kw": 100, "source": "test",
+    }]})
+    assert response.status_code == 503
 
 
 def test_meteorology_and_auxiliary_endpoints(client, monkeypatch, open_meteo_json):
@@ -103,6 +115,68 @@ def test_briefing_uses_na_when_tts_is_not_configured(client, monkeypatch):
     assert briefing["script"]
     assert briefing["audio_url"] is None
     assert briefing["audio_status"].startswith("N/A")
+
+
+def test_public_briefing_read_never_calls_tts_provider(client, monkeypatch):
+    from unittest.mock import AsyncMock
+    import backend.tts as tts
+
+    monkeypatch.setenv("TTS_PROVIDER_KEY", "configured-but-not-used-by-get")
+    provider_call = AsyncMock()
+    monkeypatch.setattr(tts.httpx.AsyncClient, "post", provider_call)
+    _incident(client)
+    briefing = client.get("/api/v1/briefings/latest").json()
+    assert briefing["audio_url"] is None
+    assert briefing["audio_status"].startswith("N/A")
+    provider_call.assert_not_awaited()
+
+
+def test_tts_generation_endpoint_fails_closed_without_operator_key(client, monkeypatch):
+    monkeypatch.delenv("PRANA_OPERATOR_API_KEY", raising=False)
+    _incident(client)
+    response = client.post("/api/v1/briefings/latest/audio")
+    assert response.status_code == 503
+
+
+def test_operator_can_explicitly_generate_briefing_audio(client, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setenv("PRANA_OPERATOR_API_KEY", "operator-test-key")
+    generator = AsyncMock(return_value=("briefing-test.mp3", "generated"))
+    monkeypatch.setattr("backend.routers.operations.ensure_briefing_audio", generator)
+    incident_id = _incident(client)
+    response = client.post("/api/v1/briefings/latest/audio",
+                           headers={"X-Operator-Key": "operator-test-key"})
+    assert response.status_code == 200
+    assert response.json()["incident_id"] == incident_id
+    assert response.json()["audio_url"].endswith("/media/briefings/briefing-test.mp3")
+    generator.assert_awaited_once()
+
+
+def test_non_upload_request_body_limit(client):
+    response = client.post("/api/v1/alerts/incident", content=b"x" * (256 * 1024 + 1),
+                           headers={"Content-Type": "application/json"})
+    assert response.status_code == 413
+
+
+def test_stale_station_observation_is_not_presented_as_live(client, monkeypatch):
+    from backend.database import get_in_memory_store
+    import httpx
+
+    monkeypatch.setenv("PRANA_DEMO_MODE", "false")
+    get_in_memory_store()["aqi_readings"].append({
+        "station_id": "stale-1", "name": "Stale", "state": "Delhi",
+        "latitude": 28.6, "longitude": 77.2, "pm25_ugm3": 88,
+        "parameter": "pm25", "source": "OPENAQ_LIVE",
+        "measured_at": (datetime.now(timezone.utc) - timedelta(days=2)).isoformat(),
+    })
+
+    async def unavailable(*_args, **_kwargs):
+        raise httpx.ConnectError("provider unavailable")
+
+    monkeypatch.setattr("backend.routers.aqi.fetch_openaq_stations", unavailable)
+    response = client.get("/api/v1/aqi/stations")
+    assert response.status_code == 503
 
 
 @pytest.mark.asyncio

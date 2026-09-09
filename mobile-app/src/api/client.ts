@@ -448,12 +448,14 @@ async function requestJson<T>(
   const canUseCache = method === 'GET' && settings.cache !== false;
   const baseUrl = getApiBaseUrl();
   const cacheKey = `${baseUrl}${path}`;
+  let receivedResponse = false;
 
   try {
     const res = await fetch(`${baseUrl}${path}`, {
       ...options,
       signal: controller.signal,
     });
+    receivedResponse = true;
     if (!res.ok) {
       let detail = `${res.status} ${res.statusText}`;
       try {
@@ -469,7 +471,9 @@ async function requestJson<T>(
     }
     return value;
   } catch (error) {
-    if (canUseCache) {
+    // Cache is an offline transport fallback only. Never conceal a truthful
+    // backend 4xx/5xx response with older data.
+    if (canUseCache && !receivedResponse) {
       const cached = await readApiCache<T>(cacheKey).catch(() => null);
       if (cached !== null) return cached;
     }
@@ -661,7 +665,7 @@ export async function fetchLegalRegistry(): Promise<LegalRegistryResponse> {
   return requestJson<LegalRegistryResponse>('/api/v1/legal/registry');
 }
 
-export async function fetchCemsForensics(facilityId: string = 'CEMS-FLUE-MAN8', hours: number = 24): Promise<CemsForensicsResponse> {
+export async function fetchCemsForensics(facilityId: string, hours: number = 24): Promise<CemsForensicsResponse> {
   return requestJson<CemsForensicsResponse>(`/api/v1/industrial/cems/${encodeURIComponent(facilityId)}/forensics?hours=${hours}`);
 }
 

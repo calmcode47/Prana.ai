@@ -190,7 +190,7 @@ def test_unsupported_station_pollutant_rejected(client):
     assert client.get("/api/v1/aqi/stations?parameter=no2").status_code == 422
 
 
-@pytest.mark.parametrize("rounds", [0, -1, 101])
+@pytest.mark.parametrize("rounds", [0, -1, 11, 101])
 def test_fl_run_is_bounded(client, rounds):
     assert client.post(f"/api/v1/federated/run?num_rounds={rounds}").status_code == 422
 
@@ -236,7 +236,8 @@ async def test_broadcast_deduplicates_and_removes_dead_sockets():
 async def test_periodic_telemetry_uses_readings():
     socket = AsyncMock()
     websocket.manager.active_connections["haryana"].add(socket)
-    database.get_in_memory_store()["aqi_readings"] = [{"state": "Haryana", "pm25_ugm3": 60, "source": "OPENAQ_LIVE"}]
+    database.get_in_memory_store()["aqi_readings"] = [{"state": "Haryana", "pm25_ugm3": 60,
+        "source": "OPENAQ_LIVE", "measured_at": datetime.now(timezone.utc).isoformat()}]
     try:
         await websocket.broadcast_telemetry()
         message = socket.send_json.call_args.args[0]

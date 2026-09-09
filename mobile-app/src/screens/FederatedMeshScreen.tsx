@@ -184,7 +184,7 @@ export const FederatedMeshScreen: React.FC = () => {
           <View style={styles.privacyHeader}>
             <View style={styles.privacyBadge}>
               <MaterialCommunityIcons name="shield-lock" size={16} color={Colors.forestJade} />
-              <Text style={styles.privacyBadgeText}>Differential Privacy ε = {statusData?.privacy?.dp_sgd?.epsilon_spent?.toFixed(2) ?? '—'}</Text>
+              <Text style={styles.privacyBadgeText}>Differential Privacy ε = {statusData?.privacy?.dp_sgd?.epsilon_spent?.toFixed(2) ?? 'N/A'}</Text>
             </View>
             <View style={styles.statusLivePip} />
           </View>
@@ -198,7 +198,7 @@ export const FederatedMeshScreen: React.FC = () => {
           <View style={styles.privacyPillsRow}>
             <View style={styles.miniTag}>
               <MaterialCommunityIcons name="lock-check" size={13} color={Colors.forestJade} />
-              <Text style={styles.miniTagText}>{statusData?.privacy?.secure_aggregation?.enabled ? `${statusData.privacy.secure_aggregation.scheme ?? 'Paillier'} ${statusData.privacy.secure_aggregation.key_bits ?? '—'}-bit` : 'Secure aggregation disabled'}</Text>
+              <Text style={styles.miniTagText}>{statusData?.privacy?.secure_aggregation?.enabled ? `${statusData.privacy.secure_aggregation.scheme ?? 'Paillier'} ${statusData.privacy.secure_aggregation.key_bits ?? 'N/A'}-bit` : 'Secure aggregation disabled'}</Text>
             </View>
             <Text style={styles.bulletDot}>•</Text>
             <Text style={styles.miniTagMuted}>{statusData?.privacy?.dp_sgd?.enabled ? 'Configured DP-SGD noise' : 'DP-SGD disabled'}</Text>
@@ -296,7 +296,7 @@ export const FederatedMeshScreen: React.FC = () => {
                 <Text style={styles.aggregatorSubtitle}>{formatFederatedImplementation(statusData?.implementation)}</Text>
               </View>
               <View style={styles.lossBadge}>
-                <Text style={styles.lossBadgeText}>MSE: {globalLoss ?? '—'}</Text>
+                <Text style={styles.lossBadgeText}>MSE: {globalLoss ?? 'N/A'}</Text>
               </View>
             </View>
 
@@ -414,15 +414,15 @@ export const FederatedMeshScreen: React.FC = () => {
           <View style={styles.legendRow}>
             <View style={styles.legendPill}>
               <View style={[styles.legendColor, { backgroundColor: Colors.coralWatermelonVivid }]} />
-              <Text style={styles.legendText}>Global FL ({globalAcc === null ? '—' : `${(globalAcc * 100).toFixed(1)}%`})</Text>
+              <Text style={styles.legendText}>Global FL ({globalAcc === null ? 'N/A' : `${(globalAcc * 100).toFixed(1)}%`})</Text>
             </View>
             <View style={styles.legendPill}>
               <View style={[styles.legendColor, { backgroundColor: Colors.cobaltDeep }]} />
-              <Text style={styles.legendText}>Delhi Silo ({delhiAcc === null ? '—' : `${(delhiAcc * 100).toFixed(1)}%`})</Text>
+              <Text style={styles.legendText}>Delhi Silo ({delhiAcc === null ? 'N/A' : `${(delhiAcc * 100).toFixed(1)}%`})</Text>
             </View>
             <View style={styles.legendPill}>
               <View style={[styles.legendColor, { backgroundColor: Colors.terracottaDeep }]} />
-              <Text style={styles.legendText}>Punjab Silo ({punjabAcc === null ? '—' : `${(punjabAcc * 100).toFixed(1)}%`})</Text>
+              <Text style={styles.legendText}>Punjab Silo ({punjabAcc === null ? 'N/A' : `${(punjabAcc * 100).toFixed(1)}%`})</Text>
             </View>
           </View>
         </NeoCard>
@@ -457,7 +457,7 @@ export const FederatedMeshScreen: React.FC = () => {
               <View style={styles.barTrack}>
                 <View style={[styles.barFill, { width: `${((globalAcc ?? 0) * 100).toFixed(1)}%` as DimensionValue, backgroundColor: Colors.coralWatermelonVivid }]} />
               </View>
-              <Text style={styles.barPercent}>{globalAcc === null ? '—' : `${(globalAcc * 100).toFixed(1)}%`}</Text>
+              <Text style={styles.barPercent}>{globalAcc === null ? 'N/A' : `${(globalAcc * 100).toFixed(1)}%`}</Text>
             </View>
 
             {/* Delhi Local Isolated */}
@@ -466,7 +466,7 @@ export const FederatedMeshScreen: React.FC = () => {
               <View style={styles.barTrack}>
                 <View style={[styles.barFill, { width: `${((delhiAcc ?? 0) * 100).toFixed(1)}%` as DimensionValue, backgroundColor: Colors.cobaltDeep }]} />
               </View>
-              <Text style={styles.barPercent}>{delhiAcc === null ? '—' : `${(delhiAcc * 100).toFixed(1)}%`}</Text>
+              <Text style={styles.barPercent}>{delhiAcc === null ? 'N/A' : `${(delhiAcc * 100).toFixed(1)}%`}</Text>
             </View>
 
             {/* Punjab Local Isolated */}
@@ -475,7 +475,7 @@ export const FederatedMeshScreen: React.FC = () => {
               <View style={styles.barTrack}>
                 <View style={[styles.barFill, { width: `${((punjabAcc ?? 0) * 100).toFixed(1)}%` as DimensionValue, backgroundColor: Colors.terracottaDeep }]} />
               </View>
-              <Text style={styles.barPercent}>{punjabAcc === null ? '—' : `${(punjabAcc * 100).toFixed(1)}%`}</Text>
+              <Text style={styles.barPercent}>{punjabAcc === null ? 'N/A' : `${(punjabAcc * 100).toFixed(1)}%`}</Text>
             </View>
           </View>
         </NeoCard>

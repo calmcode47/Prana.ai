@@ -2,7 +2,7 @@
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Iterable, List
 
 import httpx
@@ -13,6 +13,8 @@ logger = logging.getLogger("prana.push")
 
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 _TOKEN_RE = re.compile(r"^(?:Expo|Exponent)PushToken\[[A-Za-z0-9_-]+\]$")
+MAX_PUSH_TOKENS = 10_000
+TOKEN_MAX_AGE_DAYS = 90
 
 
 def validate_expo_push_token(token: str) -> str:
@@ -30,15 +32,23 @@ async def register_push_token(token: str, platform: str, device_id: str | None =
     pool = get_db_pool()
     if pool:
         async with pool.acquire() as conn:
-            await conn.execute(
+            async with conn.transaction():
+                await conn.execute("SELECT pg_advisory_xact_lock($1)", 7072616)
+                exists = await conn.fetchval(
+                    "SELECT EXISTS(SELECT 1 FROM mobile_push_tokens WHERE push_token=$1)", token
+                )
+                count = await conn.fetchval("SELECT count(*) FROM mobile_push_tokens WHERE enabled=TRUE")
+                if not exists and count >= MAX_PUSH_TOKENS:
+                    raise ValueError("Push registration capacity has been reached")
+                await conn.execute(
                 """INSERT INTO mobile_push_tokens
                    (push_token, platform, device_id, enabled, last_registered_at)
                    VALUES ($1,$2,$3,TRUE,$4)
                    ON CONFLICT (push_token) DO UPDATE SET
                      platform=EXCLUDED.platform, device_id=EXCLUDED.device_id,
                      enabled=TRUE, last_registered_at=EXCLUDED.last_registered_at""",
-                token, platform, device_id, now,
-            )
+                    token, platform, device_id, now,
+                )
         return
 
     rows = get_in_memory_store()["mobile_push_tokens"]
@@ -54,7 +64,10 @@ async def register_push_token(token: str, platform: str, device_id: str | None =
         match.update(record)
         persist_local_store()
     else:
+        if len(rows) >= MAX_PUSH_TOKENS:
+            raise ValueError("Push registration capacity has been reached")
         rows.append(record)
+        persist_local_store()
 
 
 async def _enabled_tokens() -> List[str]:
@@ -62,14 +75,22 @@ async def _enabled_tokens() -> List[str]:
     if pool:
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT push_token FROM mobile_push_tokens WHERE enabled=TRUE ORDER BY last_registered_at DESC"
+                """SELECT push_token FROM mobile_push_tokens
+                   WHERE enabled=TRUE AND last_registered_at >= $1
+                   ORDER BY last_registered_at DESC LIMIT $2""",
+                datetime.now(timezone.utc) - timedelta(days=TOKEN_MAX_AGE_DAYS), MAX_PUSH_TOKENS,
             )
         return [row["push_token"] for row in rows]
-    return [
-        row["push_token"]
-        for row in get_in_memory_store()["mobile_push_tokens"]
-        if row.get("enabled", True)
-    ]
+    cutoff = datetime.now(timezone.utc) - timedelta(days=TOKEN_MAX_AGE_DAYS)
+    tokens = []
+    for row in get_in_memory_store()["mobile_push_tokens"]:
+        try:
+            registered = datetime.fromisoformat(str(row.get("last_registered_at", "")).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if row.get("enabled", True) and registered >= cutoff:
+            tokens.append(row["push_token"])
+    return tokens[:MAX_PUSH_TOKENS]
 
 
 async def _disable_tokens(tokens: Iterable[str]) -> None:

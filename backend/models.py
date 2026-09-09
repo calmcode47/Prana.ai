@@ -223,13 +223,13 @@ class MobilePushRegistration(BaseModel):
 
 class IncidentCreate(BaseModel):
     severity: Literal["emergency", "warning", "watch"]
-    location_text: Optional[str] = None
+    location_text: Optional[str] = Field(None, max_length=240)
     latitude: Optional[float] = Field(None, ge=-90, le=90, allow_inf_nan=False)
     longitude: Optional[float] = Field(None, ge=-180, le=180, allow_inf_nan=False)
     pollutant: Literal["PM2.5"] = "PM2.5"
     measured_pm25: float = Field(..., ge=0, le=10000, allow_inf_nan=False)
-    satellite_source: Optional[str] = None
-    authority: Optional[str] = "CPCB"
+    satellite_source: Optional[str] = Field(None, max_length=160)
+    authority: Optional[str] = Field("CPCB", max_length=160)
 
 
 # ==============================================================================

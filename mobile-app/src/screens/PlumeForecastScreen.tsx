@@ -411,7 +411,7 @@ export const PlumeForecastScreen: React.FC = () => {
               </View>
             </View>
             <View style={styles.bentoValBox}>
-              <Text style={styles.bentoVal}>{blMixingHeight !== null ? Math.round(blMixingHeight) : '—'}</Text>
+              <Text style={styles.bentoVal}>{blMixingHeight !== null ? Math.round(blMixingHeight) : 'N/A'}</Text>
               <Text style={styles.bentoUnit}>m AGL</Text>
             </View>
           </NeoCard>
@@ -431,7 +431,7 @@ export const PlumeForecastScreen: React.FC = () => {
               </View>
             </View>
             <View style={styles.bentoValBox}>
-              <Text style={styles.bentoVal}>{totalFrp !== null ? totalFrp.toFixed(1) : '—'}</Text>
+              <Text style={styles.bentoVal}>{totalFrp !== null ? totalFrp.toFixed(1) : 'N/A'}</Text>
               <Text style={styles.bentoUnit}>MW FRP</Text>
             </View>
           </NeoCard>
@@ -451,7 +451,7 @@ export const PlumeForecastScreen: React.FC = () => {
               </View>
             </View>
             <View style={styles.bentoValBox}>
-              <Text style={styles.bentoVal}>{ventilationIndex !== null ? Math.round(ventilationIndex).toLocaleString() : '—'}</Text>
+              <Text style={styles.bentoVal}>{ventilationIndex !== null ? Math.round(ventilationIndex).toLocaleString() : 'N/A'}</Text>
               <Text style={styles.bentoUnit}>m²/s</Text>
             </View>
           </NeoCard>

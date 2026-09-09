@@ -81,10 +81,10 @@ export const CORRIDOR_NODES: Record<CorridorNodeKey, CorridorNodeData> = {
     longitude: 75.842,
     pm25: null, aqi: null, aqiCategory: 'Data pending', aqiColor: Colors.inkMuted,
     wind: 'Data pending', inversion: 'Data pending',
-    metric1: { label: 'ACTIVE FIRE HOTSPOTS', val: '—', sub: 'NASA FIRMS, last 24 hours' },
-    metric2: { label: 'TOTAL FIRE RADIATIVE POWER', val: '—', sub: 'NASA FIRMS' },
-    metric3: { label: 'WIND', val: '—', sub: 'Open-Meteo' },
-    metric4: { label: 'PM2.5 SURFACE', val: '—', sub: 'Backend model pending' },
+    metric1: { label: 'ACTIVE FIRE HOTSPOTS', val: 'N/A', sub: 'NASA FIRMS, last 24 hours' },
+    metric2: { label: 'TOTAL FIRE RADIATIVE POWER', val: 'N/A', sub: 'NASA FIRMS' },
+    metric3: { label: 'WIND', val: 'N/A', sub: 'Open-Meteo' },
+    metric4: { label: 'PM2.5 SURFACE', val: 'N/A', sub: 'Backend model pending' },
     statusNote: 'Waiting for current backend observations.',
   },
   transit_02: {
@@ -97,9 +97,9 @@ export const CORRIDOR_NODES: Record<CorridorNodeKey, CorridorNodeData> = {
     longitude: 76.9635,
     pm25: null, aqi: null, aqiCategory: 'Data pending', aqiColor: Colors.inkMuted,
     wind: 'Data pending', inversion: 'Data pending',
-    metric1: { label: 'SMOKE TRANSPORT LAG', val: '—', sub: 'Needs sufficient history' },
-    metric2: { label: 'WIND SPEED', val: '—', sub: 'Open-Meteo' },
-    metric3: { label: 'CORRIDOR PM2.5', val: '—', sub: 'Backend surface model' },
+    metric1: { label: 'SMOKE TRANSPORT LAG', val: 'N/A', sub: 'Needs sufficient history' },
+    metric2: { label: 'WIND SPEED', val: 'N/A', sub: 'Open-Meteo' },
+    metric3: { label: 'CORRIDOR PM2.5', val: 'N/A', sub: 'Backend surface model' },
     metric4: { label: 'DATA STATUS', val: 'Pending', sub: 'Backend request in progress' },
     statusNote: 'Waiting for current backend observations.',
   },
@@ -113,10 +113,10 @@ export const CORRIDOR_NODES: Record<CorridorNodeKey, CorridorNodeData> = {
     longitude: 77.316,
     pm25: null, aqi: null, aqiCategory: 'Data pending', aqiColor: Colors.inkMuted,
     wind: 'Data pending', inversion: 'Data pending',
-    metric1: { label: 'MIXING LAYER HEIGHT', val: '—', sub: 'Open-Meteo' },
-    metric2: { label: 'VENTILATION ESTIMATE', val: '—', sub: 'Wind speed × mixing height' },
-    metric3: { label: 'PM2.5', val: '—', sub: 'Backend surface model' },
-    metric4: { label: 'AQI CATEGORY', val: '—', sub: 'CPCB PM2.5 sub-index' },
+    metric1: { label: 'MIXING LAYER HEIGHT', val: 'N/A', sub: 'Open-Meteo' },
+    metric2: { label: 'VENTILATION ESTIMATE', val: 'N/A', sub: 'Wind speed × mixing height' },
+    metric3: { label: 'PM2.5', val: 'N/A', sub: 'Backend surface model' },
+    metric4: { label: 'AQI CATEGORY', val: 'N/A', sub: 'CPCB PM2.5 sub-index' },
     statusNote: 'Waiting for current backend observations.',
   },
 };
@@ -221,24 +221,24 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
     let metrics: CorridorNodeData['metric1'][];
     if (selectedCorridorNode === 'pb_04') {
       metrics = [
-        { label: 'ACTIVE FIRE HOTSPOTS', val: hotspots ? String(hotspots.count) : '—', sub: 'NASA FIRMS, last 24 hours' },
-        { label: 'TOTAL FIRE RADIATIVE POWER', val: totalFrp !== null ? `${totalFrp.toFixed(1)} MW` : '—', sub: 'Sum of current FIRMS detections' },
+        { label: 'ACTIVE FIRE HOTSPOTS', val: hotspots ? String(hotspots.count) : 'N/A', sub: 'NASA FIRMS, last 24 hours' },
+        { label: 'TOTAL FIRE RADIATIVE POWER', val: totalFrp !== null ? `${totalFrp.toFixed(1)} MW` : 'N/A', sub: 'Sum of current FIRMS detections' },
         { label: 'WIND', val: windText, sub: 'Open-Meteo live weather' },
         { label: 'NEAREST FIRE', val: nearestFire !== null ? `${nearestFire.toFixed(1)} km` : 'None reported', sub: 'Distance from selected node' },
       ];
     } else if (selectedCorridorNode === 'transit_02') {
       metrics = [
         { label: 'SMOKE TRANSPORT LAG', val: strongestLag ? `T+${strongestLag.lag_hours}h` : 'Insufficient history', sub: strongestLag ? `Pearson r = ${strongestLag.pearson_r.toFixed(2)}` : 'No measured correlation yet' },
-        { label: 'WIND SPEED', val: windKmh !== null ? `${windKmh.toFixed(1)} km/h` : '—', sub: 'Open-Meteo live weather' },
-        { label: 'CORRIDOR PM2.5', val: pm25 !== null ? `${pm25.toFixed(1)} µg/m³` : '—', sub: sourceNote },
+        { label: 'WIND SPEED', val: windKmh !== null ? `${windKmh.toFixed(1)} km/h` : 'N/A', sub: 'Open-Meteo live weather' },
+        { label: 'CORRIDOR PM2.5', val: pm25 !== null ? `${pm25.toFixed(1)} µg/m³` : 'N/A', sub: sourceNote },
         { label: 'DATA STATUS', val: surfacePoint ? 'Available' : 'Unavailable', sub: 'Nearest backend grid point' },
       ];
     } else {
       const ventilation = region ? region.wind_speed_ms * region.mixing_layer_height_m_agl : null;
       metrics = [
-        { label: 'MIXING LAYER HEIGHT', val: mixing !== null ? `${Math.round(mixing)} m AGL` : '—', sub: 'Open-Meteo live weather' },
-        { label: 'VENTILATION ESTIMATE', val: ventilation !== null ? `${Math.round(ventilation)} m²/s` : '—', sub: 'Wind speed × mixing height' },
-        { label: 'PM2.5', val: pm25 !== null ? `${pm25.toFixed(1)} µg/m³` : '—', sub: sourceNote },
+        { label: 'MIXING LAYER HEIGHT', val: mixing !== null ? `${Math.round(mixing)} m AGL` : 'N/A', sub: 'Open-Meteo live weather' },
+        { label: 'VENTILATION ESTIMATE', val: ventilation !== null ? `${Math.round(ventilation)} m²/s` : 'N/A', sub: 'Wind speed × mixing height' },
+        { label: 'PM2.5', val: pm25 !== null ? `${pm25.toFixed(1)} µg/m³` : 'N/A', sub: sourceNote },
         { label: 'AQI CATEGORY', val: aqiMeta.category, sub: aqi !== null ? `CPCB PM2.5 sub-index ${aqi}` : 'No current value' },
       ];
     }
@@ -527,7 +527,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
               </View>
 
               <View style={[styles.stationAqiBadge, { backgroundColor: nodeData.aqiColor }]}>
-                <Text style={styles.stationAqiVal}>AQI {nodeData.aqi ?? '—'}</Text>
+                <Text style={styles.stationAqiVal}>AQI {nodeData.aqi ?? 'N/A'}</Text>
                 <Text style={styles.stationAqiLabel}>{nodeData.aqiCategory.split('•')[0].trim()}</Text>
               </View>
             </View>
@@ -667,7 +667,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
                   />
                 </View>
                 <Text style={styles.biomassPercent}>
-                  {r.frp_share_percent ? `${r.frp_share_percent.toFixed(1)}%` : '—'}
+                  {r.frp_share_percent ? `${r.frp_share_percent.toFixed(1)}%` : 'N/A'}
                 </Text>
               </View>
             ))}
@@ -757,7 +757,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
               <MaterialCommunityIcons name="hub" size={22} color={Colors.canvasCream} />
             </View>
             <View style={{ flex: 1 }}>
-                <Text style={styles.meshTitle}>Airshed Mesh: {sensorCount ?? '—'} Registered Nodes</Text>
+                <Text style={styles.meshTitle}>Airshed Mesh: {sensorCount ?? 'N/A'} Registered Nodes</Text>
                 <Text style={styles.meshSubtitle}>Backend SensorThings registry</Text>
             </View>
           </View>

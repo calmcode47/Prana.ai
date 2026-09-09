@@ -17,7 +17,6 @@ import {
   fetchAlerts,
   fetchLatestAlert,
   fetchHotspots,
-  fetchCemsForensics,
   fetchAnomalies,
   fetchLegalRegistry,
   fetchSignaturePackage,
@@ -74,17 +73,16 @@ export const RegulatoryAlertsScreen: React.FC = () => {
 
   const loadData = useCallback(async () => {
     try {
-      const [hotspotsRes, alertsRes, cemsRes, registryRes, anomaliesRes] = await Promise.allSettled([
+      const [hotspotsRes, alertsRes, registryRes, anomaliesRes] = await Promise.allSettled([
         fetchHotspots(24, 'nominal'),
         fetchAlerts(),
-        fetchCemsForensics('CEMS-FLUE-MAN8', 24),
         fetchLegalRegistry(),
         fetchAnomalies('no2', true, 7),
       ]);
 
       if (hotspotsRes.status === 'fulfilled') setActiveFiresCount(hotspotsRes.value.count);
       if (alertsRes.status === 'fulfilled') setIncidents(alertsRes.value.items);
-      if (cemsRes.status === 'fulfilled') setCemsData(cemsRes.value);
+      setCemsData(null);
       if (registryRes.status === 'fulfilled') setLegalRegistry(registryRes.value);
       if (anomaliesRes.status === 'fulfilled' && typeof anomaliesRes.value?.count === 'number') {
         setAnomaliesCount(anomaliesRes.value.count);
@@ -141,8 +139,10 @@ export const RegulatoryAlertsScreen: React.FC = () => {
     if (!draftedNoticeId) return;
     try {
       const res = await fetchSignaturePackage(draftedNoticeId);
-      setSealedPramaan(true);
-      setPipelineToast(`Signature package: ${formatBackendStatus(res.status)}`);
+      setSealedPramaan(res.provider_call_performed);
+      setPipelineToast(res.provider_call_performed
+        ? `Signature provider completed: ${formatBackendStatus(res.status)}`
+        : `Signature not completed: ${formatBackendStatus(res.status)}`);
       setTimeout(() => setPipelineToast(null), 3000);
     } catch (error) {
       setSealedPramaan(false);
@@ -159,8 +159,11 @@ export const RegulatoryAlertsScreen: React.FC = () => {
         recipient_reference: 'District Magistrate & Police Flying Squad',
         notice_id: draftedNoticeId ?? undefined,
       });
-      setTransmittedToDM(true);
-      setPipelineToast(`Transmitted to DM & Police (#${dispatch.dispatch_id.slice(-6)})`);
+      const wasSent = dispatch.message_sent === true;
+      setTransmittedToDM(wasSent);
+      setPipelineToast(wasSent
+        ? `Transmitted to DM & Police (#${dispatch.dispatch_id.slice(-6)})`
+        : `Dispatch not sent: ${formatBackendStatus(dispatch.status)}`);
       setTimeout(() => setPipelineToast(null), 3000);
       fetchLegalRegistry().then(setLegalRegistry).catch((err: unknown) => console.warn('[RegulatoryAlerts] legalRegistry refresh:', err instanceof Error ? err.message : err));
     } catch (error) {
@@ -228,7 +231,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
           {/* Metric 1 */}
           <View style={[styles.metricCard, { backgroundColor: Colors.terracottaDeep }]}>
             <View style={styles.metricCardTop}>
-              <Text style={styles.metricNumber}>{activeFiresCount ?? '—'}</Text>
+              <Text style={styles.metricNumber}>{activeFiresCount ?? 'N/A'}</Text>
               <MaterialCommunityIcons name="fire" size={18} color={Colors.canvasCream} />
             </View>
             <Text style={styles.metricName}>Active Fires</Text>
@@ -238,7 +241,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
           {/* Metric 2 */}
           <View style={[styles.metricCard, { backgroundColor: Colors.forestJade }]}>
             <View style={styles.metricCardTop}>
-              <Text style={styles.metricNumber}>{anomaliesCount ?? '—'}</Text>
+              <Text style={styles.metricNumber}>{anomaliesCount ?? 'N/A'}</Text>
               <MaterialCommunityIcons name="weather-windy" size={18} color={Colors.canvasCream} />
             </View>
             <Text style={styles.metricName}>Night Anomalies</Text>
@@ -248,7 +251,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
           {/* Metric 3 */}
           <View style={[styles.metricCard, { backgroundColor: Colors.primaryContainer }]}>
             <View style={styles.metricCardTop}>
-              <Text style={styles.metricNumber}>{legalRegistry?.notices.length ?? '—'}</Text>
+              <Text style={styles.metricNumber}>{legalRegistry?.notices.length ?? 'N/A'}</Text>
               <MaterialCommunityIcons name="file-document-alert" size={18} color={Colors.canvasCream} />
             </View>
             <Text style={styles.metricName}>SPCB Dockets</Text>
@@ -321,7 +324,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
           >
             <MaterialCommunityIcons name="weather-night" size={13} color={filter === 'nighttime' ? Colors.canvasCream : Colors.inkBlack} />
             <Text style={[styles.categoryPillText, filter === 'nighttime' && styles.categoryPillTextActive]}>
-              Nighttime Anomalies ({anomaliesCount ?? '—'})
+              Nighttime Anomalies ({anomaliesCount ?? 'N/A'})
             </Text>
           </Pressable>
 
@@ -331,7 +334,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
           >
             <MaterialCommunityIcons name="fire" size={13} color={filter === 'stubble' ? Colors.canvasCream : Colors.terracottaDeep} />
             <Text style={[styles.categoryPillText, filter === 'stubble' && styles.categoryPillTextActive]}>
-              Stubble Hotspots ({activeFiresCount ?? '—'})
+              Stubble Hotspots ({activeFiresCount ?? 'N/A'})
             </Text>
           </Pressable>
         </ScrollView>
@@ -367,7 +370,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
               <Text style={styles.incidentCode}>{firstId}</Text>
             </View>
             <View style={styles.aqiChip}>
-              <Text style={styles.aqiChipText}>AQI {firstAqi ?? '—'} • {firstIncident.severity.toUpperCase()}</Text>
+              <Text style={styles.aqiChipText}>AQI {firstAqi ?? 'N/A'} • {firstIncident.severity.toUpperCase()}</Text>
             </View>
           </View>
 
@@ -390,7 +393,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
             <View style={styles.evidenceMetrics}>
               <View style={styles.evidenceMetric}>
                 <MaterialCommunityIcons name="fire" size={14} color={Colors.terracottaDeep} />
-                <Text style={styles.evidenceMetricText}>{firstFires ?? '—'} fires within 50 km</Text>
+                <Text style={styles.evidenceMetricText}>{firstFires ?? 'N/A'} fires within 50 km</Text>
               </View>
               <View style={styles.evidenceDivider} />
               <Text style={styles.evidenceMetricText}>
@@ -508,7 +511,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
             </View>
           </View>
 
-          <Text style={styles.cemsFacilityText}>Facility ID: CEMS-FLUE-MAN8 • Manesar Flue Gate</Text>
+          <Text style={styles.cemsFacilityText}>Facility ID: {cemsData?.facility_id ?? 'N/A'} • Provider telemetry</Text>
           <Text style={styles.cemsDesc}>
             Backend forensic ratios from the latest available CEMS review window. This feed is empty unless industrial telemetry has been ingested.
           </Text>
@@ -516,12 +519,12 @@ export const RegulatoryAlertsScreen: React.FC = () => {
           <View style={styles.cemsRatiosGrid}>
             <View style={styles.cemsRatioBox}>
               <Text style={styles.cemsRatioLabel}>Stack Velocity Ratio</Text>
-              <Text style={[styles.cemsRatioVal, { color: Colors.coralWatermelonVivid }]}>{latestCemsWindow ? latestCemsWindow.stack_velocity_ratio.toFixed(2) : '—'}</Text>
+              <Text style={[styles.cemsRatioVal, { color: Colors.coralWatermelonVivid }]}>{latestCemsWindow ? latestCemsWindow.stack_velocity_ratio.toFixed(2) : 'N/A'}</Text>
               <Text style={styles.cemsRatioSub}>Latest backend review window</Text>
             </View>
             <View style={styles.cemsRatioBox}>
               <Text style={styles.cemsRatioLabel}>Scrubber Load Ratio</Text>
-              <Text style={[styles.cemsRatioVal, { color: Colors.terracottaDeep }]}>{latestCemsWindow ? latestCemsWindow.scrubber_load_ratio.toFixed(2) : '—'}</Text>
+              <Text style={[styles.cemsRatioVal, { color: Colors.terracottaDeep }]}>{latestCemsWindow ? latestCemsWindow.scrubber_load_ratio.toFixed(2) : 'N/A'}</Text>
               <Text style={styles.cemsRatioSub}>{latestCemsWindow?.classification ?? 'No current review window'}</Text>
             </View>
           </View>
@@ -564,7 +567,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
               <Text style={styles.incidentCode}>{secondIncident.incident_id}</Text>
             </View>
             <View style={styles.aqiChip}>
-              <Text style={styles.aqiChipText}>AQI {secondIncident.measured_aqi ?? '—'} • {secondIncident.severity.toUpperCase()}</Text>
+              <Text style={styles.aqiChipText}>AQI {secondIncident.measured_aqi ?? 'N/A'} • {secondIncident.severity.toUpperCase()}</Text>
             </View>
           </View>
 

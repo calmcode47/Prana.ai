@@ -1,11 +1,12 @@
 """Backend telemetry, empirical analytics, briefing content, and integration status."""
+import hmac
 import math
 import os
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlsplit
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
 
 from backend.config import demo_enabled
 from backend.database import get_db_pool, get_in_memory_store
@@ -13,7 +14,8 @@ from backend.ingesters.ingest_meteo import fetch_meteo_forecast
 from backend.routers.alerts import fetch_alerts
 from backend.models import MobilePushRegistration
 from backend.push import register_push_token
-from backend.tts import ensure_briefing_audio
+from backend.tts import ensure_briefing_audio, get_existing_briefing_audio
+from backend.routers.citizen import limiter
 
 router = APIRouter(prefix="/api/v1", tags=["Operational intelligence"])
 
@@ -163,16 +165,38 @@ async def latest_briefing(request: Request):
         return {"status": "empty", "script": None, "audio_url": None, "audio_status": "not_generated"}
     alert = alerts[0]
     script = (f"PRANA atmospheric briefing. {alert['severity'].capitalize()} conditions were recorded for "
-              f"{alert.get('location_text') or 'the monitored corridor'}. The stored PM2.5 value is "
-              f"{alert.get('measured_pm25')} micrograms per cubic metre, with an estimated PM2.5 sub-index "
-              f"of {alert.get('measured_aqi')}. Review the timestamp and data source before operational use.")
-    audio_filename, audio_status = await ensure_briefing_audio(alert["incident_id"], script)
+              f"{alert.get('location_text') or 'N/A'}. The stored PM2.5 value is "
+              f"{alert.get('measured_pm25') if alert.get('measured_pm25') is not None else 'N/A'} micrograms per cubic metre, with an estimated PM2.5 sub-index "
+              f"of {alert.get('measured_aqi') if alert.get('measured_aqi') is not None else 'N/A'}. Review the timestamp and data source before operational use.")
+    # A public read must never trigger a billable provider operation. Audio is
+    # generated only by an explicitly trusted backend workflow.
+    audio_filename, audio_status = get_existing_briefing_audio(alert["incident_id"], script)
     forwarded_prefix = request.headers.get("x-forwarded-prefix", "").rstrip("/")
     audio_url = (f"{str(request.base_url).rstrip('/')}{forwarded_prefix}/media/briefings/{audio_filename}"
                  if audio_filename else None)
     return {"status": "script_ready", "incident_id": alert["incident_id"], "script": script,
             "audio_url": audio_url, "audio_status": audio_status,
             "feed_url": "/api/v1/briefings/feed.xml"}
+
+
+@router.post("/briefings/latest/audio")
+@limiter.limit("2/hour")
+async def generate_latest_briefing_audio(request: Request,
+                                          x_operator_key: str | None = Header(None)):
+    """Explicit trusted operation for generating audio; public reads never spend provider quota."""
+    expected = os.getenv("PRANA_OPERATOR_API_KEY")
+    if not expected:
+        raise HTTPException(503, "Operator audio generation is not configured")
+    if not x_operator_key or not hmac.compare_digest(x_operator_key, expected):
+        raise HTTPException(401, "Invalid operator credential")
+    item = await latest_briefing(request)
+    if not item.get("incident_id") or not item.get("script"):
+        raise HTTPException(404, "No current briefing is available")
+    audio_filename, audio_status = await ensure_briefing_audio(item["incident_id"], item["script"])
+    forwarded_prefix = request.headers.get("x-forwarded-prefix", "").rstrip("/")
+    audio_url = (f"{str(request.base_url).rstrip('/')}{forwarded_prefix}/media/briefings/{audio_filename}"
+                 if audio_filename else None)
+    return {**item, "audio_url": audio_url, "audio_status": audio_status}
 
 
 @router.get("/briefings/feed.xml")
@@ -200,7 +224,8 @@ async def mobile_release(response: Response):
 
 
 @router.post("/mobile/push/register", status_code=status.HTTP_201_CREATED)
-async def mobile_push_registration(payload: MobilePushRegistration):
+@limiter.limit("10/minute")
+async def mobile_push_registration(request: Request, payload: MobilePushRegistration):
     try:
         await register_push_token(payload.expo_push_token, payload.platform, payload.device_id)
     except ValueError as exc:
@@ -220,6 +245,7 @@ async def integration_requirements():
         ("CEMS ingestion", ("CEMS_INGEST_API_KEY",), "the selected plant/SPCB CEMS operator", "organization-specific source agreement"),
         ("Authority dispatch", ("AUTHORITY_DISPATCH_URL", "AUTHORITY_DISPATCH_CLIENT_ID", "AUTHORITY_DISPATCH_CLIENT_SECRET"), "the relevant SPCB/district/police integration owner", "no universal public API"),
         ("Text-to-speech", ("TTS_PROVIDER_KEY",), "an OpenAI-compatible speech provider", "provider-dependent"),
+        ("Operator audio generation", ("PRANA_OPERATOR_API_KEY",), "the deployment administrator", "server-side secret; never bundle in web/mobile clients"),
         ("Mobile artifact hosting", ("MOBILE_APP_DOWNLOAD_URL", "MOBILE_APP_VERSION", "MOBILE_APP_SHA256"), "the selected HTTPS artifact store", "requires an actual signed app build"),
     ]
     return {"items": [{"service": service, "settings": list(settings), "obtain_from": source, "access": access,

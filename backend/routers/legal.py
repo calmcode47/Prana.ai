@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from html import escape
 from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from reportlab.lib.pagesizes import A4
@@ -21,6 +21,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 from backend.database import get_db_pool, get_in_memory_store
+from backend.routers.citizen import limiter
 
 router = APIRouter(prefix="/api/v1/legal", tags=["Legal workflow"])
 
@@ -94,15 +95,16 @@ def _pdf(title, paragraphs):
 
 
 @router.post("/notices", status_code=201)
-async def create_notice(payload: NoticeCreate):
+@limiter.limit("10/minute")
+async def create_notice(request: Request, payload: NoticeCreate):
     incident = await _incident(payload.incident_id)
     notice_id = f"DRF-31A-{datetime.now(timezone.utc):%Y%m%d}-{uuid.uuid4().hex[:10].upper()}"
     title = f"DRAFT REVIEW NOTE — {AIR_ACT_REFERENCE}"
     body = (
         f"This is an unissued draft for review by {payload.issuing_authority}.\n\n"
-        f"Incident: {incident['incident_id']}\nLocation: {incident.get('location_text') or 'Not recorded'}\n"
-        f"Recorded PM2.5: {incident.get('measured_pm25')} ug/m3\n"
-        f"Estimated PM2.5 sub-index: {incident.get('measured_aqi')}\n"
+        f"Incident: {incident['incident_id']}\nLocation: {incident.get('location_text') or 'N/A'}\n"
+        f"Recorded PM2.5: {incident.get('measured_pm25') if incident.get('measured_pm25') is not None else 'N/A'} ug/m3\n"
+        f"Estimated PM2.5 sub-index: {incident.get('measured_aqi') if incident.get('measured_aqi') is not None else 'N/A'}\n"
         f"Recorded at: {incident.get('created_at')}\n\nRequested direction: {payload.requested_direction}\n\n"
         "This draft has no legal effect. Section 31A directions may be issued only by a competent Board "
         "or duly authorized officer after review of the evidence, jurisdiction, applicable procedure, and law."
@@ -122,7 +124,9 @@ async def create_notice(payload: NoticeCreate):
                 payload.issuing_authority, payload.authorized_officer, AIR_ACT_REFERENCE, title, body,
                 row["document_sha256"], stamp)
     else:
-        get_in_memory_store()["legal_notices"].append(row)
+        notices = get_in_memory_store()["legal_notices"]
+        notices.append(row)
+        del notices[:-10_000]
     return _notice_json(row)
 
 
@@ -165,7 +169,8 @@ async def evidence_certificate(notice_id: str):
 
 
 @router.post("/dispatches", status_code=201)
-async def queue_dispatch(payload: DispatchCreate):
+@limiter.limit("10/minute")
+async def queue_dispatch(request: Request, payload: DispatchCreate):
     await _incident(payload.incident_id)
     if payload.notice_id:
         notice = await _notice(payload.notice_id)
@@ -185,7 +190,9 @@ async def queue_dispatch(payload: DispatchCreate):
                 payload.incident_id, payload.notice_id, payload.recipient_kind,
                 payload.recipient_reference, stamp)
     else:
-        get_in_memory_store()["enforcement_dispatches"].append(row)
+        dispatches = get_in_memory_store()["enforcement_dispatches"]
+        dispatches.append(row)
+        del dispatches[:-10_000]
     return {**_notice_json(row), "message_sent": False,
             "reason": "No authority-specific dispatch connector is configured"}
 
@@ -205,7 +212,8 @@ async def registry():
 
 
 @router.get("/dossiers/{incident_id}.zip")
-async def dossier(incident_id: str):
+@limiter.limit("10/minute")
+async def dossier(request: Request, incident_id: str):
     incident = await _incident(incident_id)
     pool = get_db_pool()
     if pool:

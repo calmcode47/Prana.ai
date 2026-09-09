@@ -28,7 +28,10 @@ export const Header: React.FC = () => {
   useEffect(() => {
     fetchReady()
       .then((res) => {
-        setDbStatus(res.db === 'connected' ? 'PostGIS 3.6 Connected' : 'In-Memory Store Fallback');
+        setDbStatus(res.db === 'connected' ? 'PostGIS Connected'
+          : res.db === 'local-persistent' ? 'Local Persistent Store'
+          : res.db === 'in-memory' ? 'In-Memory Store'
+          : `Storage: ${res.db || 'N/A'}`);
         setIsDemoMode(res.demo_mode);
       })
       .catch(() => {
@@ -125,7 +128,7 @@ export const Header: React.FC = () => {
         </div>
         <div className="flex items-center gap-space-sm">
           <span className="px-2 py-0.5 rounded-full bg-canvas-cream text-ink-black font-bold shadow-[1px_1px_0px_#18181B]">
-            {isDemoMode ? 'PRANA LOCAL (DEMO MODE)' : 'PRANA LOCAL (LIVE DATA MODE)'}
+            {isDemoMode ? 'PRANA LOCAL (DEMO MODE)' : 'PRANA LOCAL (DEMO DATA OFF)'}
           </span>
           <span className="text-ink-muted">{lastSync ? `Sync ${new Date(lastSync).toLocaleTimeString()}` : 'Sync pending'}</span>
         </div>
