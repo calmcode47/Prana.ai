@@ -27,6 +27,14 @@ services:
         sync: false
       - key: OPENAQ_API_KEY
         sync: false
+      - key: TTS_PROVIDER_KEY
+        sync: false
+      - key: TTS_PROVIDER_URL
+        value: https://api.openai.com/v1/audio/speech
+      - key: TTS_MODEL
+        value: gpt-4o-mini-tts
+      - key: TTS_VOICE
+        value: alloy
 
 databases:
   - name: prana-db

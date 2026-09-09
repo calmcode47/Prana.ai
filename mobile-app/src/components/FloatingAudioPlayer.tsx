@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated, Easing, Modal, Linking } from 'react-native';
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors } from '../theme/tokens';
 import { fetchLatestBriefing, BriefingResponse, formatBackendStatus, getBriefingFeedUrl } from '../api/client';
@@ -12,11 +13,21 @@ interface FloatingAudioPlayerProps {
 export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
   telemetryNote = 'No current briefing',
 }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
   const [briefing, setBriefing] = useState<BriefingResponse | null>(null);
   const [showBriefingModal, setShowBriefingModal] = useState(false);
+  const player = useAudioPlayer(briefing?.audio_url ?? null, {
+    downloadFirst: true,
+    updateInterval: 500,
+  });
+  const playbackStatus = useAudioPlayerStatus(player);
+  const isPlaying = playbackStatus.playing;
 
   useEffect(() => {
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: true,
+      interruptionMode: 'doNotMix',
+    }).catch(() => {});
     fetchLatestBriefing()
       .then((res) => {
         if (res && res.script) {
@@ -99,12 +110,17 @@ export const FloatingAudioPlayer: React.FC<FloatingAudioPlayerProps> = ({
       setShowBriefingModal(true);
       return;
     }
-    setIsPlaying(true);
-    try {
-      await Linking.openURL(briefing.audio_url);
-    } finally {
-      setIsPlaying(false);
+    if (isPlaying) {
+      player.pause();
+      return;
     }
+    if (playbackStatus.didJustFinish) await player.seekTo(0);
+    player.setActiveForLockScreen(true, {
+      title: displayTitle,
+      artist: 'PRANA Air',
+      albumTitle: 'Atmospheric Briefings',
+    });
+    player.play();
   };
 
   const handleRssFeedPress = async () => {

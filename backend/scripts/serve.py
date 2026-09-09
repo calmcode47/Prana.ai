@@ -6,5 +6,5 @@ from dotenv import load_dotenv
 
 if __name__ == "__main__":
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
-    uvicorn.run("backend.main:app", host=os.getenv("HOST", "127.0.0.1"),
+    uvicorn.run("backend.main:app", host=os.getenv("HOST", "0.0.0.0"),
                 port=int(os.getenv("PORT", "8000")), workers=1)

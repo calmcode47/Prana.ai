@@ -38,17 +38,27 @@ export const FederatedMeshScreen: React.FC = () => {
 
   const isMounted = useRef(true);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasFieldDataset = Boolean(statusData?.dataset && !/(synthetic|demo|sample)/i.test(statusData.dataset));
 
   const loadData = useCallback(async () => {
     try {
       const status = await fetchFederatedStatus();
       if (!isMounted.current) return;
       setStatusData(status);
-      if (status?.rounds && status.rounds.length > 0) {
+      const fieldDataset = Boolean(status?.dataset && !/(synthetic|demo|sample)/i.test(status.dataset));
+      if (!fieldDataset) {
+        setRoundsList([]);
+        setCurrentRound(0);
+        setGlobalLoss(null);
+        setGlobalAcc(null);
+        setDelhiAcc(null);
+        setPunjabAcc(null);
+        setRunFeedback('N/A — a real field training dataset is not configured. Synthetic scores are hidden.');
+      } else if (status?.rounds && status.rounds.length > 0) {
         setRoundsList(status.rounds);
         const last = status.rounds[status.rounds.length - 1];
         setCurrentRound(last.round_number);
-        setGlobalLoss(Number(last.global_loss.toFixed(3)));
+        setGlobalLoss(last.global_loss == null ? null : Number(last.global_loss.toFixed(3)));
         setGlobalAcc(last.global_accuracy);
         setDelhiAcc(last.delhi_accuracy);
         setPunjabAcc(last.punjab_accuracy);
@@ -80,6 +90,10 @@ export const FederatedMeshScreen: React.FC = () => {
 
   const handleSimulateRound = async () => {
     if (isSimulating) return;
+    if (!hasFieldDataset) {
+      setRunFeedback('N/A — federated training needs real Punjab and Delhi field partitions.');
+      return;
+    }
     setIsSimulating(true);
 
     try {
@@ -99,7 +113,7 @@ export const FederatedMeshScreen: React.FC = () => {
           if (i < rounds.length) {
             const r = rounds[i];
             setCurrentRound(r.round_number);
-            setGlobalLoss(Number(r.global_loss.toFixed(3)));
+            setGlobalLoss(r.global_loss == null ? null : Number(r.global_loss.toFixed(3)));
             setGlobalAcc(r.global_accuracy);
             setDelhiAcc(r.delhi_accuracy);
             setPunjabAcc(r.punjab_accuracy);
@@ -164,7 +178,9 @@ export const FederatedMeshScreen: React.FC = () => {
           </View>
           <Text style={styles.privacyBody}>
             {statusData
-              ? `${formatFederatedDataset(statusData.dataset)} runs locally in the backend. Client fit calls omit local metrics; production separation of clients and key custody requires an external deployment.`
+              ? hasFieldDataset
+                ? `${formatFederatedDataset(statusData.dataset)} runs locally in the backend. Client fit calls omit local metrics; production separation of clients and key custody requires an external deployment.`
+                : 'N/A — the backend currently has no real Punjab/Delhi field training partitions. Synthetic training metrics are intentionally hidden.'
               : 'Federated status is unavailable from the backend.'}
           </Text>
           <View style={styles.privacyPillsRow}>
@@ -213,13 +229,13 @@ export const FederatedMeshScreen: React.FC = () => {
               <Text style={styles.nodeTileSubtitle}>Farms / PPCB Sub-station</Text>
 
               <View style={styles.sampleBox}>
-                <Text style={styles.sampleCount}>Synthetic</Text>
-                <Text style={styles.sampleUnit}>backend training partition</Text>
+                <Text style={styles.sampleCount}>{hasFieldDataset ? 'Connected' : 'N/A'}</Text>
+                <Text style={styles.sampleUnit}>{hasFieldDataset ? 'field training partition' : 'field partition unavailable'}</Text>
               </View>
 
               <View style={styles.tensorStatus}>
-                <Text style={styles.tensorStatusText}>Local simulation</Text>
-                <MaterialCommunityIcons name="check-decagram" size={14} color={Colors.forestJade} />
+                <Text style={styles.tensorStatusText}>{hasFieldDataset ? 'Field data ready' : 'No field data'}</Text>
+                <MaterialCommunityIcons name={hasFieldDataset ? 'check-decagram' : 'alert-circle-outline'} size={14} color={hasFieldDataset ? Colors.forestJade : Colors.terracottaDeep} />
               </View>
             </View>
 
@@ -235,13 +251,13 @@ export const FederatedMeshScreen: React.FC = () => {
               <Text style={styles.nodeTileSubtitle}>DPCC / Urban Canopy</Text>
 
               <View style={styles.sampleBox}>
-                <Text style={styles.sampleCount}>Synthetic</Text>
-                <Text style={styles.sampleUnit}>backend training partition</Text>
+                <Text style={styles.sampleCount}>{hasFieldDataset ? 'Connected' : 'N/A'}</Text>
+                <Text style={styles.sampleUnit}>{hasFieldDataset ? 'field training partition' : 'field partition unavailable'}</Text>
               </View>
 
               <View style={styles.tensorStatus}>
-                <Text style={styles.tensorStatusText}>Local simulation</Text>
-                <MaterialCommunityIcons name="check-decagram" size={14} color={Colors.forestJade} />
+                <Text style={styles.tensorStatusText}>{hasFieldDataset ? 'Field data ready' : 'No field data'}</Text>
+                <MaterialCommunityIcons name={hasFieldDataset ? 'check-decagram' : 'alert-circle-outline'} size={14} color={hasFieldDataset ? Colors.forestJade : Colors.terracottaDeep} />
               </View>
             </View>
           </View>
@@ -275,8 +291,8 @@ export const FederatedMeshScreen: React.FC = () => {
             {/* Simulation Trigger Button */}
             <Pressable
               onPress={handleSimulateRound}
-              disabled={isSimulating}
-              style={[styles.simulateBtn, isSimulating && { opacity: 0.7 }]}
+              disabled={isSimulating || !hasFieldDataset}
+              style={[styles.simulateBtn, (isSimulating || !hasFieldDataset) && { opacity: 0.7 }]}
             >
               <MaterialCommunityIcons
                 name={isSimulating ? 'refresh' : 'play-circle'}
@@ -284,7 +300,7 @@ export const FederatedMeshScreen: React.FC = () => {
                 color={Colors.inkBlack}
               />
               <Text style={styles.simulateBtnText}>
-                {isSimulating ? 'Aggregating Weight Tensors...' : 'Run Federated Training Round'}
+                {isSimulating ? 'Aggregating Weight Tensors...' : hasFieldDataset ? 'Run Federated Training Round' : 'Field Training Data N/A'}
               </Text>
             </Pressable>
           </View>
@@ -301,7 +317,7 @@ export const FederatedMeshScreen: React.FC = () => {
                 </View>
               </View>
               <Text style={styles.chartSubtitle}>
-                {roundsList.length} synchronization rounds across decoupled silos
+                 {hasFieldDataset ? `${roundsList.length} synchronization rounds across decoupled silos` : 'N/A — synthetic rounds are not displayed'}
               </Text>
             </View>
 

@@ -7,6 +7,8 @@ and server-side CPCB 24h breakpoint AQI conversion per DEC-010.
 import os
 import logging
 import math
+import json
+from pathlib import Path
 from typing import Optional, Tuple, Dict, Any, List
 import asyncpg
 from backend.config import production_mode
@@ -16,8 +18,62 @@ logger = logging.getLogger("prana.database")
 # Global asyncpg connection pool
 _pool: Optional[asyncpg.Pool] = None
 
-# In-memory store fallback when PostgreSQL is not connected (local dev / CI testing)
-_in_memory_store: Dict[str, List[Dict[str, Any]]] = {
+_local_store_path: Optional[Path] = None
+_local_persistence_enabled = False
+
+
+class _PersistentList(list):
+    """List that checkpoints the development store after each mutation."""
+
+    def _changed(self):
+        if _local_persistence_enabled:
+            _save_local_store()
+
+    def append(self, item):
+        super().append(item)
+        self._changed()
+
+    def extend(self, items):
+        super().extend(items)
+        self._changed()
+
+    def insert(self, index, item):
+        super().insert(index, item)
+        self._changed()
+
+    def clear(self):
+        super().clear()
+        self._changed()
+
+    def pop(self, index=-1):
+        item = super().pop(index)
+        self._changed()
+        return item
+
+    def remove(self, item):
+        super().remove(item)
+        self._changed()
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        self._changed()
+
+    def __delitem__(self, key):
+        super().__delitem__(key)
+        self._changed()
+
+
+class _PersistentStore(dict):
+    def __setitem__(self, key, value):
+        wrapped = value if isinstance(value, _PersistentList) else _PersistentList(value)
+        super().__setitem__(key, wrapped)
+        if _local_persistence_enabled:
+            _save_local_store()
+
+
+# Durable development fallback when PostgreSQL is unavailable. Tests keep this
+# persistence disabled so fixtures cannot modify a developer's data.
+_in_memory_store: Dict[str, List[Dict[str, Any]]] = _PersistentStore({
     "fire_hotspots": [],
     "aqi_readings": [],
     "forecast_zones": [],
@@ -29,7 +85,54 @@ _in_memory_store: Dict[str, List[Dict[str, Any]]] = {
     "legal_notices": [],
     "enforcement_dispatches": [],
     "cems_readings": [],
-}
+    "mobile_push_tokens": [],
+})
+for _store_key, _records in list(_in_memory_store.items()):
+    dict.__setitem__(_in_memory_store, _store_key, _PersistentList(_records))
+
+
+def _json_default(value):
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _save_local_store() -> None:
+    if not _local_store_path:
+        return
+    _local_store_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = _local_store_path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(_in_memory_store, default=_json_default), encoding="utf-8")
+    temporary.replace(_local_store_path)
+
+
+def persist_local_store() -> None:
+    """Checkpoint nested record updates that cannot be observed by the list wrapper."""
+    if _local_persistence_enabled:
+        _save_local_store()
+
+
+def _enable_local_persistence() -> None:
+    global _local_store_path, _local_persistence_enabled
+    if _local_persistence_enabled or "PYTEST_CURRENT_TEST" in os.environ:
+        return
+    configured = os.getenv("PRANA_LOCAL_STORE_PATH")
+    _local_store_path = Path(configured) if configured else Path(__file__).resolve().parents[1] / ".local" / "prana-store.json"
+    if _local_store_path.is_file():
+        try:
+            payload = json.loads(_local_store_path.read_text(encoding="utf-8"))
+            for key in _in_memory_store:
+                dict.__setitem__(_in_memory_store, key, _PersistentList(payload.get(key, [])))
+        except Exception:
+            logger.error("Local persistent store could not be read; preserving the file for recovery")
+            raise RuntimeError("Local persistent store is unreadable") from None
+    _local_persistence_enabled = True
+    _save_local_store()
+    logger.info("Durable local store enabled at %s", _local_store_path)
+
+
+def local_persistence_enabled() -> bool:
+    return _local_persistence_enabled
 
 
 # ==============================================================================
@@ -307,6 +410,14 @@ MIGRATIONS = [
         UNIQUE(facility_id, measured_at));
         CREATE INDEX IF NOT EXISTS idx_cems_facility_time ON cems_readings(facility_id, measured_at DESC);
         CREATE INDEX IF NOT EXISTS idx_cems_geom ON cems_readings USING GIST(geom) WHERE geom IS NOT NULL;""",
+    """CREATE TABLE IF NOT EXISTS mobile_push_tokens (
+        push_token TEXT PRIMARY KEY,
+        platform TEXT NOT NULL CHECK(platform IN ('android','ios')),
+        device_id TEXT,
+        enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        last_registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+        CREATE INDEX IF NOT EXISTS idx_mobile_push_enabled
+        ON mobile_push_tokens(enabled, last_registered_at DESC);""",
 ]
 
 
@@ -322,7 +433,8 @@ async def init_db() -> bool:
     if not db_url:
         if production_mode():
             raise RuntimeError("DATABASE_URL is required in production")
-        logger.info("No DATABASE_URL configured; running in in-memory mode.")
+        _enable_local_persistence()
+        logger.info("No DATABASE_URL configured; running with durable local storage.")
         return False
 
     # Standardize url for asyncpg if prefixed with postgresql+asyncpg:// or postgres://
@@ -355,6 +467,7 @@ async def close_db():
         await _pool.close()
         _pool = None
         logger.info("Database pool closed.")
+    persist_local_store()
 
 
 def get_db_pool() -> Optional[asyncpg.Pool]:

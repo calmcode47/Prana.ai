@@ -262,39 +262,46 @@ export const AirCorridorMapScreen: React.FC = () => {
               <Path d="M-30 190 Q90 160 190 200 T380 180" fill="none" stroke="#E4E1E6" strokeWidth="1.5" strokeDasharray="4 4" />
 
               {/* Smoke Plume Swath Band */}
-              {layers.plume && (
+              {layers.plume && Boolean(plumeData?.features.length) && (
                 <Path
                   d="M25 30 C75 40 95 100 140 115 C185 130 215 170 265 195 C305 215 335 240 340 260 C290 260 245 235 200 205 C155 175 115 135 70 100 C40 80 15 50 25 30 Z"
                   fill="url(#plumeGrad)"
                 />
               )}
 
-              {/* Wind Vector Streamlines */}
-              <Path d="M40 40 Q95 70 135 105" stroke="#18181B" strokeWidth="1.5" strokeDasharray="5 3" />
-              <Polygon points="138,107 130,101 132,108" fill="#18181B" />
+              {/* Wind and trajectory marks are only shown with current model inputs. */}
+              {meteoData && (
+                <>
+                  <Path d="M40 40 Q95 70 135 105" stroke="#18181B" strokeWidth="1.5" strokeDasharray="5 3" />
+                  <Polygon points="138,107 130,101 132,108" fill="#18181B" />
 
-              <Path d="M135 105 Q190 140 220 165" stroke="#18181B" strokeWidth="1.5" strokeDasharray="5 3" />
-              <Polygon points="223,167 215,161 217,168" fill="#18181B" />
+                  <Path d="M135 105 Q190 140 220 165" stroke="#18181B" strokeWidth="1.5" strokeDasharray="5 3" />
+                  <Polygon points="223,167 215,161 217,168" fill="#18181B" />
 
-              <Path d="M220 165 Q265 200 310 240" stroke="#18181B" strokeWidth="1.5" strokeDasharray="5 3" />
-              <Polygon points="313,242 305,236 307,243" fill="#18181B" />
+                  <Path d="M220 165 Q265 200 310 240" stroke="#18181B" strokeWidth="1.5" strokeDasharray="5 3" />
+                  <Polygon points="313,242 305,236 307,243" fill="#18181B" />
+                </>
+              )}
 
-              {/* Dynamic Animated Particle Head following trajectory scrubber */}
-              <Circle
-                cx={particleX}
-                cy={particleY}
-                r={14}
-                fill={Colors.cobaltDeep}
-                opacity={0.3}
-              />
-              <Circle
-                cx={particleX}
-                cy={particleY}
-                r={8}
-                fill={Colors.cobaltDeep}
-                stroke="#FFFFFF"
-                strokeWidth={2.5}
-              />
+              {Boolean(plumeData?.features.length) && (
+                <>
+                  <Circle
+                    cx={particleX}
+                    cy={particleY}
+                    r={14}
+                    fill={Colors.cobaltDeep}
+                    opacity={0.3}
+                  />
+                  <Circle
+                    cx={particleX}
+                    cy={particleY}
+                    r={8}
+                    fill={Colors.cobaltDeep}
+                    stroke="#FFFFFF"
+                    strokeWidth={2.5}
+                  />
+                </>
+              )}
 
               {/* Trajectory Nodes on SVG */}
               {layers.grid && nodes.map((node) => {

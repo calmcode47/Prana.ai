@@ -83,20 +83,33 @@ def stop_scheduler():
 async def generate_threshold_alerts():
     """Create at most one warning per station per day, using live readings only."""
     from datetime import timedelta
-    from backend.database import get_in_memory_store, compute_cpcb_aqi
+    from backend.database import get_db_pool, get_in_memory_store, compute_cpcb_aqi
     from backend.routers.alerts import fetch_alerts, create_incident
     from backend.models import IncidentCreate
     now = datetime.now(timezone.utc)
     recent = (await fetch_alerts(limit=100, since=now - timedelta(days=1)))["items"]
     locations = {item.get("location_text") for item in recent}
-    for reading in get_in_memory_store().get("aqi_readings", []):
+    pool = get_db_pool()
+    if pool:
+        async with pool.acquire() as conn:
+            readings = [dict(row) for row in await conn.fetch(
+                """SELECT DISTINCT ON (station_id) station_id, station_name, latitude,
+                          longitude, pm25_ugm3, measured_at, source
+                   FROM aqi_readings
+                   WHERE parameter='pm25' AND source='OPENAQ_LIVE' AND measured_at >= $1
+                   ORDER BY station_id, measured_at DESC""",
+                now - timedelta(hours=24),
+            )]
+    else:
+        readings = get_in_memory_store().get("aqi_readings", [])
+    for reading in readings:
         if reading.get("source") != "OPENAQ_LIVE":
             continue
         measured = datetime.fromisoformat(reading["measured_at"].replace("Z", "+00:00"))
         if now - measured > timedelta(hours=24):
             continue
         aqi = compute_cpcb_aqi(reading["pm25_ugm3"])
-        location = reading.get("name") or reading["station_id"]
+        location = reading.get("station_name") or reading.get("name") or reading["station_id"]
         if aqi > 300 and location not in locations:
             await create_incident(IncidentCreate(severity="emergency" if aqi > 400 else "warning",
                 location_text=location, latitude=reading.get("latitude"), longitude=reading.get("longitude"),

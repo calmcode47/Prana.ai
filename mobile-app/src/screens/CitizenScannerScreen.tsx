@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors } from '../theme/tokens';
 import { NeoCard } from '../components/NeoCard';
@@ -79,12 +80,47 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
   const [confidence, setConfidence] = useState<'high' | 'medium' | 'low'>('low');
   const [inferenceTimeMs, setInferenceTimeMs] = useState<number>(0);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [isLocating, setIsLocating] = useState<boolean>(false);
+  const [locationStatus, setLocationStatus] = useState<string>('Saved observation coordinates');
+
+  const applyDeviceLocation = async (requestPermission: boolean) => {
+    if (isLocating) return;
+    setIsLocating(true);
+    try {
+      let permission = await Location.getForegroundPermissionsAsync();
+      if (permission.status !== 'granted' && requestPermission) {
+        permission = await Location.requestForegroundPermissionsAsync();
+      }
+      if (permission.status !== 'granted') {
+        if (requestPermission) setAnalysisError('Location permission is required to use device GPS.');
+        return;
+      }
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      setLatitude(position.coords.latitude.toFixed(6));
+      setLongitude(position.coords.longitude.toFixed(6));
+      setLocationStatus(position.coords.accuracy != null
+        ? `Device GPS · ±${Math.round(position.coords.accuracy)} m`
+        : 'Device GPS');
+      setAnalysisError(null);
+    } catch (error) {
+      if (requestPermission) {
+        setAnalysisError(error instanceof Error ? error.message : 'Device location is unavailable.');
+      }
+    } finally {
+      setIsLocating(false);
+    }
+  };
+
+  useEffect(() => {
+    applyDeviceLocation(false);
+  }, []);
 
   const handleSelectPreset = (key: PresetKey) => {
     setSelectedPreset(key);
     const p = PRESETS[key];
     setLatitude(p.lat);
     setLongitude(p.lon);
+    setLocationStatus('Saved observation coordinates');
     setPhotoUri(null);
     setHasResult(false);
     setReportSubmitted(false);
@@ -361,7 +397,7 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
               <Text style={styles.coordInputLabel}>Observation Latitude (°N)</Text>
               <TextInput
                 value={latitude}
-                onChangeText={setLatitude}
+                onChangeText={(value) => { setLatitude(value); setLocationStatus('Manually entered coordinates'); }}
                 keyboardType="numeric"
                 style={styles.coordInputField}
               />
@@ -371,12 +407,17 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
               <Text style={styles.coordInputLabel}>Observation Longitude (°E)</Text>
               <TextInput
                 value={longitude}
-                onChangeText={setLongitude}
+                onChangeText={(value) => { setLongitude(value); setLocationStatus('Manually entered coordinates'); }}
                 keyboardType="numeric"
                 style={styles.coordInputField}
               />
             </View>
           </View>
+          <Pressable onPress={() => applyDeviceLocation(true)} style={styles.gpsButton}>
+            <MaterialCommunityIcons name="crosshairs-gps" size={15} color={Colors.canvasCream} />
+            <Text style={styles.gpsButtonText}>{isLocating ? 'Getting Device Location…' : 'Use Device GPS'}</Text>
+            <Text style={styles.gpsStatusText}>{locationStatus}</Text>
+          </Pressable>
         </NeoCard>
 
         {/* Tactile Inference Action Trigger */}
@@ -1036,6 +1077,29 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     fontWeight: '700',
     color: Colors.inkBlack,
+  },
+  gpsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: Colors.cobaltDeep,
+    borderRadius: 9999,
+    borderWidth: 1.5,
+    borderColor: Colors.inkBlack,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  gpsButtonText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: Colors.canvasCream,
+  },
+  gpsStatusText: {
+    flex: 1,
+    textAlign: 'right',
+    fontSize: 9,
+    fontWeight: '700',
+    color: Colors.surfaceVanilla,
   },
   inferenceBtnContent: {
     flexDirection: 'row',

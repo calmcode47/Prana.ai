@@ -67,10 +67,16 @@ async def get_aqi_stations(
             raise HTTPException(503, "Station storage unavailable") from None
 
     if pool is None:
-        try:
-            raw = await fetch_openaq_stations()
-        except Exception:
-            raise HTTPException(503, "Station data unavailable") from None
+        raw = [
+            row for row in get_in_memory_store()["aqi_readings"]
+            if row.get("parameter", "pm25") == parameter
+            and (demo_enabled() or row.get("source") == "OPENAQ_LIVE")
+        ]
+        if not raw:
+            try:
+                raw = await fetch_openaq_stations()
+            except Exception:
+                raise HTTPException(503, "Station data unavailable") from None
         for r in raw:
             if state:
                 st_val = (r.get("state") or "").lower()
@@ -79,7 +85,7 @@ async def get_aqi_stations(
             pm25_val = float(r["pm25_ugm3"])
             readings.append({
                 "station_id": r["station_id"],
-                "name": r.get("name", r["station_id"]),
+                "name": r.get("name") or r.get("station_name") or r["station_id"],
                 "latitude": r["latitude"],
                 "longitude": r["longitude"],
                 "pm25_ugm3": pm25_val,

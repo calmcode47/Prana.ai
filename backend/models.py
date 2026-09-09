@@ -215,6 +215,12 @@ class LatestAlertResponse(BaseModel):
     created_at: str
 
 
+class MobilePushRegistration(BaseModel):
+    expo_push_token: str = Field(..., min_length=20, max_length=256)
+    platform: Literal["android", "ios"]
+    device_id: Optional[str] = Field(None, max_length=256)
+
+
 class IncidentCreate(BaseModel):
     severity: Literal["emergency", "warning", "watch"]
     location_text: Optional[str] = None

@@ -10,7 +10,16 @@ if (-not (Test-Path -LiteralPath $backendPython)) {
 # The isolated database runtime is optional; Docker or a configured PostGIS works too.
 $pgCtlPath = Join-Path $projectRoot '.local/pgsql/bin/pg_ctl.exe'
 $pgDataPath = Join-Path $projectRoot '.local/pgdata'
-if ((Test-Path -LiteralPath $pgCtlPath) -and (Test-Path -LiteralPath $pgDataPath)) {
+$backendEnvPath = Join-Path $projectRoot 'backend/.env'
+$databaseConfigured = $false
+if (Test-Path -LiteralPath $backendEnvPath) {
+    $databaseLine = Get-Content -LiteralPath $backendEnvPath | Where-Object { $_ -match '^\s*DATABASE_URL\s*=' } | Select-Object -First 1
+    if ($databaseLine) {
+        $databaseValue = (($databaseLine -split '=', 2)[1]).Trim().Trim('"').Trim("'")
+        $databaseConfigured = -not [string]::IsNullOrWhiteSpace($databaseValue)
+    }
+}
+if ($databaseConfigured -and (Test-Path -LiteralPath $pgCtlPath) -and (Test-Path -LiteralPath $pgDataPath)) {
     $pgReadyPath = Join-Path $projectRoot '.local/pgsql/bin/pg_isready.exe'
     & $pgReadyPath -h 127.0.0.1 -p 55432 -q
     if ($LASTEXITCODE -ne 0) {
@@ -32,6 +41,6 @@ try {
     }
 } catch { }
 $env:PORT = "$Port"
-$env:HOST = '127.0.0.1'
+$env:HOST = '0.0.0.0'
 & $backendPython -m backend.scripts.serve
 exit $LASTEXITCODE

@@ -24,6 +24,7 @@ Thumbs.db
 
 # Local database runtime and verification artifacts
 .local/
+backend/generated_audio/
 
 # Local assets
 frontend-essentials/

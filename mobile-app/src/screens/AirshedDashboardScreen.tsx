@@ -243,7 +243,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
       metric1: metrics[0], metric2: metrics[1], metric3: metrics[2], metric4: metrics[3],
       statusNote: `${sourceNote}. Values are estimates unless identified as station observations.`,
     };
-  }, [hotspots, lagData, meteorology, selectedCorridorNode, surface]);
+  }, [hotspots, lagData, liveMessage, meteorology, selectedCorridorNode, surface]);
 
   const nearestStation = useMemo(() => {
     if (!stations.length) return null;
@@ -330,7 +330,7 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
           <Pressable style={styles.locationChip} onPress={() => setSelectedCorridorNode('delhi_09')}>
             <MaterialCommunityIcons name="navigation-variant" size={14} color={Colors.terracottaDeep} />
             <Text style={styles.locationText} numberOfLines={1}>
-              Anand Vihar, DL
+              {nodeData.state}
             </Text>
             <MaterialCommunityIcons name="chevron-down" size={14} color={Colors.inkMuted} />
           </Pressable>

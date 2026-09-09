@@ -342,7 +342,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
               <Text style={styles.liveBadgeText}>{filteredIncidents.length} live</Text>
             </View>
           </View>
-          <Text style={styles.streamMeta}>Real-time SPCB Mesh</Text>
+          <Text style={styles.streamMeta}>Backend SPCB Registry</Text>
         </View>
 
         {/* Enforcement Card 1: Emergency Incident with 3-Step Pipeline */}

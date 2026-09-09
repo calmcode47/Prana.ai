@@ -15,7 +15,10 @@
         "backgroundColor": "#FAF6EE",
         "foregroundImage": "./assets/adaptive-icon.png"
       },
-      "package": "ai.prana.air"
+      "package": "ai.prana.air",
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -27,7 +30,30 @@
           "photosPermission": "Allow PRANA Air to select a sky photo for local air-quality analysis.",
           "cameraPermission": "Allow PRANA Air to capture a sky photo for local air-quality analysis."
         }
-      ]
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": true
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow PRANA Air to use your location for the sky-photo observation coordinates."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#EA580C",
+          "defaultChannel": "prana-alerts",
+          "enableBackgroundRemoteNotifications": true
+        }
+      ],
+      "expo-asset"
     ]
   }
 }

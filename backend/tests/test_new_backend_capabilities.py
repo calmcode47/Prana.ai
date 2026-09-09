@@ -3,6 +3,8 @@ import io
 import zipfile
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from backend.routers.operations import lag_correlations
 from backend.scripts.validate_real_world import evaluate_csv, REPO_ROOT
 
@@ -75,6 +77,59 @@ def test_meteorology_and_auxiliary_endpoints(client, monkeypatch, open_meteo_jso
     assert client.get("/api/v1/briefings/feed.xml").headers["content-type"].startswith("application/rss+xml")
     requirements = client.get("/api/v1/integrations/requirements").json()
     assert any(item["service"] == "NASA FIRMS" for item in requirements["items"])
+
+
+def test_mobile_push_registration_is_persisted(client):
+    token = "ExponentPushToken[abcdefghijklmnopqrstuvwxyz012345]"
+    response = client.post("/api/v1/mobile/push/register", json={
+        "expo_push_token": token,
+        "platform": "android",
+    })
+    assert response.status_code == 201
+    from backend.database import get_in_memory_store
+    assert get_in_memory_store()["mobile_push_tokens"][0]["push_token"] == token
+    assert client.post("/api/v1/mobile/push/register", json={
+        "expo_push_token": "not-a-real-token",
+        "platform": "android",
+    }).status_code == 422
+
+
+def test_briefing_uses_na_when_tts_is_not_configured(client, monkeypatch):
+    monkeypatch.delenv("TTS_PROVIDER_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    incident_id = _incident(client)
+    briefing = client.get("/api/v1/briefings/latest").json()
+    assert briefing["incident_id"] == incident_id
+    assert briefing["script"]
+    assert briefing["audio_url"] is None
+    assert briefing["audio_status"].startswith("N/A")
+
+
+@pytest.mark.asyncio
+async def test_tts_writes_real_provider_audio_atomically(tmp_path, monkeypatch):
+    import backend.tts as tts
+
+    class AudioResponse:
+        headers = {"content-type": "audio/mpeg"}
+        content = b"ID3" + (b"\0" * 256)
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    async def fake_post(_client, _url, **_kwargs):
+        return AudioResponse()
+
+    monkeypatch.setenv("TTS_PROVIDER_KEY", "test-provider-key")
+    monkeypatch.setattr(tts, "AUDIO_DIR", tmp_path)
+    monkeypatch.setattr(tts.httpx.AsyncClient, "post", fake_post)
+
+    filename, status = await tts.ensure_briefing_audio("incident-1", "A real briefing")
+
+    assert status == "generated"
+    assert filename is not None
+    assert (tmp_path / filename).read_bytes().startswith(b"ID3")
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_lag_correlation_uses_observed_pairs():

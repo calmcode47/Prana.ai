@@ -10,13 +10,13 @@ From the repository root (`Prana.ai`):
 ./backend/scripts/run-local.ps1
 ```
 
-The isolated PostgreSQL 16.15 / PostGIS 3.6.2 instance lives in `.local/`, listens only on `127.0.0.1:55432`, and uses a generated password saved in the ignored `backend/.env`. It is not a Windows service. The launcher starts that database when necessary and runs the API on port 8000. If the API is already running, it prints its address.
+The launcher uses the PostgreSQL/PostGIS connection in `DATABASE_URL` when one is configured and starts the repository-local database when that configuration points to it. Without a database URL, development uses a durable JSON store at `.local/prana-store.json`. It runs the API on all network interfaces on port 8000 so a phone on the same Wi-Fi can connect. If the API is already running, it prints its address.
 
 - API documentation: http://127.0.0.1:8000/docs
 - Process liveness: http://127.0.0.1:8000/health
 - Database readiness: http://127.0.0.1:8000/ready
 
-The database is persistent. Back up `.local/pgdata` using PostgreSQL backup tools before removing the local runtime. To stop only the local database after stopping the API:
+Both local storage options persist across backend restarts. PostgreSQL is required in production and remains the appropriate multi-user store. Back up `.local/pgdata` with PostgreSQL tools, or copy `.local/prana-store.json` when using the development fallback. To stop only the repository-local database after stopping the API:
 
 ```powershell
 ./.local/pgsql/bin/pg_ctl.exe -D .local/pgdata stop -m fast
@@ -33,7 +33,7 @@ Copy-Item backend/.env.example backend/.env
 ./backend/.venv/Scripts/python.exe -m backend.scripts.serve
 ```
 
-Without a `DATABASE_URL`, development mode uses ephemeral in-memory storage. For persistent storage, configure a PostgreSQL database with PostGIS privileges, or run `docker compose up --build` from the repository root. The Docker build context is the repository root:
+Without a `DATABASE_URL`, development mode checkpoints its local API records to `.local/prana-store.json`. For production-grade persistence, configure PostgreSQL with PostGIS privileges, or run `docker compose up --build` from the repository root. The Docker build context is the repository root:
 
 ```text
 docker build -f backend/Dockerfile -t prana-backend .
@@ -56,6 +56,8 @@ Configure secrets only in the ignored environment file or hosting provider setti
 | `FIRMS_MAP_KEY` | NASA FIRMS live fire observations |
 | `OPENAQ_API_KEY` | OpenAQ v3 station and sensor observations |
 | `DATABASE_URL` | Persistent PostgreSQL/PostGIS database |
+| `TTS_PROVIDER_KEY` / `OPENAI_API_KEY` | Generate real MP3 incident briefings through an OpenAI-compatible speech endpoint |
+| `TTS_PROVIDER_URL`, `TTS_MODEL`, `TTS_VOICE` | Optional speech endpoint and voice configuration |
 | `CORS_ORIGINS` | Comma-separated allowed client origins |
 | `PRANA_SCHEDULER_ENABLED` | Enable startup ingestion, 15-minute refresh, and 60-second telemetry |
 | `CEMS_INGEST_API_KEY` | Shared ingestion credential issued by this backend to an approved facility feed |

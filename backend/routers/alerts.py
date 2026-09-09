@@ -199,4 +199,11 @@ async def create_incident(payload: IncidentCreate):
 
     from backend.routers.websocket import broadcast_alert
     await broadcast_alert(item.model_dump())
+    # Push delivery is best effort; an unavailable notification provider must not
+    # roll back a successfully persisted incident.
+    try:
+        from backend.push import send_incident_push
+        await send_incident_push(item.model_dump())
+    except Exception as ex:
+        logger.warning("Incident push notification failed (%s)", type(ex).__name__)
     return item

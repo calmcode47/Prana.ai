@@ -7,6 +7,7 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { Colors } from '../theme/tokens';
+import { readApiCache, writeApiCache } from './cache';
 
 // Resolve host IP dynamically for Expo Go, iOS Simulator, Android Emulator, and Web
 function getApiBaseUrl(): string {
@@ -25,7 +26,8 @@ function getApiBaseUrl(): string {
   // 3. Inspect Expo hostUri (e.g. "192.168.1.7:8081" vs "xyz.ngrok-free.app" or "xxx.exp.direct")
   const hostUri = Constants.expoConfig?.hostUri;
   if (hostUri) {
-    const host = hostUri.split(':')[0];
+    const authority = hostUri.replace(/^https?:\/\//, '').split('/')[0];
+    const host = authority.split(':')[0];
     const isTunnelHost =
       host.includes('exp.direct') ||
       host.includes('ngrok') ||
@@ -34,8 +36,11 @@ function getApiBaseUrl(): string {
     // Check if host is a numeric IPv4 address (e.g., 192.168.x.x, 10.x.x.x)
     const isIpv4 = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
 
-    // Only append :8000 if it is a real local IP address and NOT a tunnel domain
-    // (tunnel hosts only forward port 8081 for Metro, never backend port 8000)
+    if (host && isTunnelHost) {
+      return `https://${authority}/prana-api`;
+    }
+
+    // On the local network the backend is directly available on port 8000.
     if (host && isIpv4 && !isTunnelHost && host !== 'localhost' && host !== '127.0.0.1') {
       return `http://${host}:8000`;
     }
@@ -228,9 +233,9 @@ export interface FLRoundStatus {
   punjab_accuracy: number;
   delhi_accuracy: number;
   global_accuracy: number;
-  punjab_loss: number;
-  delhi_loss: number;
-  global_loss: number;
+  punjab_loss?: number | null;
+  delhi_loss?: number | null;
+  global_loss?: number | null;
   dp_epsilon_spent?: number;
 }
 
@@ -429,9 +434,16 @@ export function formatBackendStatus(value?: string | null, fallback: string = 'S
 }
 
 // HTTP Helper with timeout
-async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
+async function requestJson<T>(
+  path: string,
+  options?: RequestInit,
+  settings: { timeoutMs?: number; cache?: boolean } = {},
+): Promise<T> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  const timeoutId = setTimeout(() => controller.abort(), settings.timeoutMs ?? 8000);
+  const method = (options?.method ?? 'GET').toUpperCase();
+  const canUseCache = method === 'GET' && settings.cache !== false;
+  const cacheKey = `${API_BASE}${path}`;
 
   try {
     const res = await fetch(`${API_BASE}${path}`, {
@@ -447,7 +459,17 @@ async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
       throw new Error(detail);
     }
     if (res.status === 204) return null as T;
-    return (await res.json()) as T;
+    const value = (await res.json()) as T;
+    if (canUseCache) {
+      writeApiCache(cacheKey, value).catch(() => {});
+    }
+    return value;
+  } catch (error) {
+    if (canUseCache) {
+      const cached = await readApiCache<T>(cacheKey).catch(() => null);
+      if (cached !== null) return cached;
+    }
+    throw error;
   } finally {
     clearTimeout(timeoutId);
   }
@@ -455,7 +477,7 @@ async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
 
 // API Functions
 export async function fetchHealth(): Promise<{ status: string; db: string }> {
-  return requestJson<{ status: string; db: string }>('/health');
+  return requestJson<{ status: string; db: string }>('/health', undefined, { cache: false });
 }
 
 export async function fetchHotspots(hoursBack: number = 24, minConfidence: string = 'nominal'): Promise<HotspotsResponse> {
@@ -555,7 +577,7 @@ export async function fetchFireAqiLag(days: number = 7): Promise<FireAqiLagRespo
 }
 
 export async function fetchLatestBriefing(): Promise<BriefingResponse> {
-  return requestJson<BriefingResponse>('/api/v1/briefings/latest');
+  return requestJson<BriefingResponse>('/api/v1/briefings/latest', undefined, { timeoutMs: 35_000 });
 }
 
 export async function createIncident(data: IncidentCreate): Promise<IncidentItem> {
@@ -656,6 +678,18 @@ export interface MobileReleaseResponse {
 /** Returns null (HTTP 204) when no release is configured on the backend. */
 export async function fetchMobileRelease(): Promise<MobileReleaseResponse | null> {
   return requestJson<MobileReleaseResponse | null>('/api/v1/mobile/releases/latest');
+}
+
+export async function registerMobilePushToken(payload: {
+  expo_push_token: string;
+  platform: 'android' | 'ios';
+  device_id?: string;
+}): Promise<{ status: string; platform: string }> {
+  return requestJson('/api/v1/mobile/push/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 }
 
 // ── Legal document URL helpers (use with Linking.openURL) ────────────────────

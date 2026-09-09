@@ -18,12 +18,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 
-from backend.database import init_db, close_db, get_db_pool
+from backend.database import init_db, close_db, get_db_pool, local_persistence_enabled
 from backend.scheduler import start_scheduler, stop_scheduler
 from backend.models import HealthResponse
 from backend.config import demo_enabled, production_mode, scheduler_enabled
 from backend.middleware import UploadLimitMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from backend.tts import AUDIO_DIR
 
 from backend.routers import (
     hotspots,
@@ -80,7 +82,7 @@ async def lifespan(app: FastAPI):
     if db_connected:
         logger.info("Database initialized successfully.")
     else:
-        logger.info("Running with in-memory store fallback.")
+        logger.info("Running with durable local store fallback.")
 
     # Start background scheduler for 15-minute ingestion
     try:
@@ -125,6 +127,9 @@ app.add_middleware(
     allow_headers=["Content-Type", "X-API-Key", "X-CEMS-Key", "Authorization"],
 )
 
+# Provider-generated briefing files. No uploaded citizen imagery is written here.
+app.mount("/media/briefings", StaticFiles(directory=str(AUDIO_DIR)), name="briefing-audio")
+
 # Mount all Routers
 app.include_router(hotspots.router)
 app.include_router(aqi.router)
@@ -156,7 +161,7 @@ async def root():
 async def health():
     """Health check endpoint."""
     pool = get_db_pool()
-    db_status = "connected" if pool else "in-memory"
+    db_status = "connected" if pool else "local-persistent" if local_persistence_enabled() else "in-memory"
     return {
         "status": "ok",
         "db": db_status,
@@ -169,7 +174,7 @@ async def readiness():
     """Probe the actual database, distinct from process liveness."""
     pool = get_db_pool()
     ready = not production_mode() and not os.getenv("DATABASE_URL")
-    db_status = "in-memory"
+    db_status = "local-persistent" if local_persistence_enabled() else "in-memory"
     if pool:
         try:
             async with pool.acquire(timeout=3) as conn:

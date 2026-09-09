@@ -5,12 +5,15 @@ from datetime import datetime, timezone, timedelta
 from urllib.parse import urlsplit
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 
 from backend.config import demo_enabled
 from backend.database import get_db_pool, get_in_memory_store
 from backend.ingesters.ingest_meteo import fetch_meteo_forecast
 from backend.routers.alerts import fetch_alerts
+from backend.models import MobilePushRegistration
+from backend.push import register_push_token
+from backend.tts import ensure_briefing_audio
 
 router = APIRouter(prefix="/api/v1", tags=["Operational intelligence"])
 
@@ -154,7 +157,7 @@ async def biomass_emissions(days: int = Query(7, ge=1, le=90)):
 
 
 @router.get("/briefings/latest")
-async def latest_briefing():
+async def latest_briefing(request: Request):
     alerts = (await fetch_alerts(limit=1))["items"]
     if not alerts:
         return {"status": "empty", "script": None, "audio_url": None, "audio_status": "not_generated"}
@@ -163,14 +166,18 @@ async def latest_briefing():
               f"{alert.get('location_text') or 'the monitored corridor'}. The stored PM2.5 value is "
               f"{alert.get('measured_pm25')} micrograms per cubic metre, with an estimated PM2.5 sub-index "
               f"of {alert.get('measured_aqi')}. Review the timestamp and data source before operational use.")
+    audio_filename, audio_status = await ensure_briefing_audio(alert["incident_id"], script)
+    forwarded_prefix = request.headers.get("x-forwarded-prefix", "").rstrip("/")
+    audio_url = (f"{str(request.base_url).rstrip('/')}{forwarded_prefix}/media/briefings/{audio_filename}"
+                 if audio_filename else None)
     return {"status": "script_ready", "incident_id": alert["incident_id"], "script": script,
-            "audio_url": None, "audio_status": "TTS_PROVIDER_NOT_CONFIGURED",
+            "audio_url": audio_url, "audio_status": audio_status,
             "feed_url": "/api/v1/briefings/feed.xml"}
 
 
 @router.get("/briefings/feed.xml")
-async def briefing_feed():
-    item = await latest_briefing()
+async def briefing_feed(request: Request):
+    item = await latest_briefing(request)
     description = (item.get("script") or "No current atmospheric briefing").replace("&", "&amp;").replace("<", "&lt;")
     xml = ("<?xml version=\"1.0\" encoding=\"UTF-8\"?><rss version=\"2.0\"><channel>"
            "<title>PRANA Atmospheric Briefings</title><link>/api/v1/briefings/latest</link>"
@@ -192,6 +199,17 @@ async def mobile_release(response: Response):
             "status": "configured_external_artifact"}
 
 
+@router.post("/mobile/push/register", status_code=status.HTTP_201_CREATED)
+async def mobile_push_registration(payload: MobilePushRegistration):
+    try:
+        await register_push_token(payload.expo_push_token, payload.platform, payload.device_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    except Exception:
+        raise HTTPException(503, "Push registration storage is unavailable") from None
+    return {"status": "registered", "platform": payload.platform}
+
+
 @router.get("/integrations/requirements")
 async def integration_requirements():
     items = [
@@ -201,7 +219,7 @@ async def integration_requirements():
         ("CCA-licensed eSign provider", ("ESIGN_PROVIDER_URL", "ESIGN_ASP_ID", "ESIGN_CLIENT_CERT"), "https://cca.gov.in/service-providers.html", "provider onboarding/agreement required"),
         ("CEMS ingestion", ("CEMS_INGEST_API_KEY",), "the selected plant/SPCB CEMS operator", "organization-specific source agreement"),
         ("Authority dispatch", ("AUTHORITY_DISPATCH_URL", "AUTHORITY_DISPATCH_CLIENT_ID", "AUTHORITY_DISPATCH_CLIENT_SECRET"), "the relevant SPCB/district/police integration owner", "no universal public API"),
-        ("Text-to-speech and audio storage", ("TTS_PROVIDER_URL", "TTS_PROVIDER_KEY", "AUDIO_STORAGE_URL"), "the selected speech and storage provider", "provider-dependent"),
+        ("Text-to-speech", ("TTS_PROVIDER_KEY",), "an OpenAI-compatible speech provider", "provider-dependent"),
         ("Mobile artifact hosting", ("MOBILE_APP_DOWNLOAD_URL", "MOBILE_APP_VERSION", "MOBILE_APP_SHA256"), "the selected HTTPS artifact store", "requires an actual signed app build"),
     ]
     return {"items": [{"service": service, "settings": list(settings), "obtain_from": source, "access": access,

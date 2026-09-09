@@ -7,7 +7,9 @@ def production_mode() -> bool:
 
 
 def demo_enabled() -> bool:
-    return os.getenv("PRANA_DEMO_MODE", "false" if production_mode() else "true").lower() == "true"
+    # Demonstration fixtures must be explicitly enabled. Live-looking values must
+    # never silently replace unavailable provider data in development or release.
+    return os.getenv("PRANA_DEMO_MODE", "false").lower() == "true"
 
 
 def scheduler_enabled() -> bool:

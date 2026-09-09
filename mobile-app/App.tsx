@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Modal, Text, Pressable, Linking } from 'react-native';
+import { StyleSheet, View, Modal, Text, Pressable, Linking, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Colors } from './src/theme/tokens';
@@ -14,6 +14,7 @@ import { CitizenScannerScreen } from './src/screens/CitizenScannerScreen';
 import { fetchHealth, fetchMobileRelease, MobileReleaseResponse } from './src/api/client';
 import { useWebSocket } from './src/hooks/useWebSocket';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { registerForIncidentPush, subscribeToIncidentNotifications } from './src/services/notifications';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
@@ -55,9 +56,21 @@ export default function App() {
 
   // ── Backend health check on mount ─────────────────────────────────────────
   useEffect(() => {
-    fetchHealth()
+    const checkHealth = () => fetchHealth()
       .then(() => setBackendDown(false))
       .catch(() => setBackendDown(true));
+    checkHealth();
+    const timer = setInterval(checkHealth, 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    registerForIncidentPush().catch((error: unknown) => {
+      console.warn('[Notifications] registration:', error instanceof Error ? error.message : error);
+    });
+    return subscribeToIncidentNotifications((title, body) => {
+      setBroadcastAlert(`🚨 ${title}: ${body}`);
+    });
   }, []);
 
   const renderActiveScreen = () => {
@@ -160,9 +173,14 @@ export default function App() {
           presentationStyle="pageSheet"
           onRequestClose={() => setIsScannerOpen(false)}
         >
-          <SafeAreaView style={styles.modalContainer} edges={['top', 'left', 'right', 'bottom']}>
-            <CitizenScannerScreen onClose={() => setIsScannerOpen(false)} />
-          </SafeAreaView>
+          <KeyboardAvoidingView
+            style={styles.modalContainer}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <SafeAreaView style={styles.modalContainer} edges={['top', 'left', 'right', 'bottom']}>
+              <CitizenScannerScreen onClose={() => setIsScannerOpen(false)} />
+            </SafeAreaView>
+          </KeyboardAvoidingView>
         </Modal>
       </SafeAreaView>
     </SafeAreaProvider>
