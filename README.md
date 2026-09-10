@@ -318,8 +318,3 @@ The backend recognizes the following variables in `.env`:
 
 ---
 
-## 📜 License & Ethical AI Notice
-
-- **Scientific Disclaimer**: Atmospheric plume dispersions and edge camera inferences are diagnostic model approximations and do not substitute for official regulatory reference-grade monitors (Beta Attenuation Monitors / TEOM).
-- **Privacy Assurance**: Citizen uploads are processed in memory, stripped of EXIF metadata, hashed for deduplication, and discarded immediately after inference. Raw photographs are never stored or sold.
-- **License**: Released under the MIT Open Source License. Built for public good and environmental health protection across the Indo-Gangetic Airshed.
