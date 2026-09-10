@@ -173,7 +173,7 @@ export const LandingPage: React.FC = () => {
             </div>
             <div className="hidden sm:inline-flex items-center gap-space-2xs px-space-sm py-1 rounded-full bg-surface-vanilla text-ink-black shadow-[2px_2px_0px_#18181B] rotate-1">
               <span className="w-2 h-2 rounded-full bg-forest-jade animate-pulse"></span>
-              <span className="font-label-md text-label-md">{delhiCategory ? `${delhiCategory} Delhi AQI Conditions` : 'AQI Feed Loading'}</span>
+              <span className="font-label-md text-label-md">{delhiCategory ? `${delhiCategory} Delhi AQI Conditions` : 'AQI unavailable'}</span>
             </div>
           </div>
 
@@ -316,7 +316,7 @@ export const LandingPage: React.FC = () => {
               </div>
             </div>
             <div className="px-space-sm py-1 font-label-md text-label-md text-ink-muted hidden 2xl:block">
-              {surface ? `Updated ${new Date(surface.computed_at).toLocaleTimeString()} • ${formatDataSource(surface.source)}` : 'Loading backend surface'}
+              {surface ? `Updated ${new Date(surface.computed_at).toLocaleTimeString()} • ${formatDataSource(surface.source)}` : 'Backend surface unavailable'}
             </div>
           </div>
         </section>
@@ -493,7 +493,7 @@ export const LandingPage: React.FC = () => {
                 </div>
                 <h3 className="font-headline-md text-headline-md text-ink-black mb-space-xs">FUSE</h3>
                 <div className="font-title-sm text-title-sm text-cobalt-deep font-bold mb-space-sm">
-                  {surface ? `${surface.resolution_deg}° Backend Surface` : 'Surface Feed Loading'}
+                  {surface ? `${surface.resolution_deg}° Backend Surface` : 'Surface feed unavailable'}
                 </div>
                 <p className="font-body-md text-body-md text-ink-muted leading-relaxed">
                   {surface
@@ -557,7 +557,7 @@ export const LandingPage: React.FC = () => {
               </div>
               <div className="mt-space-lg pt-space-sm border-t border-outline-variant flex items-center justify-between font-label-md text-label-md">
                 <span className="text-ink-muted">Configured Privacy:</span>
-                <span className="font-bold text-ink-black">{dp?.enabled ? `Differential privacy ε=${dp.epsilon_spent ?? dp.target_epsilon ?? 'pending'}` : 'Awaiting backend run'}</span>
+                <span className="font-bold text-ink-black">{dp?.enabled ? `Differential privacy ε=${dp.epsilon_spent ?? dp.target_epsilon ?? 'N/A'}` : 'Federated run unavailable'}</span>
               </div>
             </div>
           </div>
@@ -570,14 +570,14 @@ export const LandingPage: React.FC = () => {
             <div className="inline-flex items-center gap-space-xs">
               <span className="w-3 h-3 rounded-full bg-terracotta-deep"></span>
               <span className="font-label-md text-label-md uppercase tracking-wider font-bold text-ink-black">
-                Live Airshed Snapshot: {surface ? new Date(surface.computed_at).toLocaleDateString() : 'Loading'}
+                Live Airshed Snapshot: {surface ? new Date(surface.computed_at).toLocaleDateString() : 'Unavailable'}
               </span>
             </div>
             <h2 className="font-headline-lg text-headline-lg text-ink-black">
               Current Punjab-to-Delhi Corridor Conditions
             </h2>
             <p className="font-body-lg text-body-lg text-ink-muted">
-              Open-Meteo reports {punjabMeteo ? `${punjabMeteo.wind_speed_ms.toFixed(2)} m/s winds from ${punjabMeteo.wind.direction_from_deg.toFixed(0)}° over Punjab` : 'wind data is loading'}.
+              Open-Meteo reports {punjabMeteo ? `${punjabMeteo.wind_speed_ms.toFixed(2)} m/s winds from ${punjabMeteo.wind.direction_from_deg.toFixed(0)}° over Punjab` : 'wind data is unavailable'}.
               NASA FIRMS currently reports {hotspots?.count ?? 'N/A'} matching fire detections, while the CAMS surface provides {surface?.features.length ?? 'N/A'} current model grid points.
             </p>
 
@@ -651,7 +651,7 @@ export const LandingPage: React.FC = () => {
                   <div className="w-px h-6 bg-outline-variant"></div>
                   <div className="flex items-center gap-space-2xs pr-space-sm">
                     <span className="w-2 h-2 rounded-full bg-aqi-hazardous"></span>
-                    <span className="font-label-md text-label-md font-extrabold text-aqi-hazardous">{delhiAqi == null ? 'AQI pending' : `AQI ${delhiAqi}`}</span>
+                    <span className="font-label-md text-label-md font-extrabold text-aqi-hazardous">{delhiAqi == null ? 'AQI unavailable' : `AQI ${delhiAqi}`}</span>
                   </div>
                 </div>
               </div>

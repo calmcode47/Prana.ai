@@ -54,13 +54,14 @@ def open_meteo_json() -> dict:
 @pytest.fixture
 def client():
     """Synchronous TestClient targeting the PRANA FastAPI application."""
-    with TestClient(app) as test_client:
+    with TestClient(app, headers={"Authorization": "Bearer test-operator-key"}) as test_client:
         yield test_client
 
 
 @pytest.fixture(autouse=True)
 def isolated_runtime(monkeypatch, request):
     """Unit tests never contact live providers or mutate a configured user database."""
+    monkeypatch.setenv("PRANA_OPERATOR_API_KEY", "test-operator-key")
     if request.node.get_closest_marker("integration") or request.node.get_closest_marker("postgis"):
         yield
         return

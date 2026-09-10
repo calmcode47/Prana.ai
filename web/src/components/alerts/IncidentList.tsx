@@ -90,7 +90,7 @@ export const IncidentList: React.FC<IncidentListProps> = ({
               Live Registry &bull; GET /api/v1/alerts
             </div>
             <div className="font-headline-sm text-headline-sm text-canvas-cream font-bold mt-0.5">
-              {alertsData ? `${filteredItems.length} Active Incident${filteredItems.length !== 1 ? 's' : ''}` : 'Loading backend...'}
+              {alertsData ? `${filteredItems.length} Active Incident${filteredItems.length !== 1 ? 's' : ''}` : 'Incident feed unavailable'}
             </div>
           </div>
           <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-coral-watermelon-vivid/20 text-coral-watermelon-vivid font-label-md text-label-md font-bold">
@@ -316,7 +316,7 @@ export const IncidentList: React.FC<IncidentListProps> = ({
                     Satellite: {formatDataSource(primaryAlert.satellite_source, 'Active sensor')}
                   </span>
                   <span className="text-ink-black font-bold">
-                    PM2.5: {primaryAlert.measured_pm25 == null ? 'Pending' : `${primaryAlert.measured_pm25.toFixed(1)} µg/m³`}
+                    PM2.5: {primaryAlert.measured_pm25 == null ? 'N/A' : `${primaryAlert.measured_pm25.toFixed(1)} µg/m³`}
                   </span>
                 </div>
                 <div className="w-full h-3 bg-surface-vanilla rounded-full border border-ink-black overflow-hidden relative">
@@ -375,7 +375,7 @@ export const IncidentList: React.FC<IncidentListProps> = ({
               </span>
             </div>
             <h3 className="font-title-sm text-title-sm text-ink-black font-sans font-bold">
-              {hotspotsData ? `${hotspotsData.count} Current Fire Hotspot${hotspotsData.count === 1 ? '' : 's'}` : 'Loading Current Fire Hotspots'}
+              {hotspotsData ? `${hotspotsData.count} Current Fire Hotspot${hotspotsData.count === 1 ? '' : 's'}` : 'Current fire hotspots unavailable'}
             </h3>
             <p className="font-body-sm text-body-sm text-ink-muted">
               {primaryHotspot

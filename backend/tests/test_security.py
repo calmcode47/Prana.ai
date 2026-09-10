@@ -6,6 +6,7 @@ Verifies credential privacy, photo validation order, CORS policy, and rate limit
 import io
 from fastapi.testclient import TestClient
 from PIL import Image
+from backend.main import app
 
 
 # ==============================================================================
@@ -93,3 +94,21 @@ def test_cors_policy(client: TestClient):
     headers = {"Origin": "https://evil-attacker.com"}
     resp = client.get("/api/v1/hotspots", headers=headers)
     assert resp.headers.get("access-control-allow-origin") != "https://evil-attacker.com"
+
+
+# ==============================================================================
+# SEC-006: Operator control-plane authentication
+# ==============================================================================
+def test_control_plane_rejects_anonymous_callers():
+    """Public reads stay open, while incident, legal, and training writes require an operator."""
+    with TestClient(app) as anonymous:
+        assert anonymous.get("/api/v1/alerts").status_code == 200
+        assert anonymous.post(
+            "/api/v1/alerts/incident",
+            json={"severity": "warning", "measured_pm25": 150},
+        ).status_code == 401
+        assert anonymous.post(
+            "/api/v1/legal/notices",
+            json={"incident_id": "unknown", "issuing_authority": "unknown"},
+        ).status_code == 401
+        assert anonymous.post("/api/v1/federated/run?num_rounds=1").status_code == 401

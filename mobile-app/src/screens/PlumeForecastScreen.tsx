@@ -172,7 +172,7 @@ export const PlumeForecastScreen: React.FC = () => {
       {loadError && !isLoading && (
         <View style={styles.errorBanner}>
           <MaterialCommunityIcons name="alert-circle-outline" size={16} color={Colors.coralWatermelonVivid} />
-          <Text style={styles.errorBannerText}>Dispersion telemetry unavailable. Displaying model defaults.</Text>
+          <Text style={styles.errorBannerText}>Dispersion telemetry unavailable. Values are shown as unavailable.</Text>
           <Pressable onPress={loadData} style={styles.errorRetryBtn}>
             <Text style={styles.errorRetryText}>RETRY</Text>
           </Pressable>

@@ -542,8 +542,8 @@ export const FederatedMeshScreen: React.FC = () => {
               <MaterialCommunityIcons name="security" size={18} color={Colors.canvasCream} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.explainerTitle}>Zero-Knowledge Federated Safeguards</Text>
-              <Text style={styles.explainerSub}>Mathematical privacy guarantees under the Air Act</Text>
+              <Text style={styles.explainerTitle}>Local Federated Protocol Safeguards</Text>
+              <Text style={styles.explainerSub}>Synthetic protocol demonstration with backend-reported controls</Text>
             </View>
           </View>
 
@@ -555,7 +555,7 @@ export const FederatedMeshScreen: React.FC = () => {
               <View style={styles.explainerItemContent}>
                 <Text style={styles.explainerItemTitle}>Local Weight Computations</Text>
                 <Text style={styles.explainerItemDesc}>
-                  Raw station sensor observations and CEMS industrial logs never leave regional boundaries. Only mathematical model weight updates are transmitted.
+                  The current backend partitions a synthetic corridor dataset inside one process. It does not connect to regional agency data stores.
                 </Text>
               </View>
             </View>
@@ -567,7 +567,7 @@ export const FederatedMeshScreen: React.FC = () => {
               <View style={styles.explainerItemContent}>
                 <Text style={styles.explainerItemTitle}>Differential Privacy (DP-SGD)</Text>
                 <Text style={styles.explainerItemDesc}>
-                  Calibrated Gaussian noise (ε = {statusData?.privacy?.dp_sgd?.epsilon_spent?.toFixed(2) ?? '1.25'}) is injected into gradient vectors, mathematically preventing reconstruction of individual plant emissions.
+                  The backend reports whether calibrated Gaussian noise is enabled and its current privacy budget (ε = {statusData?.privacy?.dp_sgd?.epsilon_spent?.toFixed(2) ?? 'N/A'}). This local demonstration is not a field privacy certification.
                 </Text>
               </View>
             </View>
@@ -579,7 +579,7 @@ export const FederatedMeshScreen: React.FC = () => {
               <View style={styles.explainerItemContent}>
                 <Text style={styles.explainerItemTitle}>Paillier Homomorphic Aggregation</Text>
                 <Text style={styles.explainerItemDesc}>
-                  The central aggregator computes global model averages over encrypted ciphertexts without ever possessing the private decryption keys.
+                  The current single-process demonstration encrypts intermediate values, then decrypts the aggregate in the same backend process. Production key separation is not implemented here.
                 </Text>
               </View>
             </View>

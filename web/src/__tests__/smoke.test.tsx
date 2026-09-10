@@ -5,7 +5,7 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Skeleton } from '../components/ui/Skeleton';
 import { ConvergenceChart } from '../components/ui/ConvergenceChart';
-import { getAuthToken, setAuthToken, API_BASE } from '../api/client';
+import { computeCpcbAqi, getAuthToken, setAuthToken, API_BASE } from '../api/client';
 
 describe('Web UI Primitives Smoke Tests', () => {
   it('renders Button with variants and labels', () => {
@@ -55,5 +55,11 @@ describe('API Client Smoke Tests', () => {
     expect(getAuthToken()).toBe('test-bearer-token-prana');
     setAuthToken(null);
     expect(getAuthToken()).toBeNull();
+  });
+
+  it('keeps CPCB AQI monotonic across the published 30–31 concentration gap', () => {
+    expect(computeCpcbAqi(30)).toBe(50);
+    expect(computeCpcbAqi(30.5)).toBe(51);
+    expect(computeCpcbAqi(31)).toBe(51);
   });
 });

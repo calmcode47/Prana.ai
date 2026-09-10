@@ -1,12 +1,18 @@
-name: PRANA Backend CI/CD Pipeline
+name: PRANA CI
 
 on:
   push:
     branches: [ main, master, develop ]
     paths:
       - 'backend/**'
+      - 'web/**'
+      - 'mobile-app/**'
       - 'docker-compose.yml'
       - '.dockerignore'
+      - 'LICENSE'
+      - 'SECURITY.md'
+      - 'CONTRIBUTING.md'
+      - 'README.md'
       - 'render.yaml'
       - 'railway.json'
       - '.github/workflows/**'
@@ -14,14 +20,61 @@ on:
     branches: [ main, master, develop ]
     paths:
       - 'backend/**'
+      - 'web/**'
+      - 'mobile-app/**'
       - 'docker-compose.yml'
       - '.dockerignore'
+      - 'LICENSE'
+      - 'SECURITY.md'
+      - 'CONTRIBUTING.md'
+      - 'README.md'
       - 'render.yaml'
       - 'railway.json'
       - '.github/workflows/**'
   workflow_dispatch:
 
 jobs:
+  public-release-checks:
+    name: Public Release & Frontend Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Verify public repository files and tracked secrets
+        shell: bash
+        run: |
+          test -s LICENSE
+          test -s SECURITY.md
+          test -s CONTRIBUTING.md
+          tracked_secret_files="$(git ls-files | grep -E '(^|/)(\.env($|\.)|.*\.(pem|key|p8|p12|pfx|mobileprovision)$|id_rsa$|google-service-account\.json$|service-account[^/]*\.json$)' | grep -Ev '\.env\.(example|docker)$' || true)"
+          if [ -n "$tracked_secret_files" ]; then
+            printf '%s\n' "$tracked_secret_files"
+            echo "A secret-bearing file appears to be tracked."
+            exit 1
+          fi
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build and test web frontend
+        working-directory: web
+        run: |
+          npm ci
+          npm audit --audit-level=high
+          npm run build
+          npm test -- --run
+
+      - name: Type-check and test mobile app
+        working-directory: mobile-app
+        run: |
+          npm ci
+          npm audit --audit-level=high
+          npx tsc --noEmit
+          npm test -- --runInBand
+
   # ============================================================================
   # Job 1: Lint, AST Parsing & Code Quality Verification
   # ============================================================================
@@ -140,6 +193,8 @@ jobs:
         env:
           DATABASE_URL: postgresql://prana:pranapass@localhost:5432/prana_test
           PYTHONPATH: .
+          PRANA_DEMO_MODE: "true"
+          PRANA_SCHEDULER_ENABLED: "false"
         run: |
           python backend/tests/load_test.py
 

@@ -174,7 +174,11 @@ async def test_federated_api_endpoints():
     Tests GET /api/v1/federated/status and POST /api/v1/federated/run.
     """
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": "Bearer test-operator-key"},
+    ) as client:
         # Trigger run
         post_resp = await client.post("/api/v1/federated/run?num_rounds=10")
         assert post_resp.status_code == 200

@@ -230,7 +230,7 @@ export const AlertsPage: React.FC = () => {
               </div>
 
               <p className="font-body-md text-body-md text-ink-muted max-w-3xl">
-                Autonomous forensic anomaly triage, automated statutory notices under the Air (Prevention and Control of Pollution) Act, 1981, and real-time enforcement dispatch registry for NCR airsheds.
+                Backend anomaly review, unissued statutory notice drafts under the Air (Prevention and Control of Pollution) Act, 1981, and an internal dispatch-request registry for NCR airsheds.
               </p>
             </div>
 

@@ -27,6 +27,10 @@ services:
         sync: false
       - key: OPENAQ_API_KEY
         sync: false
+      - key: PRANA_OPERATOR_API_KEY
+        sync: false
+      - key: CEMS_INGEST_KEYS_JSON
+        sync: false
       - key: TTS_PROVIDER_KEY
         sync: false
       - key: TTS_PROVIDER_URL

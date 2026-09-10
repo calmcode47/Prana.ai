@@ -1,14 +1,16 @@
 """Authenticated CEMS ingestion and deterministic scrubber-bypass indicators."""
 import hmac
+import json
 import os
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import AwareDatetime, BaseModel, Field
 
 from backend.database import get_db_pool, get_in_memory_store
 from backend.routers.citizen import limiter
+from backend.auth import require_operator
 
 router = APIRouter(prefix="/api/v1/industrial", tags=["Industrial telemetry"])
 
@@ -27,10 +29,19 @@ class CEMSBatch(BaseModel):
     readings: List[CEMSReading] = Field(min_length=1, max_length=500)
 
 
-def _authorized(supplied):
-    expected = os.getenv("CEMS_INGEST_API_KEY")
-    if not expected:
+def _authorized_ingest(supplied: Optional[str], facility_ids: set[str]) -> None:
+    raw = os.getenv("CEMS_INGEST_KEYS_JSON", "")
+    try:
+        configured = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        raise HTTPException(503, "CEMS ingestion credentials are misconfigured") from None
+    if not isinstance(configured, dict) or not configured:
         raise HTTPException(503, "CEMS ingestion is not configured")
+    if len(facility_ids) != 1:
+        raise HTTPException(422, "Each CEMS batch must contain exactly one facility")
+    expected = configured.get(next(iter(facility_ids)))
+    if not isinstance(expected, str) or not expected:
+        raise HTTPException(403, "This facility is not authorized for CEMS ingestion")
     if not supplied or not hmac.compare_digest(supplied, expected):
         raise HTTPException(401, "Invalid CEMS credential")
 
@@ -38,7 +49,7 @@ def _authorized(supplied):
 @router.post("/cems/readings", status_code=202)
 @limiter.limit("30/minute")
 async def ingest_cems(request: Request, payload: CEMSBatch, x_cems_key: Optional[str] = Header(None)):
-    _authorized(x_cems_key)
+    _authorized_ingest(x_cems_key, {reading.facility_id for reading in payload.readings})
     rows = [r.model_dump() for r in payload.readings]
     pool = get_db_pool()
     if pool:
@@ -84,8 +95,7 @@ def detect_bypass(rows):
 @limiter.limit("30/minute")
 async def cems_forensics(request: Request, facility_id: str,
                          hours: int = Query(24, ge=1, le=24 * 31),
-                         x_cems_key: Optional[str] = Header(None)):
-    _authorized(x_cems_key)
+                         _: None = Depends(require_operator)):
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
     pool = get_db_pool()
     if pool:

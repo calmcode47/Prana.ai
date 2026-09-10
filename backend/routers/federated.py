@@ -6,7 +6,7 @@ Serves NumPy FedAvg simulation history and measured global/local model scores.
 import json
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, Request, Query, HTTPException
+from fastapi import APIRouter, Depends, Request, Query, HTTPException
 import asyncio
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -16,6 +16,7 @@ from backend.database import get_db_pool, get_in_memory_store
 from backend.ml.federated.server import run_federated_simulation
 
 from backend.routers.citizen import limiter
+from backend.auth import require_operator
 _run_lock = asyncio.Lock()
 router = APIRouter(prefix="/api/v1/federated", tags=["Federated Learning"])
 
@@ -97,7 +98,11 @@ async def get_federated_status():
 
 @router.post("/run", response_model=FLStatusResponse)
 @limiter.limit("2/hour")
-async def trigger_federated_run(request: Request, num_rounds: int = Query(10, ge=1, le=10)):
+async def trigger_federated_run(
+    request: Request,
+    num_rounds: int = Query(10, ge=1, le=10),
+    _: None = Depends(require_operator),
+):
     """
     Triggers a 10-round Federated Averaging simulation across Punjab and Delhi nodes.
     Updates fl_rounds in the database and in-memory store.

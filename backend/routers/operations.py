@@ -1,12 +1,11 @@
 """Backend telemetry, empirical analytics, briefing content, and integration status."""
-import hmac
 import math
 import os
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlsplit
 
 import numpy as np
-from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
 from backend.config import demo_enabled
 from backend.database import get_db_pool, get_in_memory_store
@@ -16,6 +15,7 @@ from backend.models import MobilePushRegistration
 from backend.push import register_push_token
 from backend.tts import ensure_briefing_audio, get_existing_briefing_audio
 from backend.routers.citizen import limiter
+from backend.auth import require_operator
 
 router = APIRouter(prefix="/api/v1", tags=["Operational intelligence"])
 
@@ -182,13 +182,8 @@ async def latest_briefing(request: Request):
 @router.post("/briefings/latest/audio")
 @limiter.limit("2/hour")
 async def generate_latest_briefing_audio(request: Request,
-                                          x_operator_key: str | None = Header(None)):
+                                          _: None = Depends(require_operator)):
     """Explicit trusted operation for generating audio; public reads never spend provider quota."""
-    expected = os.getenv("PRANA_OPERATOR_API_KEY")
-    if not expected:
-        raise HTTPException(503, "Operator audio generation is not configured")
-    if not x_operator_key or not hmac.compare_digest(x_operator_key, expected):
-        raise HTTPException(401, "Invalid operator credential")
     item = await latest_briefing(request)
     if not item.get("incident_id") or not item.get("script"):
         raise HTTPException(404, "No current briefing is available")
@@ -242,7 +237,7 @@ async def integration_requirements():
         ("OpenAQ v3", ("OPENAQ_API_KEY",), "https://explore.openaq.org/", "free account; provider limits apply"),
         ("Open-Meteo CAMS air quality", (), "https://open-meteo.com/en/docs/air-quality-api", "no key for noncommercial use within published limits"),
         ("CCA-licensed eSign provider", ("ESIGN_PROVIDER_URL", "ESIGN_ASP_ID", "ESIGN_CLIENT_CERT"), "https://cca.gov.in/service-providers.html", "provider onboarding/agreement required"),
-        ("CEMS ingestion", ("CEMS_INGEST_API_KEY",), "the selected plant/SPCB CEMS operator", "organization-specific source agreement"),
+        ("CEMS ingestion", ("CEMS_INGEST_KEYS_JSON",), "the selected plant/SPCB CEMS operator", "organization-specific source agreement and facility-scoped key"),
         ("Authority dispatch", ("AUTHORITY_DISPATCH_URL", "AUTHORITY_DISPATCH_CLIENT_ID", "AUTHORITY_DISPATCH_CLIENT_SECRET"), "the relevant SPCB/district/police integration owner", "no universal public API"),
         ("Text-to-speech", ("TTS_PROVIDER_KEY",), "an OpenAI-compatible speech provider", "provider-dependent"),
         ("Operator audio generation", ("PRANA_OPERATOR_API_KEY",), "the deployment administrator", "server-side secret; never bundle in web/mobile clients"),

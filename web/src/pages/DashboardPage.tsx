@@ -224,13 +224,18 @@ export const DashboardPage: React.FC = () => {
         satellite_source: surfaceData?.source,
         authority: 'PPCB & Flying Squad Command',
       });
-      await queueLegalDispatch({
+      const dispatch = await queueLegalDispatch({
         incident_id: incident.incident_id,
         recipient_kind: 'flying_squad',
         recipient_reference: 'PPCB Flying Squad Command, Dirba',
       });
       setSquadDispatched(true);
-      success('Flying squad dispatched to origin coordinates.', 'Enforcement Transmitted');
+      success(
+        dispatch.message_sent
+          ? 'Configured connector reported the dispatch as sent.'
+          : `Internal dispatch request recorded (${dispatch.status}); no external message was sent.`,
+        dispatch.message_sent ? 'Dispatch Sent' : 'Request Recorded'
+      );
       setTimeout(() => setSquadDispatched(false), 2600);
     } catch (err: unknown) {
       toastError(err instanceof Error ? err.message : 'Dispatch failed');
@@ -295,22 +300,22 @@ export const DashboardPage: React.FC = () => {
           <div className="w-full bg-surface-vanilla rounded-xl py-2.5 px-space-md shadow-[3px_3px_0px_#18181B] border-2 border-ink-black flex flex-wrap items-center justify-between gap-space-sm text-body-sm">
             <div className="flex items-center flex-wrap gap-space-md font-label-lg text-label-lg">
               <span className="inline-flex items-center gap-1.5 text-terracotta-deep font-bold">
-                🔥 {hotspotsData ? `${hotspotsData.count.toLocaleString()} Fires Active` : 'Loading fires...'}
+                🔥 {hotspotsData ? `${hotspotsData.count.toLocaleString()} Fires Active` : 'Fire feed unavailable'}
               </span>
               <span className="text-outline-variant font-normal">/</span>
               <span className="inline-flex items-center gap-1.5 text-cobalt-deep font-bold">
-                💨 Wind: {meteorologyData?.regions.punjab ? `${(meteorologyData.regions.punjab.wind_speed_ms * 3.6).toFixed(1)} km/h` : 'Meteo loading...'}
+                💨 Wind: {meteorologyData?.regions.punjab ? `${(meteorologyData.regions.punjab.wind_speed_ms * 3.6).toFixed(1)} km/h` : 'Meteo unavailable'}
               </span>
               <span className="text-outline-variant font-normal">/</span>
               <span className="inline-flex items-center gap-1.5 text-ink-black font-semibold">
-                Boundary: {meteorologyData?.regions.delhi ? `${meteorologyData.regions.delhi.mixing_layer_height_m_agl.toFixed(0)}m AGL` : 'Loading...'}
+                Boundary: {meteorologyData?.regions.delhi ? `${meteorologyData.regions.delhi.mixing_layer_height_m_agl.toFixed(0)}m AGL` : 'Unavailable'}
               </span>
             </div>
 
             <div className="flex items-center gap-3">
               <span className="inline-flex items-center gap-2 px-space-sm py-1 rounded-full bg-coral-watermelon-vivid text-on-secondary text-label-md font-bold shadow-[1px_1px_0px_#18181B]">
                 <span className="w-2 h-2 rounded-full bg-white animate-ping"></span>
-                {delhiAqi == null ? 'AQI Loading' : `${delhiCategory} (${delhiAqi})`}
+                {delhiAqi == null ? 'AQI unavailable' : `${delhiCategory} (${delhiAqi})`}
               </span>
 
               {/* Auto-Refresh Countdown & Manual Trigger */}

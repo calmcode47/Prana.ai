@@ -84,7 +84,7 @@ export const AirCorridorMapPage: React.FC = () => {
       lon: coords ? coords[0] : 77.2,
       pm25: obs?.pm25_ugm3 ?? obs?.pm25 ?? null,
       aqi: obs?.aqi_index ?? obs?.aqi ?? null,
-      source: 'CPCB CAAQMS',
+      source: s.properties?.source || 'Source unavailable',
     };
   });
 
@@ -175,7 +175,7 @@ export const AirCorridorMapPage: React.FC = () => {
                   Current Corridor
                 </span>
                 <span className="font-title-sm text-title-sm text-canvas-cream font-bold tracking-tight leading-none">
-                  {plumeData ? `${plumeData.features.length} Active Envelopes` : 'Forecast Loading'}
+                  {plumeData ? `${plumeData.features.length} Active Envelopes` : 'Forecast unavailable'}
                 </span>
               </div>
             </div>
@@ -262,7 +262,7 @@ export const AirCorridorMapPage: React.FC = () => {
 
             <div className="flex items-center gap-2">
               <span className="px-2.5 py-1 rounded-full bg-aqi-hazardous text-canvas-cream font-label-md text-label-md font-bold shadow-[1px_1px_0px_#18181B]">
-                {delhiSurface ? `Receptor: AQI ${delhiSurface.properties.aqi_index}` : 'Receptor AQI pending'}
+                {delhiSurface ? `Receptor: AQI ${delhiSurface.properties.aqi_index}` : 'Receptor AQI unavailable'}
               </span>
             </div>
           </div>
@@ -453,9 +453,9 @@ export const AirCorridorMapPage: React.FC = () => {
                   03. Delhi Receptor Basin
                 </div>
                 <div className="font-headline-sm text-headline-sm text-ink-black mt-1">Delhi NCR Basin</div>
-                <p className="font-body-sm text-body-sm text-ink-muted mt-0.5">Inversion: {formatBackendStatus(meteorologyData?.inversion.status, 'Weather status pending')}</p>
+                <p className="font-body-sm text-body-sm text-ink-muted mt-0.5">Inversion: {formatBackendStatus(meteorologyData?.inversion.status, 'Weather status unavailable')}</p>
                 <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-aqi-hazardous text-on-tertiary text-label-md font-bold shadow-[1px_1px_0px_#18181B]">
-                  {delhiSurface ? `AQI ${delhiSurface.properties.aqi_index}` : 'AQI pending'} • {delhiMeteo ? `${delhiMeteo.mixing_layer_height_m_agl.toFixed(0)}m Mixing Layer` : 'Layer unavailable'}
+                  {delhiSurface ? `AQI ${delhiSurface.properties.aqi_index}` : 'AQI unavailable'} • {delhiMeteo ? `${delhiMeteo.mixing_layer_height_m_agl.toFixed(0)}m Mixing Layer` : 'Layer unavailable'}
                 </div>
               </div>
             </div>
@@ -545,7 +545,7 @@ export const AirCorridorMapPage: React.FC = () => {
             </p>
             <div className="mt-4 pt-3 border-t border-ink-black/10 flex justify-between font-label-md text-label-md font-bold">
               <span>Inversion Severity:</span>
-              <span className="text-aqi-hazardous font-extrabold">{formatBackendStatus(meteorologyData?.inversion.status, 'Weather status pending')}</span>
+              <span className="text-aqi-hazardous font-extrabold">{formatBackendStatus(meteorologyData?.inversion.status, 'Weather status unavailable')}</span>
             </div>
           </div>
         </div>
@@ -556,12 +556,12 @@ export const AirCorridorMapPage: React.FC = () => {
             <div>
               <div className="flex items-center gap-2 font-label-md text-label-md uppercase tracking-wider text-cobalt-deep font-bold mb-1">
                 <span className="material-symbols-outlined text-[14px]">grain</span>
-                AQI Surface &bull; {formatDataSource(surfaceData?.source, 'Loading source')}
+                AQI Surface &bull; {formatDataSource(surfaceData?.source, 'Source unavailable')}
               </div>
               <h2 className="font-headline-sm text-headline-sm text-ink-black font-bold">AQI Surface Grid PM2.5 Field</h2>
             </div>
             <span className="px-3 py-1 rounded-full bg-surface-vanilla border border-ink-black shadow-[2px_2px_0px_#18181B] font-label-md text-label-md font-bold">
-              {surfaceData ? `${surfaceData.features.length} Grid Points · ±${surfaceData.resolution_deg}°` : 'Loading...'}
+              {surfaceData ? `${surfaceData.features.length} Grid Points · ±${surfaceData.resolution_deg}°` : 'Unavailable'}
             </span>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -688,7 +688,7 @@ export const AirCorridorMapPage: React.FC = () => {
                 </div>
               </>
             ) : (
-              <div className="flex items-center justify-center h-32 text-ink-muted font-body-sm">Loading VIIRS data...</div>
+              <div className="flex items-center justify-center h-32 text-ink-muted font-body-sm">VIIRS data unavailable</div>
             )}
           </div>
         </div>

@@ -29,17 +29,5 @@
         "distribution": "store"
       }
     }
-  },
-  "submit": {
-    "production": {
-      "android": {
-        "serviceAccountKeyPath": "./google-service-account.json",
-        "track": "internal"
-      },
-      "ios": {
-        "appleId": "prana-dev@prana.ai",
-        "ascAppId": "6470000000"
-      }
-    }
   }
 }

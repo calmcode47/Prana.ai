@@ -159,6 +159,8 @@ async def get_aqi_surface(resolution_deg: float = Query(0.5, ge=0.1, le=1.0)):
     Returns continuous PM2.5 surface grid produced by Gaussian Process Downscaler (REQ-005).
     Fuses ground readings with Open-Meteo CAMS global aerosol optical depth.
     """
+    if resolution_deg not in {0.1, 0.25, 0.5, 1.0}:
+        raise HTTPException(422, "resolution_deg must be one of 0.1, 0.25, 0.5, or 1.0")
     try:
         from backend.ml.downscaler import run_downscaler
         return await run_downscaler(resolution_deg=resolution_deg)

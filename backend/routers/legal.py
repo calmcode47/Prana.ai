@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from html import escape
 from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from reportlab.lib.pagesizes import A4
@@ -22,8 +22,13 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 from backend.database import get_db_pool, get_in_memory_store
 from backend.routers.citizen import limiter
+from backend.auth import require_operator
 
-router = APIRouter(prefix="/api/v1/legal", tags=["Legal workflow"])
+router = APIRouter(
+    prefix="/api/v1/legal",
+    tags=["Legal workflow"],
+    dependencies=[Depends(require_operator)],
+)
 
 AIR_ACT_REFERENCE = "Air (Prevention and Control of Pollution) Act, 1981, section 31A"
 EVIDENCE_REFERENCE = "Bharatiya Sakshya Adhiniyam, 2023, section 63 and Schedule"

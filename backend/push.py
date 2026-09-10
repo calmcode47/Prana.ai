@@ -29,15 +29,23 @@ async def register_push_token(token: str, platform: str, device_id: str | None =
     if platform not in {"android", "ios"}:
         raise ValueError("Push registration requires an Android or iOS device")
     now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=TOKEN_MAX_AGE_DAYS)
     pool = get_db_pool()
     if pool:
         async with pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute("SELECT pg_advisory_xact_lock($1)", 7072616)
+                await conn.execute(
+                    "DELETE FROM mobile_push_tokens WHERE enabled=FALSE OR last_registered_at < $1",
+                    cutoff,
+                )
                 exists = await conn.fetchval(
                     "SELECT EXISTS(SELECT 1 FROM mobile_push_tokens WHERE push_token=$1)", token
                 )
-                count = await conn.fetchval("SELECT count(*) FROM mobile_push_tokens WHERE enabled=TRUE")
+                count = await conn.fetchval(
+                    "SELECT count(*) FROM mobile_push_tokens WHERE enabled=TRUE AND last_registered_at >= $1",
+                    cutoff,
+                )
                 if not exists and count >= MAX_PUSH_TOKENS:
                     raise ValueError("Push registration capacity has been reached")
                 await conn.execute(
@@ -52,6 +60,17 @@ async def register_push_token(token: str, platform: str, device_id: str | None =
         return
 
     rows = get_in_memory_store()["mobile_push_tokens"]
+    active_rows = []
+    for row in rows:
+        try:
+            registered = datetime.fromisoformat(str(row.get("last_registered_at", "")).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if row.get("enabled", True) and registered >= cutoff:
+            active_rows.append(row)
+    if len(active_rows) != len(rows):
+        rows[:] = active_rows
+        persist_local_store()
     match = next((row for row in rows if row["push_token"] == token), None)
     record = {
         "push_token": token,
@@ -64,7 +83,7 @@ async def register_push_token(token: str, platform: str, device_id: str | None =
         match.update(record)
         persist_local_store()
     else:
-        if len(rows) >= MAX_PUSH_TOKENS:
+        if len(active_rows) >= MAX_PUSH_TOKENS:
             raise ValueError("Push registration capacity has been reached")
         rows.append(record)
         persist_local_store()

@@ -45,6 +45,7 @@ export interface QueuedScanItem {
 
 const SCANS_STORAGE_KEY = '@prana_citizen_scans';
 const OFFLINE_QUEUE_KEY = '@prana_citizen_offline_queue';
+const OFFLINE_QUEUE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 interface CitizenScannerScreenProps {
   onClose?: () => void;
@@ -164,7 +165,17 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
       if (data) {
         try {
           const parsed = JSON.parse(data);
-          if (Array.isArray(parsed)) setOfflineQueue(parsed);
+          if (Array.isArray(parsed)) {
+            const cutoff = Date.now() - OFFLINE_QUEUE_MAX_AGE_MS;
+            const current = parsed.filter((item: QueuedScanItem) => {
+              const timestamp = Date.parse(item?.timestamp ?? '');
+              return Number.isFinite(timestamp) && timestamp >= cutoff;
+            });
+            setOfflineQueue(current);
+            if (current.length !== parsed.length) {
+              AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(current)).catch(() => {});
+            }
+          }
         } catch {}
       }
     });
@@ -758,7 +769,7 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
               <MaterialCommunityIcons name="cloud-sync-outline" size={18} color={Colors.canvasCream} />
               <View>
                 <Text style={styles.offlineQueueTitle}>Offline Queue ({offlineQueue.length} Pending)</Text>
-                <Text style={styles.offlineQueueSub}>Stored locally for background sync</Text>
+                <Text style={styles.offlineQueueSub}>Stored locally for up to 24 hours for manual retry</Text>
               </View>
             </View>
             <Pressable

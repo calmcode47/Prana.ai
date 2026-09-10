@@ -18,6 +18,9 @@ export function computeCpcbAqi(pm25: number): number {
   if (pm25 === null || pm25 === undefined || pm25 < 0 || isNaN(pm25)) return 0;
   if (!isFinite(pm25)) return 500;
   if (pm25 <= 30.0) return Math.round((50.0 / 30.0) * pm25);
+  // CPCB publishes integer concentration bands; keep fractional values in the
+  // 30–31 gap monotonic with the next published AQI band.
+  if (pm25 < 31.0) return 51;
 
   for (const b of PM25_BREAKPOINTS) {
     if (pm25 <= b.cHi) {

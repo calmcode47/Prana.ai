@@ -32,3 +32,10 @@ frontend-essentials/
 # Node
 node_modules/
 .local-export/
+
+# Mobile release binaries belong in signed GitHub/EAS releases, not source control
+mobile-app/release/*.apk
+mobile-app/release/*.aab
+mobile-app/release/*.ipa
+mobile-app/release/*.sha256
+mobile-app/release/release-manifest.json

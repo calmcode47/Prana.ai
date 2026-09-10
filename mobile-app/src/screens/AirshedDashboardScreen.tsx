@@ -322,20 +322,22 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
     try {
       const incident = await createCurrentIncident();
       let targetRef = 'PPCB Flying Squad Command, Dirba Sector';
-      let feedback = '⚡ Flying squad dispatched to Dirba sector';
+      let targetLabel = 'Dirba sector';
       if (selectedCorridorNode === 'transit_02') {
         targetRef = 'HSPCB Highway Enforcement Unit, Panipat Gateway';
-        feedback = '⚡ Enforcement unit dispatched to Panipat corridor';
+        targetLabel = 'Panipat corridor';
       } else if (selectedCorridorNode === 'delhi_09') {
         targetRef = 'DPCC Rapid Response Team, Anand Vihar Basin';
-        feedback = '⚡ Rapid response team dispatched to Anand Vihar';
+        targetLabel = 'Anand Vihar';
       }
-      await queueLegalDispatch({
+      const dispatch = await queueLegalDispatch({
         incident_id: incident.incident_id,
         recipient_kind: 'flying_squad',
         recipient_reference: targetRef,
       });
-      setActionFeedback(feedback);
+      setActionFeedback(dispatch.message_sent
+        ? `⚡ Connector reported dispatch sent for ${targetLabel}`
+        : `Review request recorded for ${targetLabel}; no external message sent`);
       setTimeout(() => setActionFeedback(null), 3000);
     } catch (error) {
       setActionFeedback(`Dispatch failed: ${error instanceof Error ? error.message : 'backend unavailable'}`);

@@ -47,7 +47,7 @@ def test_legal_drafts_registry_and_dossier(client):
 
 
 def test_cems_ingestion_and_forensic_indicator(client, monkeypatch):
-    monkeypatch.setenv("CEMS_INGEST_API_KEY", "unit-test-cems-key")
+    monkeypatch.setenv("CEMS_INGEST_KEYS_JSON", '{"FAC-1":"unit-test-cems-key"}')
     now = datetime.now(timezone.utc)
     readings = []
     for index in range(4):
@@ -58,19 +58,47 @@ def test_cems_ingestion_and_forensic_indicator(client, monkeypatch):
     response = client.post("/api/v1/industrial/cems/readings", json={"readings": readings},
                            headers={"X-CEMS-Key": "unit-test-cems-key"})
     assert response.status_code == 202 and response.json()["accepted"] == 5
-    result = client.get("/api/v1/industrial/cems/FAC-1/forensics",
-                        headers={"X-CEMS-Key": "unit-test-cems-key"}).json()
+    result = client.get("/api/v1/industrial/cems/FAC-1/forensics").json()
     assert result["status"] == "REVIEW_REQUIRED"
     assert result["review_windows"][0]["classification"] == "REVIEW_REQUIRED"
 
 
 def test_cems_ingestion_fails_closed_without_a_key(client, monkeypatch):
-    monkeypatch.delenv("CEMS_INGEST_API_KEY", raising=False)
+    monkeypatch.delenv("CEMS_INGEST_KEYS_JSON", raising=False)
     response = client.post("/api/v1/industrial/cems/readings", json={"readings": [{
         "facility_id": "FAC-1", "measured_at": datetime.now(timezone.utc).isoformat(),
         "stack_velocity_ms": 10, "scrubber_load_kw": 100, "source": "test",
     }]})
     assert response.status_code == 503
+
+
+def test_cems_keys_are_scoped_to_one_facility_and_forensics_is_operator_only(client, monkeypatch):
+    from fastapi.testclient import TestClient
+    from backend.main import app
+
+    monkeypatch.setenv(
+        "CEMS_INGEST_KEYS_JSON",
+        '{"FAC-1":"facility-one-key","FAC-2":"facility-two-key"}',
+    )
+    reading = {
+        "facility_id": "FAC-2",
+        "measured_at": datetime.now(timezone.utc).isoformat(),
+        "stack_velocity_ms": 10,
+        "scrubber_load_kw": 100,
+        "source": "test",
+    }
+    assert client.post(
+        "/api/v1/industrial/cems/readings",
+        json={"readings": [reading]},
+        headers={"X-CEMS-Key": "facility-one-key"},
+    ).status_code == 401
+    assert client.post(
+        "/api/v1/industrial/cems/readings",
+        json={"readings": [reading, {**reading, "facility_id": "FAC-1"}]},
+        headers={"X-CEMS-Key": "facility-one-key"},
+    ).status_code == 422
+    with TestClient(app) as anonymous:
+        assert anonymous.get("/api/v1/industrial/cems/FAC-1/forensics").status_code == 401
 
 
 def test_meteorology_and_auxiliary_endpoints(client, monkeypatch, open_meteo_json):
@@ -132,8 +160,8 @@ def test_public_briefing_read_never_calls_tts_provider(client, monkeypatch):
 
 
 def test_tts_generation_endpoint_fails_closed_without_operator_key(client, monkeypatch):
-    monkeypatch.delenv("PRANA_OPERATOR_API_KEY", raising=False)
     _incident(client)
+    monkeypatch.delenv("PRANA_OPERATOR_API_KEY", raising=False)
     response = client.post("/api/v1/briefings/latest/audio")
     assert response.status_code == 503
 
@@ -141,12 +169,12 @@ def test_tts_generation_endpoint_fails_closed_without_operator_key(client, monke
 def test_operator_can_explicitly_generate_briefing_audio(client, monkeypatch):
     from unittest.mock import AsyncMock
 
+    incident_id = _incident(client)
     monkeypatch.setenv("PRANA_OPERATOR_API_KEY", "operator-test-key")
     generator = AsyncMock(return_value=("briefing-test.mp3", "generated"))
     monkeypatch.setattr("backend.routers.operations.ensure_briefing_audio", generator)
-    incident_id = _incident(client)
     response = client.post("/api/v1/briefings/latest/audio",
-                           headers={"X-Operator-Key": "operator-test-key"})
+                           headers={"X-API-Key": "operator-test-key"})
     assert response.status_code == 200
     assert response.json()["incident_id"] == incident_id
     assert response.json()["audio_url"].endswith("/media/briefings/briefing-test.mp3")

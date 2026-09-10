@@ -50,7 +50,7 @@ While the application is complete and functional for development and live demons
 
 * **Current Status**:
   * `eas.json` is configured for development, preview, and production builds.
-  * Local bundle generation script (`build-release-artifact.js`) is ready.
+  * No release binary is checked into source control. Use an authenticated EAS production build and publish the signed artifact through the selected release host.
 * **What is Left**:
   * **Execute EAS Cloud Builds**: Run `eas build --platform android --profile production` (generates signed `.aab`/`.apk`) and `eas build --platform ios --profile production` (generates signed `.ipa`). *Requires active Expo Application Services login and Apple/Google developer credentials.*
   * **Link Binary to Release Endpoint**: Host the resulting APK/IPA on a CDN/S3 bucket and update the backend's `/api/v1/operations/mobile/releases/latest` configuration so real OTA update downloads work.
@@ -65,7 +65,7 @@ While the application is complete and functional for development and live demons
 * **What is Left**:
   * **Configure EAS Project ID**: Set `EXPO_PUBLIC_EAS_PROJECT_ID` in `mobile-app/.env` with your real Expo project ID.
   * **Apple Push Notification Service (APNs)**: Upload an APNs Key (`.p8`) to the Apple Developer Console for background iOS pushes.
-  * **Firebase Cloud Messaging (FCM)**: Add `google-services.json` to `mobile-app/` for background Android pushes when the app is completely killed.
+  * **Firebase Cloud Messaging (FCM)**: Configure the real Android push credential through EAS credentials (or place `google-services.json` locally when required). The file is ignored and must not be committed.
 
 ---
 

@@ -1,6 +1,6 @@
 # PRANA Air — Mobile Frontend App (Expo SDK 57)
 
-This is the mobile application for **PRANA Air**, designed for both **iOS and Android**, matching the **Atmospheric Intelligence Audio-Visual** design system specified in `frontend-essentials/mobile-design/`.
+This is the mobile application for **PRANA Air**, designed for both **iOS and Android** and using the checked-in theme tokens and components under `src/theme/` and `src/components/`.
 
 Compatible with **Expo Go version 57.0.9**.
 

@@ -17,7 +17,9 @@ router = APIRouter(prefix="/api/v1/forecast", tags=["Forecast"])
 
 
 @router.get("/plume", response_model=PlumeResponse)
-async def get_forecast_plume(cluster_id: Optional[str] = Query(None)):
+async def get_forecast_plume(
+    cluster_id: Optional[str] = Query(None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+):
     """
     Returns Gaussian-plume trajectory polygons for active fire clusters (REQ-006).
     Computes 24h, 48h, and 72h forward dispersion polygons based on FIRMS and Open-Meteo.

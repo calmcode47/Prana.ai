@@ -53,7 +53,11 @@ async def test_postgis_persistence_and_restart(monkeypatch):
         async with pool.acquire() as conn:
             assert await conn.fetchval("SELECT count(*) FROM fl_rounds WHERE run_id=$1", metric["run_id"]) == 0
         assert database.get_in_memory_store()["fl_rounds"] == prior
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+            headers={"Authorization": "Bearer test-operator-key"},
+        ) as client:
             assert (await client.get("/ready")).json()["db"] == "connected"
             monkeypatch.setenv("PRANA_DEMO_MODE", "false")
             assert (await client.get("/api/v1/aqi/stations")).json()["value"] == []

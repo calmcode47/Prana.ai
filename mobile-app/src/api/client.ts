@@ -15,12 +15,18 @@ export function getApiBaseUrl(): string {
   const configuredUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/$/, '');
   if (configuredUrl) return configuredUrl;
 
-  // 2. Web browser: Always use 0.0.0.0:8000 or window-injected URL directly
+  // 2. Web browser: use an injected URL, local loopback, or the deployed origin.
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined' && (window as any).PRANA_API_URL) {
       return (window as any).PRANA_API_URL;
     }
-    return 'http://0.0.0.0:8000';
+    if (typeof window !== 'undefined') {
+      const localHosts = new Set(['localhost', '127.0.0.1', '0.0.0.0']);
+      return localHosts.has(window.location.hostname)
+        ? 'http://127.0.0.1:8000'
+        : window.location.origin;
+    }
+    return 'http://127.0.0.1:8000';
   }
 
   // 3. Inspect Expo hostUri (e.g. "192.168.1.7:8081" vs "xyz.ngrok-free.app" or "xxx.exp.direct")
@@ -50,7 +56,7 @@ export function getApiBaseUrl(): string {
   if (Platform.OS === 'android') {
     return 'http://10.0.2.2:8000';
   }
-  return 'http://0.0.0.0:8000';
+  return 'http://127.0.0.1:8000';
 }
 
 export const API_BASE = getApiBaseUrl();

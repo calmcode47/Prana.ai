@@ -518,7 +518,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
               </Text>
             </Pressable>
 
-            {/* Step 3: Transmit to DM */}
+            {/* Step 3: Record DM review request */}
             <Pressable
               onPress={() => handleTransmitDM(firstId)}
               disabled={!sealedPramaan}
@@ -535,7 +535,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
                 color={Colors.canvasCream}
               />
               <Text style={[styles.pipelineStepBtnText, { color: Colors.canvasCream }]}>
-                3. {transmittedToDM ? 'Dispatched to Flying Squad' : 'Transmit to District Magistrate'}
+                3. {transmittedToDM ? 'Connector Reported Sent' : 'Queue District Magistrate Review'}
               </Text>
             </Pressable>
 

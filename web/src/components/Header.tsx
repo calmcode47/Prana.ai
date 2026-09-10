@@ -145,9 +145,9 @@ export const Header: React.FC = () => {
         </div>
         <div className="flex items-center gap-space-sm">
           <span className="px-2 py-0.5 rounded-full bg-canvas-cream text-ink-black font-bold shadow-[1px_1px_0px_#18181B]">
-            {isDemoMode ? 'PRANA LOCAL (DEMO MODE)' : 'PRANA LOCAL (DEMO DATA OFF)'}
+            {isDemoMode ? 'PRANA DEMO MODE' : 'PRANA LIVE DATA MODE'}
           </span>
-          <span className="text-ink-muted">{lastSync ? `Sync ${new Date(lastSync).toLocaleTimeString()}` : 'Sync pending'}</span>
+          <span className="text-ink-muted">{lastSync ? `Sync ${new Date(lastSync).toLocaleTimeString()}` : 'Sync unavailable'}</span>
         </div>
       </div>
 
@@ -165,9 +165,9 @@ export const Header: React.FC = () => {
               <span className="text-outline-variant">/</span>
               <span className="text-terracotta-deep font-bold">{fireCount == null ? 'Fire Feed Unavailable' : `${fireCount} Active Fires`}</span>
               <span className="text-outline-variant">/</span>
-              <span className="px-2 py-0.5 rounded-full bg-aqi-hazardous text-on-tertiary font-bold">{latestAqi == null ? 'Delhi AQI pending' : `Delhi AQI ${latestAqi}`}</span>
+              <span className="px-2 py-0.5 rounded-full bg-aqi-hazardous text-on-tertiary font-bold">{latestAqi == null ? 'Delhi AQI unavailable' : `Delhi AQI ${latestAqi}`}</span>
               <span className="text-outline-variant">/</span>
-              <span className="font-telemetry-val text-body-sm font-bold text-ink-black">{latestPm25 == null ? 'PM2.5 pending' : `PM2.5: ${latestPm25.toFixed(1)} µg/m³`}</span>
+              <span className="font-telemetry-val text-body-sm font-bold text-ink-black">{latestPm25 == null ? 'PM2.5 unavailable' : `PM2.5: ${latestPm25.toFixed(1)} µg/m³`}</span>
             </div>
           </div>
         </div>

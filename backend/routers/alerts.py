@@ -9,12 +9,13 @@ import json
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Literal
-from fastapi import APIRouter, Query, Request, Response, status, HTTPException
+from fastapi import APIRouter, Depends, Query, Request, Response, status, HTTPException
 from pydantic import AwareDatetime
 
 from backend.models import AlertsResponse, LatestAlertResponse, IncidentCreate, IncidentItem
 from backend.database import get_db_pool, get_in_memory_store, compute_cpcb_aqi
 from backend.routers.citizen import limiter
+from backend.auth import require_operator
 
 logger = logging.getLogger("prana.routers.alerts")
 
@@ -146,7 +147,7 @@ async def get_latest_alert(response: Response, lang: Literal["en", "hi", "pa"] =
 
 @router.post("/incident", status_code=status.HTTP_201_CREATED, response_model=IncidentItem)
 @limiter.limit("10/minute")
-async def create_incident(request: Request, payload: IncidentCreate):
+async def create_incident(request: Request, payload: IncidentCreate, _: None = Depends(require_operator)):
     """
     Creates a new SPCB incident ticket.
     Computes measured_aqi from measured_pm25 server-side.

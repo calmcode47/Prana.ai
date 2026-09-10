@@ -42,7 +42,7 @@ export const WarRoomAlertsSidebar: React.FC<WarRoomAlertsSidebarProps> = ({
         </div>
 
         <p className="text-xs text-ink-muted">
-          Authorize immediate enforcement orders under Section 31A of the Air Act (1981) targeting identified plume sources.
+          Record an internal review request or prepare an unissued Section 31A draft for an authorized officer.
         </p>
 
         <div className="flex flex-col gap-2">
@@ -52,7 +52,7 @@ export const WarRoomAlertsSidebar: React.FC<WarRoomAlertsSidebarProps> = ({
             onClick={onDispatchSquad}
             leftIcon={<Send className="w-3.5 h-3.5" />}
           >
-            {squadDispatched ? 'Squad Transmitted ✓' : 'Dispatch Flying Squad to Origin'}
+            {squadDispatched ? 'Request Recorded ✓' : 'Queue Flying Squad Review'}
           </Button>
 
           <Button
@@ -126,7 +126,7 @@ export const WarRoomAlertsSidebar: React.FC<WarRoomAlertsSidebarProps> = ({
           <span className="font-bold font-mono text-ink-black">
             {lagData?.strongest_lag
               ? `${lagData.strongest_lag.lag_hours}h (r=${lagData.strongest_lag.pearson_r.toFixed(2)})`
-              : 'Calculating...'}
+              : 'Unavailable'}
           </span>
         </div>
 

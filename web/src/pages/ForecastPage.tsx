@@ -182,7 +182,7 @@ export const ForecastPage: React.FC = () => {
           <div className="flex flex-wrap items-center gap-space-sm">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-vanilla shadow-[2px_2px_0px_#18181B] text-label-md font-label-md text-ink-black border border-ink-black/20">
               <span className="w-2 h-2 rounded-full bg-coral-watermelon-vivid"></span>
-              {formatDataSource(plumeData?.source, 'Loading forecast model')}
+              {formatDataSource(plumeData?.source, 'Forecast model unavailable')}
             </span>
             <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-surface-vanilla text-label-md font-label-md text-ink-muted shadow-[1px_1px_0px_#18181B]">
               <span>Boundary Layer Dynamic:</span>
@@ -595,7 +595,7 @@ export const ForecastPage: React.FC = () => {
                 </span>
               </div>
               <p className="font-body-sm text-body-sm text-ink-muted mb-4">
-                {lagData?.method ?? 'Loading empirical fire and air-quality lag analysis.'}
+                {lagData?.method ?? 'Empirical fire and air-quality lag analysis unavailable.'}
               </p>
 
               {/* Core Statistical Badges */}
@@ -723,16 +723,16 @@ export const ForecastPage: React.FC = () => {
             <div>
               <div className="flex items-center gap-2 font-label-md text-label-md uppercase tracking-wider text-cobalt-deep font-bold mb-1">
                 <span className="material-symbols-outlined text-[16px]">air</span>
-                <span>{formatDataSource(plumeData?.source, 'Loading forecast source')}</span>
+                <span>{formatDataSource(plumeData?.source, 'Forecast source unavailable')}</span>
                 <span className="px-2 py-0.5 rounded-full bg-cobalt-deep/10 text-cobalt-deep text-label-md font-bold">
-                  {plumeData ? `${plumeData.features.length} Horizon Envelopes` : 'Loading...'}
+                  {plumeData ? `${plumeData.features.length} Horizon Envelopes` : 'Unavailable'}
                 </span>
               </div>
               <h2 className="font-headline-md text-headline-md text-ink-black font-bold">
                 Gaussian Plume Model Output
               </h2>
               <p className="font-body-sm text-body-sm text-ink-muted mt-1">
-                Source: {formatDataSource(plumeData?.source, 'Forecast unavailable')} &bull; Computed: {plumeData ? new Date(plumeData.computed_at).toLocaleString() : 'Pending'}
+                Source: {formatDataSource(plumeData?.source, 'Forecast unavailable')} &bull; Computed: {plumeData ? new Date(plumeData.computed_at).toLocaleString() : 'N/A'}
               </p>
             </div>
             <div className="bg-ink-black text-canvas-cream px-4 py-2 rounded-xl rotate-2 shadow-[3px_3px_0px_#1D4ED8] flex items-center gap-2 flex-shrink-0">

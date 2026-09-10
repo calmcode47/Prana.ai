@@ -9,6 +9,7 @@
 [![PostGIS](https://img.shields.io/badge/PostGIS-16_3.4-336791.svg?style=flat-square&logo=postgresql&logoColor=white)](https://postgis.net)
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB.svg?style=flat-square&logo=python&logoColor=white)](https://www.python.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5%2F6.0-3178C6.svg?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
 <p align="center">
   <b>A full-stack, transboundary environmental intelligence system uniting satellite remote sensing, boundary-layer meteorology, privacy-preserving federated AI, regulatory legal war rooms, and edge citizen sensing across the Indo-Gangetic Airshed.</b>
@@ -27,7 +28,7 @@
   - [2. 72-Hour Atmospheric Inversion & Plume Forecast](#2-72-hour-atmospheric-inversion--plume-forecast)
   - [3. Cross-Border Federated Learning Mesh](#3-cross-border-federated-learning-mesh)
   - [4. Regulatory Enforcement & Legal War Room](#4-regulatory-enforcement--legal-war-room)
-  - [5. Citizen Sky Haze Estimator (Edge DCP Inference)](#5-citizen-sky-haze-estimator-edge-dcp-inference)
+  - [5. Citizen Sky Haze Estimator (Backend DCP Inference)](#5-citizen-sky-haze-estimator-backend-dcp-inference)
   - [6. Real-Time Audio Briefings & Multi-Channel Broadcasts](#6-real-time-audio-briefings--multi-channel-broadcasts)
 - [Repository Structure](#-repository-structure)
 - [Quick Start Guide](#-quick-start-guide)
@@ -51,7 +52,7 @@ Every winter, the Indo-Gangetic Plains (IGP)—spanning Punjab, Haryana, and the
 3. **Northwesterly Surface Winds**: Channeling smoke along the NH-44 Grand Trunk road corridor directly into the Delhi topological basin.
 4. **Jurisdictional Silos**: Fragmented regulatory enforcement between different State Pollution Control Boards (SPCBs).
 
-**PRANA (प्राण)** addresses this transboundary environmental challenge by providing a unified, scientifically grounded platform. It fuses real-time satellite telemetry, atmospheric transport modeling, homomorphic federated learning, and legal compliance automation into an actionable system for citizens, scientists, and enforcement authorities.
+**PRANA (प्राण)** is a research and decision-support platform that connects configured satellite, weather, and air-quality providers to atmospheric models, a local federated-learning protocol demonstration, and auditable legal-draft workflows. Provider observations, model estimates, demonstrations, and unavailable states are identified separately in the clients.
 
 ---
 
@@ -74,11 +75,11 @@ flowchart TD
         FED_CORE["Paillier + DP-SGD Federated Core"]
         WS_HUB["Real-Time WebSocket Engine (Pub/Sub)"]
         TTS_GEN["Incident Briefing TTS & RSS Generator"]
-        LEGAL_SVC["Section 31A Notice & Legal Dispatch Engine"]
+        LEGAL_SVC["Section 31A Draft & Internal Dispatch Queue"]
     end
 
     subgraph CLIENT_APPLICATIONS ["Client Surfaces"]
-        WEB["PRANA Web Platform\n(React 18 + Vite + Tailwind + MapLibre)"]
+        WEB["PRANA Web Platform\n(React 18 + Vite + Tailwind + Leaflet)"]
         MOBILE["PRANA Air Mobile App\n(Expo SDK 57 + React Native 0.86)"]
         CITIZEN["Citizen Scanner\n(On-Device Camera + Dark Channel Prior)"]
     end
@@ -102,7 +103,7 @@ flowchart TD
 ## ⚡ Core Functional Modules
 
 ### 1. Air Corridor Trajectory & Ingress Tracker
-* **Tri-Node Atmospheric Vector Pipeline**: Continuously models transboundary transport across three critical segments:
+* **Tri-Node Atmospheric Vector Pipeline**: Models transboundary transport on request and during configured scheduler refreshes across three critical segments:
   - **Node 01 (Upwind Origin)**: Punjab Malwa Agricultural Belt (Sangrur, Patiala clusters).
   - **Node 02 (Transit Channel)**: Haryana NH-44 Highway Belt (Karnal, Panipat transport channel).
   - **Node 03 (Receptor Sink)**: Delhi NCR Topographical Basin (Anand Vihar, Yamuna floodplains).
@@ -115,27 +116,27 @@ flowchart TD
 * **Ward Vulnerability Matrix**: Identifies municipal wards at immediate risk of particulate trapping.
 
 ### 3. Cross-Border Federated Learning Mesh
-* **Privacy-Preserving Collaboration**: Allows Punjab, Haryana, and Delhi state authorities to train joint air quality prediction models without centralizing raw sensor data.
+* **Privacy-Preserving Protocol Demonstration**: Exercises a local multi-partition training workflow without claiming a live connection to Punjab, Haryana, or Delhi authorities.
 * **Cryptographic Security & Differential Privacy**:
   - **Paillier Homomorphic Encryption**: 2048-bit keypair for cryptographically sealed weight aggregation.
   - **DP-SGD**: Record-level clipped gradients with calibrated Gaussian noise ($\epsilon = 0.42, \delta = 10^{-5}$) under a conservative Zero-Concentrated Differential Privacy (zCDP) accountant.
-* **Interactive Convergence Visualizer**: Real-time multi-line charts showing global accuracy and Mean Squared Error (MSE) loss across decoupled silos.
+* **Interactive Convergence Visualizer**: Displays results returned by the backend for the current local run, including global accuracy and Mean Squared Error (MSE) loss.
 
 ### 4. Regulatory Enforcement & Legal War Room
-* **Section 31A Air Act Pipeline**: Automates statutory notice generation under Section 31A of the *Air (Prevention and Control of Pollution) Act, 1981*.
-* **Pramaan Evidence Sealing**: Generates cryptographically hashed electronic evidence packages compliant with Section 65B of the *Indian Evidence Act* / *Bharatiya Sakshya Adhiniyam*.
-* **Flying Squad Rapid Dispatch**: One-tap escalation to dispatch inter-state enforcement squads to high-FRP clusters.
+* **Section 31A Air Act Drafting**: Generates unissued review drafts referencing Section 31A of the *Air (Prevention and Control of Pollution) Act, 1981*; an authorized officer must review and issue any legal direction.
+* **Evidence Packages**: Generates SHA-256-hashed draft packages and checklists for authorized review; it does not create a legal signature or certificate.
+* **Internal Dispatch Queue**: Records a requested recipient and pending status. No external authority is contacted unless a connector is separately configured and implemented.
 * **Continuous Emission Monitoring (CEMS)**: Deterministic heuristic scrutiny of industrial stack telemetry and scrubber status.
 
-### 5. Citizen Sky Haze Estimator (Edge DCP Inference)
+### 5. Citizen Sky Haze Estimator (Backend DCP Inference)
 * **Mobile Camera & Gallery Ingestion**: Citizens capture outdoor sky imagery along with device GPS coordinates.
-* **Dark Channel Prior (DCP)**: Decomposes optical atmospheric depth and haze transmission ratios to estimate particulate matter ($\mu\text{g/m}^3$) and AQI sub-indices in real time.
+* **Dark Channel Prior (DCP)**: Sends the selected image to the backend, which decodes it in memory and computes a heuristic PM2.5 estimate and CPCB PM2.5 sub-index. It is not a regulatory measurement.
 * **Actionable Citizen Health Checklist**: Context-aware protective guidance (N95 mask reminders, indoor HEPA purifier automation, morning exercise deferrals).
 
 ### 6. Real-Time Audio Briefings & Multi-Channel Broadcasts
 * **Docked Floating Audio Player**: Native lock-screen and background audio playback for daily regional atmospheric briefings.
-* **Dynamic RSS & TTS**: Real-time synthetic speech rendering of official regulatory bulletins in English, Hindi (हिन्दी), and Punjabi (ਪੰਜਾਬੀ).
-* **Emergency Push Alerts**: Sub-second WebSocket broadcasts and native notifications for critical hazardous pollution events.
+* **Dynamic RSS & TTS**: Generates audio from the current backend briefing script when a speech provider and operator authorization are configured; otherwise the UI reports that audio is unavailable.
+* **WebSocket & Push Alerts**: WebSocket snapshots are published on the configured backend interval. Native push delivery requires valid Expo project and notification-provider configuration.
 
 ---
 
@@ -176,12 +177,9 @@ Prana.ai/
 │   ├── index.html                 # Entrypoint HTML with typography
 │   └── vite.config.ts             # Vite bundler configuration
 │
-├── frontend-essentials/           # Design System & Documentation
-│   ├── PRANA_Atmospheric_Intelligence_Playbook_v1.md
-│   ├── main-design/               # Desktop design specifications
-│   └── mobile-design/             # Neo-brutalist mobile specifications and token definitions
-│
 ├── docker-compose.yml             # Containerized orchestration (PostGIS + FastAPI)
+├── LICENSE                        # MIT license
+├── SECURITY.md                    # Private vulnerability-reporting guidance
 └── README.md                      # This master platform documentation
 ```
 
@@ -198,8 +196,10 @@ Run the entire backend with a persistent PostGIS database in a single command:
 git clone https://github.com/calmcode47/Prana.ai.git
 cd Prana.ai
 
-# 2. Configure environment secrets
-cp backend/.env.example backend/.env
+# 2. Create the root environment file read by Docker Compose
+cp backend/.env.docker .env
+# Edit .env and set strong POSTGRES_PASSWORD, PRANA_OPERATOR_API_KEY,
+# facility-scoped CEMS_INGEST_KEYS_JSON, and the real client origins.
 
 # 3. Launch database and API containers
 docker compose up --build
@@ -265,10 +265,10 @@ Scan the displayed QR code with the **Expo Go app** on Android or the **default 
 | :--- | :--- | :--- | :--- |
 | **Active Stubble Fires** | NASA FIRMS (VIIRS 375m / MODIS 1km) | 15 minutes | Megawatts (MW) Fire Radiative Power (FRP) |
 | **Wind & Boundary Layer** | Open-Meteo & ECMWF CAMS | Hourly / 6-hourly | Wind vector ($u, v$ m/s), Boundary height ($H_{\text{pbl}}$ m AGL) |
-| **Continuous Emissions** | Industrial CEMS Feeds | Real-time batch | Scrubber differential pressure, flow velocity (m/s) |
+| **Continuous Emissions** | Authenticated industrial CEMS submissions | On submission | Scrubber load and stack flow velocity (m/s) |
 | **Surface Air Quality** | OGC SensorThings & OpenAQ v3 | 15 minutes | $\mu\text{g/m}^3$ PM2.5 mass concentration |
-| **AQI Regulatory Sub-Index** | Central Pollution Control Board (CPCB) | Instantaneous | India National Air Quality Index (0–500 scale) |
-| **Legal Proof of Evidence** | Pramaan Engine | On-demand | Section 65B Electronic Record Compliance (SHA-256) |
+| **AQI PM2.5 Sub-Index** | PRANA calculation using CPCB breakpoints | On response | India National Air Quality Index PM2.5 sub-index (0–500 scale) |
+| **Draft Evidence Export** | PRANA backend | On demand | SHA-256 manifest for authorized legal review; not a signature or filing |
 
 ---
 
@@ -281,7 +281,7 @@ PRANA maintains automated test coverage across all layers:
 cd mobile-app
 npm test
 ```
-*Validates 5 test suites (42 tests) covering CPCB AQI calculations, citizen photo uploads, UI component layout, screen mounting, and corridor flow.*
+*Validates 5 test suites (44 tests) covering CPCB AQI calculations, citizen photo uploads, UI component layout, screen mounting, and corridor flow.*
 
 ### Backend Tests (Pytest)
 ```bash
@@ -306,15 +306,24 @@ The backend recognizes the following variables in `.env`:
 | Variable | Description | Default | Required? |
 | :--- | :--- | :--- | :--- |
 | `DATABASE_URL` | PostgreSQL/PostGIS connection string | *Local file fallback* | In production |
-| `FIRMS_MAP_KEY` | NASA FIRMS API key for live thermal satellite feeds | `""` | Optional |
-| `OPENAQ_API_KEY` | OpenAQ v3 API credential | `""` | Optional |
-| `CEMS_INGEST_API_KEY`| Shared secret for industrial facility emission feeds | `""` | Required in prod |
+| `FIRMS_MAP_KEY` | NASA FIRMS API key for live thermal satellite feeds | `""` | Required for live fire data |
+| `OPENAQ_API_KEY` | OpenAQ v3 API credential | `""` | Required for live station data |
+| `CEMS_INGEST_KEYS_JSON`| JSON object mapping each approved facility ID to a separate ingestion key | `{}` | Required for CEMS ingestion |
+| `PRANA_OPERATOR_API_KEY`| Server-side secret for incident, legal, federated-run, and TTS control-plane operations | `""` | Required for operator actions |
 | `TTS_PROVIDER_KEY` | OpenAI-compatible API key for audio briefings | `""` | Optional |
 | `PRANA_DEMO_MODE` | Allow labeled historical sample data when providers fail | `false` | Development |
 | `PRANA_ENV` | Environment identifier (`development` / `production`) | `development`| Recommended |
-| `CORS_ORIGINS` | Comma-separated allowed client origins | `*` | In production |
+| `CORS_ORIGINS` | Comma-separated allowed client origins | Local development origins | Required in production |
 | `PRANA_FL_DP_ENABLED`| Enable differential privacy in federated rounds | `true` | No |
 | `PRANA_FL_PAILLIER_ENABLED`| Enable 2048-bit Paillier homomorphic encryption | `true` | No |
+
+---
+
+## 📜 License & Ethical AI Notice
+
+PRANA is available under the [MIT License](LICENSE).
+
+This repository is research and decision-support software. Model estimates are not regulatory measurements or medical advice. Legal documents remain unissued drafts, signatures are not performed without an authorized provider, and internal dispatch queue entries do not mean an external authority was contacted. Operators are responsible for provider terms, consent, data protection, scientific validation, and applicable law.
 
 ---
 

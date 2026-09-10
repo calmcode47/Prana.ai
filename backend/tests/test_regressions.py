@@ -190,6 +190,29 @@ def test_unsupported_station_pollutant_rejected(client):
     assert client.get("/api/v1/aqi/stations?parameter=no2").status_code == 422
 
 
+@pytest.mark.parametrize("resolution", [0.10001, 0.2, 0.333333, 0.9])
+def test_surface_resolution_uses_bounded_canonical_values(client, resolution):
+    assert client.get("/api/v1/aqi/surface", params={"resolution_deg": resolution}).status_code == 422
+
+
+def test_forecast_cluster_id_has_a_bounded_safe_format(client):
+    assert client.get("/api/v1/forecast/plume", params={"cluster_id": "x" * 65}).status_code == 422
+    assert client.get("/api/v1/forecast/plume", params={"cluster_id": "bad/value"}).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_snapshot_cache_evicts_old_entries():
+    from backend.ingesters.memo import _cache, cached_snapshot
+
+    @cached_snapshot("bounded-test", ttl=3600)
+    async def snapshot(value):
+        return {"value": value}
+
+    for value in range(140):
+        assert (await snapshot(value=value))["value"] == value
+    assert len(_cache) <= 128
+
+
 @pytest.mark.parametrize("rounds", [0, -1, 11, 101])
 def test_fl_run_is_bounded(client, rounds):
     assert client.post(f"/api/v1/federated/run?num_rounds={rounds}").status_code == 422

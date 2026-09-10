@@ -60,7 +60,7 @@ export const WarRoomMapPanel: React.FC<WarRoomMapPanelProps> = ({
       lon,
       pm25: obs?.pm25_ugm3 ?? null,
       aqi: obs?.aqi_index ?? null,
-      source: 'CPCB CAAQMS',
+      source: obs?.source || 'Source unavailable',
     };
   });
 

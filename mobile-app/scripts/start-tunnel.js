@@ -4,7 +4,7 @@ const { spawn } = require('child_process');
 
 const mobileRoot = path.resolve(__dirname, '..');
 const projectRoot = path.resolve(mobileRoot, '..');
-const backendHealth = 'http://0.0.0.0:8000/health';
+const backendHealth = 'http://127.0.0.1:8000/health';
 let backendProcess = null;
 let expoProcess = null;
 let closing = false;

@@ -33,7 +33,7 @@ Copy-Item backend/.env.example backend/.env
 ./backend/.venv/Scripts/python.exe -m backend.scripts.serve
 ```
 
-Without a `DATABASE_URL`, development mode checkpoints its local API records to `.local/prana-store.json`. For production-grade persistence, configure PostgreSQL with PostGIS privileges, or run `docker compose up --build` from the repository root. The Docker build context is the repository root:
+Without a `DATABASE_URL`, development mode checkpoints its local API records to `.local/prana-store.json`. For production-grade persistence, configure PostgreSQL with PostGIS privileges. For Docker Compose, copy `backend/.env.docker` to the repository-root `.env`, set every required secret, then run `docker compose up --build` from the repository root. The Docker build context is the repository root:
 
 ```text
 docker build -f backend/Dockerfile -t prana-backend .
@@ -60,7 +60,7 @@ Configure secrets only in the ignored environment file or hosting provider setti
 | `TTS_PROVIDER_URL`, `TTS_MODEL`, `TTS_VOICE` | Optional speech endpoint and voice configuration |
 | `CORS_ORIGINS` | Comma-separated allowed client origins |
 | `PRANA_SCHEDULER_ENABLED` | Enable startup ingestion, 15-minute refresh, and 60-second telemetry |
-| `CEMS_INGEST_API_KEY` | Shared ingestion credential issued by this backend to an approved facility feed |
+| `CEMS_INGEST_KEYS_JSON` | JSON mapping of facility IDs to separate ingestion credentials; each batch is restricted to one mapped facility |
 | `PRANA_FL_DP_ENABLED` | Enable record-level DP-SGD; defaults to true |
 | `PRANA_FL_DP_EPSILON` / `PRANA_FL_DP_DELTA` | Privacy budget; defaults to 0.42 and 0.00001 |
 | `PRANA_FL_PAILLIER_ENABLED` | Enable 2048-bit Paillier aggregation; defaults to true |

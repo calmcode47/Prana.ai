@@ -21,6 +21,8 @@ Set these only in `backend/.env` locally or the hosting provider's secret settin
 | --- | --- |
 | `FIRMS_MAP_KEY` | NASA FIRMS map key |
 | `OPENAQ_API_KEY` | OpenAQ API key |
+| `PRANA_OPERATOR_API_KEY` | Long random server-side key for incident, legal, federated-run, and TTS control-plane operations |
+| `CEMS_INGEST_KEYS_JSON` | JSON mapping of each approved facility ID to its own long ingestion key |
 
 Run from the repository root:
 
@@ -38,7 +40,7 @@ Choose an existing hosting project and PostGIS database. No cloud account access
 
 For Render, the root `render.yaml` defines the backend container and PostgreSQL 16 database, disables demo data, requires provider secrets, blocks external database connections, and runs migrations before deployment. Set `CORS_ORIGINS` to explicit allowed origins; the API's own HTTPS origin can be used while there is no frontend. Add actual website origins when a website is created. The configuration follows the [Render Blueprint reference](https://render.com/docs/blueprint-spec).
 
-For Railway, the root `railway.json` builds `backend/Dockerfile` with the repository root as build context. Configure a persistent PostGIS-capable database and set `DATABASE_URL`, `PRANA_ENV=production`, `PRANA_DEMO_MODE=false`, `CORS_ORIGINS`, and the provider secrets above. A plain PostgreSQL image without the PostGIS extension files is insufficient. Migration execution and the one-replica setting follow the [Railway configuration reference](https://docs.railway.com/config-as-code/reference).
+For Railway, the root `railway.json` builds `backend/Dockerfile` with the repository root as build context. Configure a persistent PostGIS-capable database and set `DATABASE_URL`, `PRANA_ENV=production`, `PRANA_DEMO_MODE=false`, `CORS_ORIGINS`, `PRANA_OPERATOR_API_KEY`, `CEMS_INGEST_KEYS_JSON`, and the provider secrets above. A plain PostgreSQL image without the PostGIS extension files is insufficient. Migration execution and the one-replica setting follow the [Railway configuration reference](https://docs.railway.com/config-as-code/reference).
 
 Both configurations use one API process and one replica because scheduling, rate limits, and WebSocket subscriptions are currently process-local. The migration command applies the existing transactional schema changes without starting ingestion or adding demo rows:
 
