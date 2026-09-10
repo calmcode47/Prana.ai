@@ -69,7 +69,9 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   shadow: {
-    ...StyleSheet.absoluteFill,
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
     top: 2,
     left: 2,
     borderRadius: 4,

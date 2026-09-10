@@ -619,7 +619,7 @@ export const FederatedMeshScreen: React.FC = () => {
           </View>
         </NeoCard>
 
-        <View style={{ height: 165 }} />
+        <View style={{ height: 185 }} />
       </ScrollView>
     </View>
   );
@@ -929,9 +929,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.canvasCream,
-    paddingVertical: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     borderRadius: 9999,
+    borderWidth: 1.5,
+    borderColor: Colors.inkBlack,
     gap: 6,
+    shadowColor: Colors.inkBlack,
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 3,
   },
   simulateBtnText: {
     fontSize: 11,
@@ -1116,8 +1124,11 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   chartToggleBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: 8,
     borderWidth: 1.2,
     borderColor: Colors.inkBlack,

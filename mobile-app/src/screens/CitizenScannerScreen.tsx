@@ -701,7 +701,7 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
           >
             <MaterialCommunityIcons name="crosshairs-gps" size={15} color={Colors.canvasCream} />
             <Text style={styles.gpsButtonText}>{isLocating ? 'Getting Device Location…' : 'Use Device GPS'}</Text>
-            <Text style={styles.gpsStatusText}>{locationStatus}</Text>
+            <Text style={styles.gpsStatusText} numberOfLines={1} ellipsizeMode="tail">{locationStatus}</Text>
           </Pressable>
         </NeoCard>
 
@@ -995,7 +995,7 @@ export const CitizenScannerScreen: React.FC<CitizenScannerScreenProps> = ({ onCl
           )}
         </NeoCard>
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 60 }} />
       </ScrollView>
     </View>
   );
@@ -1401,9 +1401,11 @@ const styles = StyleSheet.create({
     gap: 6,
     backgroundColor: Colors.inkBlack,
     paddingVertical: 10,
+    paddingHorizontal: 8,
     borderRadius: 9999,
     borderWidth: 1.2,
     borderColor: '#3F3F46',
+    minHeight: 42,
   },
   shutterBtnText: {
     fontSize: 12,
@@ -1418,9 +1420,11 @@ const styles = StyleSheet.create({
     gap: 6,
     backgroundColor: Colors.surfaceVanilla,
     paddingVertical: 10,
+    paddingHorizontal: 8,
     borderRadius: 9999,
     borderWidth: 1.2,
     borderColor: Colors.inkBlack,
+    minHeight: 42,
   },
   sampleOpticText: {
     fontSize: 12,
@@ -1483,7 +1487,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 9999,
   },
@@ -1954,13 +1958,17 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   clearHistoryBtn: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#F87171',
   },
   clearHistoryText: {
     fontSize: 9,
     fontWeight: '800',
-    color: Colors.coralWatermelonVivid,
+    color: '#991B1B',
   },
   emptyHistoryText: {
     fontSize: 10,

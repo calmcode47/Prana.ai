@@ -687,7 +687,7 @@ export const RegulatoryAlertsScreen: React.FC = () => {
           </NeoCard>
         )}
 
-        <View style={{ height: 165 }} />
+        <View style={{ height: 185 }} />
       </ScrollView>
     </View>
   );
@@ -1077,11 +1077,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     backgroundColor: Colors.canvasCream,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: Colors.inkBlack,
-    paddingVertical: 7,
-    paddingHorizontal: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
     borderRadius: 8,
+    minHeight: 38,
   },
   pipelineStepBtnComplete: {
     backgroundColor: Colors.forestJade,
@@ -1232,11 +1233,14 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   downloadBtn: {
+    flex: 1,
+    minWidth: 90,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1.5,
     borderColor: Colors.inkBlack,

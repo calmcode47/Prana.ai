@@ -111,6 +111,7 @@ function MainApp() {
             onOpenScanner={() => setIsScannerOpen(true)}
             onNavigateCorridor={() => setActiveTab('corridor')}
             liveMessage={lastMessage}
+            insets={insets}
           />
         );
       case 'corridor':
@@ -127,6 +128,7 @@ function MainApp() {
             onOpenScanner={() => setIsScannerOpen(true)}
             onNavigateCorridor={() => setActiveTab('corridor')}
             liveMessage={lastMessage}
+            insets={insets}
           />
         );
     }

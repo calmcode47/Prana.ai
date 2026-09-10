@@ -61,7 +61,9 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   shadowLayer: {
-    ...StyleSheet.absoluteFill,
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
   },
   card: {
     overflow: 'hidden',

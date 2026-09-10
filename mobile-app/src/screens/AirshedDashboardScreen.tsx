@@ -46,6 +46,7 @@ export interface AirshedDashboardScreenProps {
   onOpenScanner: () => void;
   onNavigateCorridor: () => void;
   liveMessage?: WsMessage | null;
+  insets?: { top: number; bottom: number; left: number; right: number };
 }
 
 export type CorridorNodeKey = 'pb_04' | 'transit_02' | 'delhi_09';
@@ -134,7 +135,11 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
   onOpenScanner,
   onNavigateCorridor,
   liveMessage,
+  insets = { top: 0, bottom: 0, left: 0, right: 0 },
 }) => {
+  const fabBottom = Math.max(162, insets.bottom + 130);
+  const scrollBottomPadding = Math.max(190, insets.bottom + 160);
+
   const [activeFilter, setActiveFilter] = useState('foryou');
   const [selectedCorridorNode, setSelectedCorridorNode] = useState<CorridorNodeKey>('pb_04');
   const [searchQuery, setSearchQuery] = useState('');
@@ -799,7 +804,12 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
         </NeoCard>
 
         {/* Quick Corridor Navigation Card */}
-        <Pressable onPress={onNavigateCorridor}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Navigate to air corridor trajectory map"
+          onPress={onNavigateCorridor}
+          style={({ pressed }) => [{ width: '100%' }, pressed && { opacity: 0.92 }]}
+        >
           <NeoCard backgroundColor={Colors.surfaceVanillaStrong} style={styles.meshCard}>
             <View style={styles.meshCardLeft}>
               <View style={styles.meshIconSquare}>
@@ -833,11 +843,11 @@ export const AirshedDashboardScreen: React.FC<AirshedDashboardScreenProps> = ({
         </NeoCard>
 
         {/* Spacing for floating player & nav */}
-        <View style={{ height: 165 }} />
+        <View style={{ height: scrollBottomPadding }} />
       </ScrollView>
 
       {/* Floating Citizen Sky Haze FAB */}
-      <View style={styles.fabWrapper}>
+      <View style={[styles.fabWrapper, { bottom: fabBottom }]}>
         <NeoButton
           onPress={onOpenScanner}
           backgroundColor={Colors.coralWatermelon}
@@ -889,6 +899,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E8E3D7',
   },
   headerLeft: {
+    flex: 1,
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -897,6 +909,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
+    flexShrink: 0,
   },
   brandTitle: {
     fontSize: 20,
@@ -917,17 +930,20 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 9999,
     gap: 3,
+    flexShrink: 1,
   },
   locationText: {
     fontSize: 11,
     fontWeight: '700',
     color: Colors.inkBlack,
     maxWidth: 95,
+    flexShrink: 1,
   },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexShrink: 0,
   },
   avatarCircle: {
     width: 32,
@@ -1011,6 +1027,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 9999,
     backgroundColor: Colors.surfaceVanillaStrong,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
   },
   filterPillMoreText: {
     fontSize: 11,
@@ -1735,30 +1753,49 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   quickActionBtns: {
+    flexDirection: 'row',
     gap: 8,
-    marginTop: 4,
+    marginTop: 6,
   },
   actionBtnSecondary: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
     backgroundColor: Colors.inkBlack,
     paddingVertical: 10,
-    borderRadius: 10,
+    paddingHorizontal: 8,
+    borderRadius: 9999,
+    borderWidth: 1.5,
+    borderColor: Colors.inkBlack,
+    shadowColor: Colors.inkBlack,
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 3,
   },
   actionBtnPrimary: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
     backgroundColor: Colors.terracottaDeep,
     paddingVertical: 10,
-    borderRadius: 10,
+    paddingHorizontal: 8,
+    borderRadius: 9999,
+    borderWidth: 1.5,
+    borderColor: Colors.inkBlack,
+    shadowColor: Colors.inkBlack,
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 3,
   },
   actionBtnText: {
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: '900',
     color: Colors.canvasCream,
   },
   feedbackToast: {
@@ -1778,7 +1815,6 @@ const styles = StyleSheet.create({
   fabWrapper: {
     position: 'absolute',
     right: 16,
-    bottom: 152,
     zIndex: 40,
   },
   fabContent: {

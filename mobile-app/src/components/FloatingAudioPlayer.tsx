@@ -253,7 +253,9 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   shadowLayer: {
-    ...StyleSheet.absoluteFill,
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
     backgroundColor: Colors.inkBlack,
     borderRadius: 16,
     top: 3,
@@ -293,7 +295,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: Colors.inkBlack,
-    maxWidth: 160,
+    flexShrink: 1,
   },
   livePip: {
     width: 6,

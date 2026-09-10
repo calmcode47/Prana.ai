@@ -55,7 +55,9 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   shadow: {
-    ...StyleSheet.absoluteFill,
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
     backgroundColor: Colors.inkBlack,
     borderRadius: 9999,
     top: 2,

@@ -281,5 +281,120 @@ describe('Air Corridor Flow Dynamics & Cartography', () => {
         expect(getByLabelText('Play forward trajectory animation')).toBeTruthy();
       });
     });
+
+    it('calibrates trajectory points dynamically with backend plume cluster features', () => {
+      const mockBackendPlumes: any[] = [
+        {
+          type: 'Feature',
+          geometry: {
+            type: 'Polygon',
+            coordinates: [
+              [
+                [76.2, 30.1],
+                [76.4, 30.1],
+                [76.4, 29.9],
+                [76.2, 29.9],
+              ],
+            ],
+          },
+          properties: {
+            cluster_id: 'CLU-20260909-001',
+            horizon_hours: 24,
+            max_pm25_est: 240,
+            max_aqi_est: 390,
+            wind_speed_ms: 4.8,
+            wind_dir_deg: 315,
+          },
+        },
+        {
+          type: 'Feature',
+          geometry: {
+            type: 'Polygon',
+            coordinates: [
+              [
+                [76.8, 29.5],
+                [77.0, 29.5],
+                [77.0, 29.3],
+                [76.8, 29.3],
+              ],
+            ],
+          },
+          properties: {
+            cluster_id: 'CLU-20260909-001',
+            horizon_hours: 48,
+            max_pm25_est: 180,
+            max_aqi_est: 340,
+            wind_speed_ms: 4.8,
+            wind_dir_deg: 315,
+          },
+        },
+        {
+          type: 'Feature',
+          geometry: {
+            type: 'Polygon',
+            coordinates: [
+              [
+                [77.1, 28.7],
+                [77.3, 28.7],
+                [77.3, 28.5],
+                [77.1, 28.5],
+              ],
+            ],
+          },
+          properties: {
+            cluster_id: 'CLU-20260909-001',
+            horizon_hours: 72,
+            max_pm25_est: 120,
+            max_aqi_est: 280,
+            wind_speed_ms: 4.8,
+            wind_dir_deg: 315,
+          },
+        },
+      ];
+
+      const calibratedPt = getCorridorTrajectoryPoint(36, mockBackendPlumes);
+      expect(calibratedPt.x).toBeGreaterThan(0);
+      expect(calibratedPt.y).toBeGreaterThan(0);
+      expect(calibratedPt.angleDeg).toBeGreaterThan(0);
+    });
+
+    it('displays backend plume model estimates when forecast telemetry is available', async () => {
+      const { fetchForecastPlume } = require('../../src/api/client');
+      (fetchForecastPlume as jest.Mock).mockResolvedValueOnce({
+        type: 'FeatureCollection',
+        computed_at: '2026-09-09T12:00:00Z',
+        source: 'GAUSSIAN_PLUME_DBSCAN',
+        features: [
+          {
+            type: 'Feature',
+            geometry: {
+              type: 'Polygon',
+              coordinates: [
+                [
+                  [76.2, 30.1],
+                  [76.4, 30.1],
+                  [76.4, 29.9],
+                  [76.2, 29.9],
+                ],
+              ],
+            },
+            properties: {
+              cluster_id: 'CLU-001',
+              horizon_hours: 24,
+              max_pm25_est: 245.5,
+              max_aqi_est: 395,
+              wind_speed_ms: 4.8,
+            },
+          },
+        ],
+      });
+
+      const { getByText } = render(<AirCorridorMapScreen />);
+      await waitFor(() => {
+        expect(getByText(/T\+24h Model: Max PM2\.5/)).toBeTruthy();
+        expect(getByText(/245\.5 µg\/m³/)).toBeTruthy();
+        expect(getByText(/4\.8 m\/s/)).toBeTruthy();
+      });
+    });
   });
 });

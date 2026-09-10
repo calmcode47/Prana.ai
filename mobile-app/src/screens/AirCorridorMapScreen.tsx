@@ -29,9 +29,16 @@ import {
   MeteorologyResponse,
   HotspotsResponse,
   PlumeResponse,
+  PlumeFeature,
   getAqiCategoryAndColor,
   formatBackendStatus,
 } from '../api/client';
+
+export const toCorridorSvgX = (lon: number): number =>
+  Math.max(15, Math.min(325, 30 + ((lon - 75.0) / 3.0) * 280));
+
+export const toCorridorSvgY = (lat: number): number =>
+  Math.max(15, Math.min(245, 240 - ((lat - 28.0) / 3.0) * 210));
 
 interface CorridorNode {
   id: string;
@@ -55,15 +62,62 @@ export interface CorridorTrajectoryPoint {
   angleDeg: number;
 }
 
-export function getCorridorTrajectoryPoint(hours: number): CorridorTrajectoryPoint {
+export function getCorridorTrajectoryPoint(
+  hours: number,
+  backendPlumes?: PlumeFeature[] | null
+): CorridorTrajectoryPoint {
   const clampedHours = Math.max(0, Math.min(72, hours));
-  const milestones = [
+  let milestones = [
     { hour: 0, x: 45, y: 35 },
     { hour: 18, x: 105, y: 80 },
     { hour: 36, x: 170, y: 125 },
     { hour: 54, x: 235, y: 170 },
     { hour: 72, x: 295, y: 220 },
   ];
+
+  // Dynamic anchoring if real backend Gaussian plume envelopes are provided (REQ-006)
+  if (backendPlumes && backendPlumes.length > 0) {
+    const f24 = backendPlumes.find((f) => f.properties.horizon_hours === 24);
+    const f48 = backendPlumes.find((f) => f.properties.horizon_hours === 48);
+    const f72 = backendPlumes.find((f) => f.properties.horizon_hours === 72);
+
+    const getCentroid = (f?: PlumeFeature) => {
+      const coords = f?.geometry?.coordinates?.[0];
+      if (!coords || coords.length < 3) return null;
+      const cLon = coords.reduce((acc, c) => acc + c[0], 0) / coords.length;
+      const cLat = coords.reduce((acc, c) => acc + c[1], 0) / coords.length;
+      return {
+        x: Number(toCorridorSvgX(cLon).toFixed(1)),
+        y: Number(toCorridorSvgY(cLat).toFixed(1)),
+      };
+    };
+
+    const c24 = getCentroid(f24);
+    const c48 = getCentroid(f48);
+    const c72 = getCentroid(f72);
+
+    if (c24 && c48 && c72) {
+      milestones = [
+        { hour: 0, x: 45, y: 35 },
+        {
+          hour: 18,
+          x: Number((45 + (c24.x - 45) * (18 / 24)).toFixed(1)),
+          y: Number((35 + (c24.y - 35) * (18 / 24)).toFixed(1)),
+        },
+        {
+          hour: 36,
+          x: Number((c24.x + (c48.x - c24.x) * (12 / 24)).toFixed(1)),
+          y: Number((c24.y + (c48.y - c24.y) * (12 / 24)).toFixed(1)),
+        },
+        {
+          hour: 54,
+          x: Number((c48.x + (c72.x - c48.x) * (6 / 24)).toFixed(1)),
+          y: Number((c48.y + (c72.y - c48.y) * (6 / 24)).toFixed(1)),
+        },
+        { hour: 72, x: c72.x, y: c72.y },
+      ];
+    }
+  }
 
   if (clampedHours <= 0) return { x: milestones[0].x, y: milestones[0].y, angleDeg: 36.8 };
   if (clampedHours >= 72) return { x: milestones[4].x, y: milestones[4].y, angleDeg: 39.8 };
@@ -247,6 +301,7 @@ export const AirCorridorMapScreen: React.FC = () => {
   // Ambient continuous corridor flow animation (3 gentle advection pulses)
   const [ambientFlowPhase, setAmbientFlowPhase] = useState<number>(0);
   useEffect(() => {
+    if (process.env.NODE_ENV === 'test') return;
     const interval = setInterval(() => {
       setAmbientFlowPhase((prev) => (prev >= 1 ? 0 : Number((prev + 0.02).toFixed(3))));
     }, 80);
@@ -373,16 +428,41 @@ export const AirCorridorMapScreen: React.FC = () => {
   }), [hotspots, meteoData, surfaceData]);
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? nodes[0];
 
-  // Accurate piecewise corridor trajectory position (always traverses Sangrur -> Patiala -> Karnal -> Panipat -> Delhi)
-  const particlePos = useMemo(() => getCorridorTrajectoryPoint(trajectoryHours), [trajectoryHours]);
+  // Trajectory points calibrated with backend plume forecast if available (REQ-006)
+  const particlePos = useMemo(
+    () => getCorridorTrajectoryPoint(trajectoryHours, plumeData?.features),
+    [trajectoryHours, plumeData]
+  );
+
+  const trajectoryMilestones = useMemo(() => {
+    return [0, 18, 36, 54, 72].map((h) => getCorridorTrajectoryPoint(h, plumeData?.features));
+  }, [plumeData]);
+
+  const spinePath = useMemo(() => {
+    const [p0, p18, p36, p54, p72] = trajectoryMilestones;
+    return `M ${p0.x} ${p0.y} L ${p18.x} ${p18.y} L ${p36.x} ${p36.y} L ${p54.x} ${p54.y} L ${p72.x} ${p72.y}`;
+  }, [trajectoryMilestones]);
 
   // Ambient continuous flow particles along the corridor chute
   const ambientParticles = useMemo(() => {
     return [0, 0.33, 0.67].map((offset) => {
       const phase = (ambientFlowPhase + offset) % 1;
-      return getCorridorTrajectoryPoint(phase * 72);
+      return getCorridorTrajectoryPoint(phase * 72, plumeData?.features);
     });
-  }, [ambientFlowPhase]);
+  }, [ambientFlowPhase, plumeData]);
+
+  // Active backend plume feature closest to trajectoryHours (24h, 48h, 72h)
+  const activePlumeFeature = useMemo(() => {
+    if (!plumeData?.features?.length) return null;
+    return (
+      plumeData.features.find((f) => {
+        const h = f.properties.horizon_hours;
+        if (trajectoryHours <= 24) return h === 24;
+        if (trajectoryHours <= 48) return h === 48;
+        return h === 72;
+      }) ?? plumeData.features[0]
+    );
+  }, [plumeData, trajectoryHours]);
 
   const scaleX = canvasLayout.width / 340;
   const scaleY = canvasLayout.height / 260;
@@ -527,6 +607,18 @@ export const AirCorridorMapScreen: React.FC = () => {
                   <Stop offset="50%" stopColor="#EA580C" stopOpacity="0.45" />
                   <Stop offset="100%" stopColor="#991B1B" stopOpacity="0.55" />
                 </LinearGradient>
+                <LinearGradient id="plumeGrad24" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <Stop offset="0%" stopColor="#EA580C" stopOpacity="0.55" />
+                  <Stop offset="100%" stopColor="#EA580C" stopOpacity="0.1" />
+                </LinearGradient>
+                <LinearGradient id="plumeGrad48" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <Stop offset="0%" stopColor="#FF5376" stopOpacity="0.55" />
+                  <Stop offset="100%" stopColor="#FF5376" stopOpacity="0.1" />
+                </LinearGradient>
+                <LinearGradient id="plumeGrad72" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <Stop offset="0%" stopColor="#7C2D12" stopOpacity="0.6" />
+                  <Stop offset="100%" stopColor="#7C2D12" stopOpacity="0.1" />
+                </LinearGradient>
               </Defs>
 
               {/* Background Dot Grid */}
@@ -546,14 +638,43 @@ export const AirCorridorMapScreen: React.FC = () => {
                     <Path
                       d="M25 25 C75 35 95 95 140 110 C185 125 215 160 265 185 C305 205 335 230 340 255 C285 255 240 230 195 200 C150 170 110 130 65 95 C35 75 15 45 25 25 Z"
                       fill="url(#plumeGrad)"
-                      opacity={0.65}
+                      opacity={plumeData?.features?.length ? 0.35 : 0.65}
                     />
                     {/* High-Density Core Plume */}
                     <Path
                       d="M35 30 C80 45 105 85 145 115 C185 130 220 165 255 185 C290 205 315 225 320 245 C275 245 235 220 200 195 C160 165 125 125 85 90 C55 70 30 50 35 30 Z"
                       fill="url(#corePlumeGrad)"
-                      opacity={0.4}
+                      opacity={plumeData?.features?.length ? 0.25 : 0.4}
                     />
+
+                    {/* Live Backend Gaussian Plume Dispersion Polygons (REQ-006) */}
+                    {plumeData?.features?.map((feat, fIdx) => {
+                      const coords = feat.geometry?.coordinates?.[0];
+                      if (!coords || coords.length < 3) return null;
+                      const pts = coords
+                        .map(([lon, lat]) => `${toCorridorSvgX(lon).toFixed(1)},${toCorridorSvgY(lat).toFixed(1)}`)
+                        .join(' ');
+                      const h = feat.properties.horizon_hours;
+                      const gradId = h <= 24 ? 'url(#plumeGrad24)' : h <= 48 ? 'url(#plumeGrad48)' : 'url(#plumeGrad72)';
+                      const strokeCol = h <= 24 ? '#EA580C' : h <= 48 ? '#FF5376' : '#7C2D12';
+                      const isCurrentHorizon =
+                        (trajectoryHours <= 24 && h === 24) ||
+                        (trajectoryHours > 24 && trajectoryHours <= 48 && h === 48) ||
+                        (trajectoryHours > 48 && h === 72);
+
+                      return (
+                        <G key={`plume-feature-${fIdx}-${h}`}>
+                          <Polygon
+                            points={pts}
+                            fill={gradId}
+                            stroke={strokeCol}
+                            strokeWidth={isCurrentHorizon ? 2 : 1.2}
+                            strokeDasharray={h > 24 ? '5 3' : undefined}
+                            opacity={isCurrentHorizon ? 0.85 : 0.45}
+                          />
+                        </G>
+                      );
+                    })}
                   </G>
                 )}
 
@@ -561,7 +682,7 @@ export const AirCorridorMapScreen: React.FC = () => {
                 <G testID="corridor-flow-spine">
                   {/* Wide Soft Glow Conduit */}
                   <Path
-                    d="M 45 35 L 105 80 L 170 125 L 235 170 L 295 220"
+                    d={spinePath}
                     fill="none"
                     stroke="#EA580C"
                     strokeWidth={6}
@@ -572,7 +693,7 @@ export const AirCorridorMapScreen: React.FC = () => {
 
                   {/* Dashed Transport Corridor Track */}
                   <Path
-                    d="M 45 35 L 105 80 L 170 125 L 235 170 L 295 220"
+                    d={spinePath}
                     fill="none"
                     stroke={Colors.inkBlack}
                     strokeWidth={1.8}
@@ -582,10 +703,18 @@ export const AirCorridorMapScreen: React.FC = () => {
                   />
 
                   {/* Directional Flow Arrows Along Corridor */}
-                  <Polygon points="79,61 69,54 73,62" fill="#EA580C" />
-                  <Polygon points="142,106 132,99 136,107" fill="#EA580C" />
-                  <Polygon points="207,151 197,144 201,152" fill="#EA580C" />
-                  <Polygon points="270,199 260,192 264,200" fill="#EA580C" />
+                  {trajectoryMilestones.slice(0, 4).map((pt, idx) => {
+                    const next = trajectoryMilestones[idx + 1];
+                    const midX = (pt.x + next.x) / 2;
+                    const midY = (pt.y + next.y) / 2;
+                    const angleRad = Math.atan2(next.y - pt.y, next.x - pt.x);
+                    const cos = Math.cos(angleRad);
+                    const sin = Math.sin(angleRad);
+                    const pTip = `${(midX + 5 * cos).toFixed(1)},${(midY + 5 * sin).toFixed(1)}`;
+                    const pLeft = `${(midX - 5 * cos - 3.5 * sin).toFixed(1)},${(midY - 5 * sin + 3.5 * cos).toFixed(1)}`;
+                    const pRight = `${(midX - 5 * cos + 3.5 * sin).toFixed(1)},${(midY - 5 * sin - 3.5 * cos).toFixed(1)}`;
+                    return <Polygon key={`arrow-${idx}`} points={`${pTip} ${pLeft} ${pRight}`} fill="#EA580C" />;
+                  })}
 
                   {/* Flanking Synoptic Wind Streamlines */}
                   <Path
@@ -764,7 +893,9 @@ export const AirCorridorMapScreen: React.FC = () => {
 
             {/* Scale watermark */}
             <View style={styles.mapWatermark}>
-              <Text style={styles.watermarkText}>NW (315°) → SE (135°) Synoptic Chute • 1:2.4M</Text>
+              <Text style={styles.watermarkText}>
+                {`NW (${Math.round(meteoData?.regions?.punjab?.wind?.direction_from_deg ?? 315)}°) → SE (${Math.round(meteoData?.regions?.punjab?.wind?.direction_toward_deg ?? 135)}°) Synoptic Chute • 1:2.4M`}
+              </Text>
             </View>
           </View>
 
@@ -800,7 +931,11 @@ export const AirCorridorMapScreen: React.FC = () => {
             </View>
 
             {/* Step jump buttons for all 5 corridor milestones */}
-            <View style={styles.scrubberPillsRow}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.scrubberPillsRow}
+            >
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Jump to Origin T+0 hours"
@@ -851,7 +986,24 @@ export const AirCorridorMapScreen: React.FC = () => {
                   Basin Sink (72h)
                 </Text>
               </Pressable>
-            </View>
+            </ScrollView>
+
+            {/* Backend Plume Trajectory Model Indicator (REQ-006) */}
+            {activePlumeFeature && (
+              <View style={styles.scrubberBackendPill}>
+                <View style={styles.scrubberBackendLeft}>
+                  <MaterialCommunityIcons name="weather-windy" size={12} color={Colors.terracottaDeep} />
+                  <Text style={styles.scrubberBackendText}>
+                    T+{activePlumeFeature.properties.horizon_hours}h Model: Max PM2.5{' '}
+                    <Text style={styles.scrubberBackendBold}>{activePlumeFeature.properties.max_pm25_est} µg/m³</Text>
+                    {' '}(AQI {activePlumeFeature.properties.max_aqi_est})
+                  </Text>
+                </View>
+                <Text style={styles.scrubberBackendWind}>
+                  {activePlumeFeature.properties.wind_speed_ms ?? meteoData?.regions?.punjab?.wind_speed_ms?.toFixed(1) ?? '4.5'} m/s
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Geospatial Layer Switcher Chips */}
@@ -1110,7 +1262,7 @@ export const AirCorridorMapScreen: React.FC = () => {
           </NeoCard>
         )}
 
-        <View style={{ height: 165 }} />
+        <View style={{ height: 185 }} />
       </ScrollView>
     </View>
   );
@@ -1415,7 +1567,8 @@ const styles = StyleSheet.create({
   scrubberPillsRow: {
     flexDirection: 'row',
     gap: 6,
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 2,
   },
   scrubberPill: {
     paddingHorizontal: 8,
@@ -1435,6 +1588,39 @@ const styles = StyleSheet.create({
   },
   scrubberPillTextActive: {
     color: Colors.canvasCream,
+  },
+  scrubberBackendPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surfaceVanilla,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: Colors.terracottaDeep,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginTop: 4,
+  },
+  scrubberBackendLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexShrink: 1,
+  },
+  scrubberBackendText: {
+    fontSize: 9.5,
+    fontWeight: '600',
+    color: Colors.inkBlack,
+  },
+  scrubberBackendBold: {
+    fontWeight: '800',
+    color: Colors.terracottaDeep,
+  },
+  scrubberBackendWind: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: Colors.cobaltDeep,
+    marginLeft: 6,
   },
   sensorBadgeChip: {
     flexDirection: 'row',
@@ -1465,6 +1651,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.2,
     borderColor: Colors.inkBlack,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 40,
   },
   segmentBtnActive: {
     backgroundColor: Colors.inkBlack,

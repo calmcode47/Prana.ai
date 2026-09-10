@@ -13,6 +13,7 @@ interface NeoButtonProps {
   children: React.ReactNode;
   onPress?: (event: GestureResponderEvent) => void;
   style?: StyleProp<ViewStyle>;
+  containerStyle?: StyleProp<ViewStyle>;
   backgroundColor?: string;
   shadowColor?: string;
   shadowOffset?: number;
@@ -26,6 +27,7 @@ export const NeoButton: React.FC<NeoButtonProps> = ({
   children,
   onPress,
   style,
+  containerStyle,
   backgroundColor = Colors.inkBlack,
   shadowColor = Colors.cobaltDeep,
   shadowOffset = 3,
@@ -68,10 +70,14 @@ export const NeoButton: React.FC<NeoButtonProps> = ({
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       disabled={disabled}
-      style={{
-        marginRight: shadowOffset,
-        marginBottom: shadowOffset,
-      }}
+      style={[
+        styles.pressable,
+        {
+          marginRight: shadowOffset,
+          marginBottom: shadowOffset,
+        },
+        containerStyle,
+      ]}
     >
       <Animated.View
         style={[
@@ -104,8 +110,13 @@ export const NeoButton: React.FC<NeoButtonProps> = ({
 };
 
 const styles = StyleSheet.create({
+  pressable: {
+    position: 'relative',
+  },
   shadow: {
-    ...StyleSheet.absoluteFill,
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
   },
   content: {
     overflow: 'hidden',

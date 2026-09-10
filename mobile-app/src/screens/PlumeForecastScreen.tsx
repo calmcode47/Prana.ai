@@ -43,6 +43,7 @@ export const PlumeForecastScreen: React.FC = () => {
   const [surfaceData, setSurfaceData] = useState<SurfaceGridResponse | null>(null);
   const [lagData, setLagData] = useState<FireAqiLagResponse | null>(null);
   const [biomassData, setBiomassData] = useState<BiomassEmissionsResponse | null>(null);
+  const [trackWidth, setTrackWidth] = useState<number>(280);
 
   // Auto-play timer when playing (safe guard to prevent clearInterval(undefined))
   useEffect(() => {
@@ -426,9 +427,14 @@ export const PlumeForecastScreen: React.FC = () => {
               {/* Scrubber Track */}
               <Pressable
                 style={styles.scrubberTrack}
+                onLayout={(e) => {
+                  const w = e.nativeEvent.layout.width;
+                  if (w > 0) setTrackWidth(w);
+                }}
                 onPress={(e) => {
                   const locationX = e.nativeEvent.locationX;
-                  const newHour = Math.round(Math.min(72, Math.max(0, (locationX / 280) * 72)));
+                  const width = trackWidth > 0 ? trackWidth : 280;
+                  const newHour = Math.round(Math.min(72, Math.max(0, (locationX / width) * 72)));
                   setCurrentHour(newHour);
                 }}
               >
@@ -694,7 +700,7 @@ export const PlumeForecastScreen: React.FC = () => {
           </NeoCard>
         </View>
 
-        <View style={{ height: 165 }} />
+        <View style={{ height: 185 }} />
       </ScrollView>
     </View>
   );
@@ -939,13 +945,17 @@ const styles = StyleSheet.create({
   resetButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 8,
+    gap: 4,
+    paddingHorizontal: 10,
     paddingVertical: 6,
+    borderRadius: 9999,
+    borderWidth: 1.2,
+    borderColor: Colors.inkBlack,
+    backgroundColor: Colors.surfaceVanillaStrong,
   },
   resetButtonText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.inkBlack,
   },
   sectionHeader: {
@@ -1087,6 +1097,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 2, height: 2 },
     shadowOpacity: 1,
     shadowRadius: 0,
+    elevation: 3,
   },
   mandateBtnText: {
     fontSize: 12,
