@@ -76,16 +76,11 @@ async def get_aqi_stations(
             and (demo_enabled() or row.get("source") == "OPENAQ_LIVE")
             and _is_fresh(row.get("measured_at"), freshness_cutoff)
         ]
-    else:
-        raw = readings
-
-    if not readings and not raw:
-        try:
-            raw = await fetch_openaq_stations(force_refresh=True)
-        except Exception:
-            raise HTTPException(503, "Station data unavailable") from None
-
-    if not readings:
+        if not raw:
+            try:
+                raw = await fetch_openaq_stations(force_refresh=True)
+            except Exception:
+                raise HTTPException(503, "Station data unavailable") from None
         if not demo_enabled():
             raw = [r for r in raw if _is_fresh(r.get("measured_at"), freshness_cutoff)]
             if not raw:

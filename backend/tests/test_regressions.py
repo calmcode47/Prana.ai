@@ -14,7 +14,7 @@ from backend.main import app
 from backend.ingesters.ingest_firms import fetch_firms_hotspots
 from backend.ingesters.ingest_openaq import fetch_openaq_stations
 from backend.ingesters.ingest_meteo import fetch_location_meteo
-from backend.routers import alerts, citizen, websocket
+from backend.routers import alerts, aqi, citizen, websocket
 
 
 def jpeg():
@@ -184,6 +184,35 @@ async def test_no_demo_data_when_disabled(monkeypatch):
         await fetch_firms_hotspots()
     with pytest.raises(RuntimeError):
         await fetch_openaq_stations()
+
+
+@pytest.mark.asyncio
+async def test_empty_station_database_does_not_trigger_provider_refresh(monkeypatch):
+    class EmptyConnection:
+        async def fetch(self, *_args):
+            return []
+
+    class AcquireConnection:
+        async def __aenter__(self):
+            return EmptyConnection()
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class ConnectedPool:
+        def acquire(self):
+            return AcquireConnection()
+
+    async def unexpected_refresh(*_args, **_kwargs):
+        pytest.fail("A public read must not trigger an OpenAQ provider refresh")
+
+    monkeypatch.setenv("PRANA_DEMO_MODE", "false")
+    monkeypatch.setattr(aqi, "get_db_pool", lambda: ConnectedPool())
+    monkeypatch.setattr(aqi, "fetch_openaq_stations", unexpected_refresh)
+
+    result = await aqi.get_aqi_stations(parameter="pm25", state=None)
+
+    assert result == {"@iot.count": 0, "value": []}
 
 
 def test_unsupported_station_pollutant_rejected(client):
