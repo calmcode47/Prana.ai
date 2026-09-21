@@ -1,1 +1,4 @@
-/*    /index.html   200
+/api/*  https://prana-backend-7chd.onrender.com/api/:splat  200
+/health https://prana-backend-7chd.onrender.com/health  200
+/ready  https://prana-backend-7chd.onrender.com/ready   200
+/*      /index.html                                     200
