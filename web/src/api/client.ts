@@ -487,8 +487,15 @@ const configuredApi =
   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL) ||
   (typeof window !== 'undefined' && (window as any).PRANA_API_URL);
 const isLocalWeb = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const isPagesDev = typeof window !== 'undefined' && window.location.hostname.endsWith('.pages.dev');
 const browserOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-export const API_BASE = configuredApi || (isLocalWeb ? 'http://127.0.0.1:8000' : browserOrigin || 'http://127.0.0.1:8000');
+export const API_BASE =
+  configuredApi ||
+  (isLocalWeb
+    ? 'http://127.0.0.1:8000'
+    : isPagesDev
+      ? 'https://prana-backend-7chd.onrender.com'
+      : browserOrigin || 'http://127.0.0.1:8000');
 
 export async function fetchWithRetry(
   url: string,

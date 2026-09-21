@@ -14,7 +14,9 @@ htmlcov/
 
 # Secrets
 .env
-.env.local
+.env.*
+!.env.example
+!.env.docker
 *.pem
 *.key
 
