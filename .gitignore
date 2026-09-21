@@ -30,6 +30,8 @@ backend/generated_audio/
 
 # Local assets
 frontend-essentials/
+*.mp4
+*.webm
 
 # Node
 node_modules/
