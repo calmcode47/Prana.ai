@@ -311,7 +311,7 @@ export const AlertsPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <div className="relative">
                 <input
-                  className="w-64 pl-8 pr-3 py-1.5 rounded-full bg-surface-container-lowest border border-ink-black font-body-sm text-body-sm focus:outline-none focus:ring-2 focus:ring-primary shadow-[2px_2px_0px_#18181B]"
+                  className="w-64 pl-8 pr-3 py-1.5 rounded-full bg-surface-container-lowest border border-ink-black font-body-sm text-body-sm focus:outline-hidden focus:ring-2 focus:ring-primary shadow-[2px_2px_0px_#18181B]"
                   placeholder="Search ward, stack ID, or CEMS..."
                   type="text"
                   value={searchQuery}

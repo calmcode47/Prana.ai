@@ -31,7 +31,7 @@ export const WarRoomMeteoPanel: React.FC<WarRoomMeteoPanelProps> = ({
             <Wind className="w-4 h-4 text-terracotta-deep" />
             <h4 className="font-title-sm text-sm font-bold text-ink-black">Punjab Upwind Sector</h4>
           </div>
-          <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-terracotta-deep/15 text-terracotta-deep border border-terracotta-deep/30">
+          <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-sm bg-terracotta-deep/15 text-terracotta-deep border border-terracotta-deep/30">
             Source
           </span>
         </div>
@@ -79,7 +79,7 @@ export const WarRoomMeteoPanel: React.FC<WarRoomMeteoPanelProps> = ({
             <Wind className="w-4 h-4 text-coral-watermelon-vivid" />
             <h4 className="font-title-sm text-sm font-bold text-ink-black">Delhi Terminal Basin</h4>
           </div>
-          <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-coral-watermelon-vivid/15 text-coral-watermelon-vivid border border-coral-watermelon-vivid/30">
+          <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-sm bg-coral-watermelon-vivid/15 text-coral-watermelon-vivid border border-coral-watermelon-vivid/30">
             Receptor
           </span>
         </div>

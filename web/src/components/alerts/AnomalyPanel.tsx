@@ -36,7 +36,7 @@ export const AnomalyPanel: React.FC<AnomalyPanelProps> = ({
               type="button"
               onClick={() => setAnomalyParam('no2')}
               className={`px-3 py-0.5 rounded-full font-label-md text-label-md font-bold transition-all cursor-pointer ${
-                anomalyParam === 'no2' ? 'bg-ink-black text-canvas-cream shadow-sm' : 'text-ink-muted hover:text-ink-black'
+                anomalyParam === 'no2' ? 'bg-ink-black text-canvas-cream shadow-xs' : 'text-ink-muted hover:text-ink-black'
               }`}
             >
               NO₂ Gas
@@ -45,7 +45,7 @@ export const AnomalyPanel: React.FC<AnomalyPanelProps> = ({
               type="button"
               onClick={() => setAnomalyParam('so2')}
               className={`px-3 py-0.5 rounded-full font-label-md text-label-md font-bold transition-all cursor-pointer ${
-                anomalyParam === 'so2' ? 'bg-ink-black text-canvas-cream shadow-sm' : 'text-ink-muted hover:text-ink-black'
+                anomalyParam === 'so2' ? 'bg-ink-black text-canvas-cream shadow-xs' : 'text-ink-muted hover:text-ink-black'
               }`}
             >
               SO₂ Flue
@@ -57,7 +57,7 @@ export const AnomalyPanel: React.FC<AnomalyPanelProps> = ({
               type="checkbox"
               checked={nighttimeOnly}
               onChange={(e) => setNighttimeOnly(e.target.checked)}
-              className="rounded border-ink-black text-primary focus:ring-primary h-3.5 w-3.5"
+              className="rounded-sm border-ink-black text-primary focus:ring-primary h-3.5 w-3.5"
             />
             Nighttime Only (22:00-06:00)
           </label>
@@ -103,7 +103,7 @@ export const AnomalyPanel: React.FC<AnomalyPanelProps> = ({
                   </div>
                 </div>
                 <div className="text-right">
-                  <span className="px-1.5 py-0.5 rounded bg-coral-watermelon-vivid/10 text-coral-watermelon-vivid font-mono text-[11px] font-bold">
+                  <span className="px-1.5 py-0.5 rounded-sm bg-coral-watermelon-vivid/10 text-coral-watermelon-vivid font-mono text-[11px] font-bold">
                     Score: {anomaly.anomaly_score.toFixed(2)}
                   </span>
                 </div>

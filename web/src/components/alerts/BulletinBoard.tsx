@@ -32,7 +32,7 @@ export const BulletinBoard: React.FC<BulletinBoardProps> = ({
       </div>
 
       {/* Language Switcher Pill */}
-      <div className="flex items-center gap-1.5 p-1 rounded-full bg-canvas-cream border border-ink-black shadow-[2px_2px_0px_#18181B] flex-shrink-0">
+      <div className="flex items-center gap-1.5 p-1 rounded-full bg-canvas-cream border border-ink-black shadow-[2px_2px_0px_#18181B] shrink-0">
         {(['en', 'hi', 'pa'] as const).map((lang) => {
           const label = lang === 'en' ? 'English' : lang === 'hi' ? 'हिंदी' : 'ਪੰਜਾਬੀ';
           const isSelected = selectedLang === lang;

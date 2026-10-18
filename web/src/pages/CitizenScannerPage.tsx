@@ -381,13 +381,13 @@ export const CitizenScannerPage: React.FC = () => {
                 </div>
               ) : (
                 <div
-                  className={`w-full h-64 rounded-xl bg-gradient-to-b ${presets[selectedPreset].previewGradient} p-4 flex flex-col justify-between border-2 border-ink-black shadow-[inset_2px_2px_0px_rgba(0,0,0,0.1)] relative overflow-hidden`}
+                  className={`w-full h-64 rounded-xl bg-linear-to-b ${presets[selectedPreset].previewGradient} p-4 flex flex-col justify-between border-2 border-ink-black shadow-[inset_2px_2px_0px_rgba(0,0,0,0.1)] relative overflow-hidden`}
                   style={previewUrl ? { backgroundImage: `url(${previewUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
                 >
-                  <div className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#18181b_1px,transparent_1px)] [background-size:12px_12px]"></div>
+                  <div className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#18181b_1px,transparent_1px)] bg-size-[12px_12px]"></div>
 
                   {isAnalyzing && (
-                    <div className="absolute left-0 right-0 h-1 bg-gradient-to-r from-transparent via-coral-watermelon-vivid to-transparent shadow-[0_0_12px_#FF5376] pointer-events-none z-20 animate-scanner-sweep"></div>
+                    <div className="absolute left-0 right-0 h-1 bg-linear-to-r from-transparent via-coral-watermelon-vivid to-transparent shadow-[0_0_12px_#FF5376] pointer-events-none z-20 animate-scanner-sweep"></div>
                   )}
 
                   <div className="relative z-10 flex items-center justify-between">
@@ -467,7 +467,7 @@ export const CitizenScannerPage: React.FC = () => {
                     step="0.0001"
                     value={latitude}
                     onChange={(e) => setLatitude(e.target.value)}
-                    className="w-full px-3 py-2 text-xs font-mono bg-canvas-cream rounded-lg text-ink-black border border-ink-black shadow-[2px_2px_0px_#18181B] focus:outline-none"
+                    className="w-full px-3 py-2 text-xs font-mono bg-canvas-cream rounded-lg text-ink-black border border-ink-black shadow-[2px_2px_0px_#18181B] focus:outline-hidden"
                   />
                 </div>
                 <div>
@@ -479,7 +479,7 @@ export const CitizenScannerPage: React.FC = () => {
                     step="0.0001"
                     value={longitude}
                     onChange={(e) => setLongitude(e.target.value)}
-                    className="w-full px-3 py-2 text-xs font-mono bg-canvas-cream rounded-lg text-ink-black border border-ink-black shadow-[2px_2px_0px_#18181B] focus:outline-none"
+                    className="w-full px-3 py-2 text-xs font-mono bg-canvas-cream rounded-lg text-ink-black border border-ink-black shadow-[2px_2px_0px_#18181B] focus:outline-hidden"
                   />
                 </div>
               </div>
@@ -543,7 +543,7 @@ export const CitizenScannerPage: React.FC = () => {
                     >
                       <div className="flex items-center gap-2">
                         <span
-                          className="w-3 h-3 rounded-full flex-shrink-0"
+                          className="w-3 h-3 rounded-full shrink-0"
                           style={{ backgroundColor: item.aqiColor }}
                         />
                         <div>
@@ -556,7 +556,7 @@ export const CitizenScannerPage: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
                         <span
                           className="px-2 py-0.5 rounded-full font-bold text-[10px] text-white"
                           style={{ backgroundColor: item.aqiColor }}
@@ -582,7 +582,7 @@ export const CitizenScannerPage: React.FC = () => {
                 <span className="font-label-md text-label-md text-cobalt-deep uppercase tracking-wider font-extrabold">
                   GROUND RECEPTOR ESTIMATION
                 </span>
-                <span className="font-mono text-xs px-2 py-0.5 rounded bg-canvas-cream text-ink-black border border-ink-black/20 font-bold">
+                <span className="font-mono text-xs px-2 py-0.5 rounded-sm bg-canvas-cream text-ink-black border border-ink-black/20 font-bold">
                   Latency: {result ? `${result.processing_time_ms}ms` : 'Awaiting photo'}
                 </span>
               </div>
@@ -656,7 +656,7 @@ export const CitizenScannerPage: React.FC = () => {
 
             {/* Privacy & EXIF Stripping Notice Card */}
             <div className="bg-surface-vanilla rounded-2xl p-space-md shadow-[3px_3px_0px_#18181B] border border-ink-black flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-ink-black text-canvas-cream flex-shrink-0 flex items-center justify-center shadow-[1px_1px_0px_#18181B]">
+              <div className="w-10 h-10 rounded-full bg-ink-black text-canvas-cream shrink-0 flex items-center justify-center shadow-[1px_1px_0px_#18181B]">
                 <span className="material-symbols-outlined text-[20px] text-coral-watermelon-vivid">security</span>
               </div>
               <div className="text-xs text-ink-muted leading-relaxed">
@@ -673,7 +673,7 @@ export const CitizenScannerPage: React.FC = () => {
         <div className="mt-space-2xl p-space-lg rounded-2xl bg-surface-vanilla shadow-[4px_4px_0px_#18181B] border-2 border-ink-black">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-space-md">
             <div className="flex items-center gap-space-md">
-              <div className="w-12 h-12 rounded-xl bg-cobalt-deep text-on-primary flex items-center justify-center shadow-[2px_2px_0px_#18181B] flex-shrink-0">
+              <div className="w-12 h-12 rounded-xl bg-cobalt-deep text-on-primary flex items-center justify-center shadow-[2px_2px_0px_#18181B] shrink-0">
                 <span className="material-symbols-outlined text-[28px]">biotech</span>
               </div>
               <div>

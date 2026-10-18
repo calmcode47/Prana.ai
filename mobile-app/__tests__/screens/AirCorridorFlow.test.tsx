@@ -174,7 +174,7 @@ describe('Air Corridor Flow Dynamics & Cartography', () => {
 
       // Verify synoptic flow watermark
       expect(getByText('NW (315°) → SE (135°) Synoptic Chute • 1:2.4M')).toBeTruthy();
-    });
+    }, 15_000); // The first native SVG render is slower on cold Windows/CI workers.
 
     it('allows jumping across all 5 corridor milestone checkpoints via scrubber pills', async () => {
       const { getByText, getByLabelText } = render(<AirCorridorMapScreen />);

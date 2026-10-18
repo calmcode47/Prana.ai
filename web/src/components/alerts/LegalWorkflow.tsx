@@ -83,7 +83,7 @@ export const LegalWorkflow: React.FC<LegalWorkflowProps> = ({
             Target Airshed Incident
           </label>
           <select
-            className="w-full px-3 py-2 text-sm bg-canvas-cream rounded-xl border border-ink-black font-semibold text-ink-black shadow-[2px_2px_0px_#18181B] focus:outline-none"
+            className="w-full px-3 py-2 text-sm bg-canvas-cream rounded-xl border border-ink-black font-semibold text-ink-black shadow-[2px_2px_0px_#18181B] focus:outline-hidden"
             value={selectedIncident}
             onChange={(e) => onSelectIncident(e.target.value)}
           >
@@ -102,7 +102,7 @@ export const LegalWorkflow: React.FC<LegalWorkflowProps> = ({
             Statutory Notice Drafter (§31A Air Act 1981)
           </label>
           <textarea
-            className="w-full h-44 p-3 bg-canvas-cream rounded-xl border border-ink-black font-mono text-xs text-ink-black leading-relaxed shadow-[inset_1px_1px_0px_#18181B] focus:outline-none focus:ring-1 focus:ring-cobalt-deep"
+            className="w-full h-44 p-3 bg-canvas-cream rounded-xl border border-ink-black font-mono text-xs text-ink-black leading-relaxed shadow-[inset_1px_1px_0px_#18181B] focus:outline-hidden focus:ring-1 focus:ring-cobalt-deep"
             value={noticeText}
             onChange={(e) => setNoticeText(e.target.value)}
           />

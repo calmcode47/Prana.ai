@@ -76,7 +76,7 @@ export const CemsPanel: React.FC<CemsPanelProps> = ({
                 : 'Loading backend CEMS forensics.'}
             </p>
           </div>
-          <span className="px-2.5 py-1 rounded bg-secondary-container text-on-secondary-container font-label-md text-label-md font-bold">
+          <span className="px-2.5 py-1 rounded-sm bg-secondary-container text-on-secondary-container font-label-md text-label-md font-bold">
             {cemsData?.status ?? 'CHECKING TELEMETRY'}
           </span>
         </div>

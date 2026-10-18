@@ -167,7 +167,7 @@ export const AirCorridorMapPage: React.FC = () => {
           </div>
 
           {/* Quirky Starburst Badge */}
-          <div className="self-start md:self-auto rotate-[3deg] hover:rotate-0 transition-transform">
+          <div className="self-start md:self-auto rotate-3 hover:rotate-0 transition-transform">
             <div className="relative bg-ink-black text-canvas-cream px-5 py-3 rounded-2xl shadow-[4px_4px_0px_#1D4ED8] flex items-center gap-3 border border-cobalt-deep">
               <span className="material-symbols-outlined text-coral-watermelon-vivid text-[22px]">radar</span>
               <div className="flex flex-col">
@@ -212,7 +212,7 @@ export const AirCorridorMapPage: React.FC = () => {
 
               <button
                 onClick={() => toggleLayer('plume')}
-                className={`px-space-sm py-1.5 rounded-full font-label-md text-label-md shadow-sm transition-all flex items-center gap-1 cursor-pointer ${
+                className={`px-space-sm py-1.5 rounded-full font-label-md text-label-md shadow-xs transition-all flex items-center gap-1 cursor-pointer ${
                   layers.plume ? 'bg-ink-black text-canvas-cream' : 'bg-canvas-cream text-ink-black'
                 }`}
                 type="button"
@@ -224,7 +224,7 @@ export const AirCorridorMapPage: React.FC = () => {
               </button>
               <button
                 onClick={() => toggleLayer('streamlines')}
-                className={`px-space-sm py-1.5 rounded-full font-label-md text-label-md shadow-sm transition-all flex items-center gap-1 cursor-pointer ${
+                className={`px-space-sm py-1.5 rounded-full font-label-md text-label-md shadow-xs transition-all flex items-center gap-1 cursor-pointer ${
                   layers.streamlines ? 'bg-ink-black text-canvas-cream' : 'bg-canvas-cream text-ink-black'
                 }`}
                 type="button"
@@ -236,7 +236,7 @@ export const AirCorridorMapPage: React.FC = () => {
               </button>
               <button
                 onClick={() => toggleLayer('viirsFRP')}
-                className={`px-space-sm py-1.5 rounded-full font-label-md text-label-md shadow-sm transition-all flex items-center gap-1 cursor-pointer ${
+                className={`px-space-sm py-1.5 rounded-full font-label-md text-label-md shadow-xs transition-all flex items-center gap-1 cursor-pointer ${
                   layers.viirsFRP ? 'bg-ink-black text-canvas-cream' : 'bg-canvas-cream text-ink-black'
                 }`}
                 type="button"
@@ -248,7 +248,7 @@ export const AirCorridorMapPage: React.FC = () => {
               </button>
               <button
                 onClick={() => toggleLayer('cpcbBams')}
-                className={`px-space-sm py-1.5 rounded-full font-label-md text-label-md shadow-sm transition-all flex items-center gap-1 cursor-pointer ${
+                className={`px-space-sm py-1.5 rounded-full font-label-md text-label-md shadow-xs transition-all flex items-center gap-1 cursor-pointer ${
                   layers.cpcbBams ? 'bg-ink-black text-canvas-cream' : 'bg-canvas-cream text-ink-black'
                 }`}
                 type="button"

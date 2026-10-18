@@ -17,7 +17,7 @@ export const Skeleton: React.FC<SkeletonProps> = ({
   const baseStyles = 'animate-pulse bg-surface-vanilla-strong/70 border border-outline-variant/40';
 
   const variantStyles = {
-    text: 'h-4 w-full rounded',
+    text: 'h-4 w-full rounded-sm',
     circular: 'rounded-full',
     rectangular: 'rounded-lg',
     card: 'h-32 w-full rounded-xl',

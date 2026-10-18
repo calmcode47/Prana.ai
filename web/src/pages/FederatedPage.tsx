@@ -421,16 +421,16 @@ export const FederatedPage: React.FC = () => {
               <div className="flex flex-wrap items-center gap-2">
                 {/* Custom Legend Badges */}
                 <div className="flex flex-wrap items-center gap-space-xs">
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
-                    <span className="w-3 h-1.5 rounded-sm bg-coral-watermelon-vivid"></span>
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-sm bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
+                    <span className="w-3 h-1.5 rounded-xs bg-coral-watermelon-vivid"></span>
                     <span className="font-bold text-ink-black">Global FL ({latestRound ? `${(latestRound.global_accuracy * 100).toFixed(1)}%` : 'N/A'})</span>
                   </div>
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
-                    <span className="w-3 h-1.5 rounded-sm bg-cobalt-deep"></span>
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-sm bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
+                    <span className="w-3 h-1.5 rounded-xs bg-cobalt-deep"></span>
                     <span className="text-ink-muted font-semibold">Delhi Silo ({latestRound ? `${(latestRound.delhi_accuracy * 100).toFixed(1)}%` : 'N/A'})</span>
                   </div>
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
-                    <span className="w-3 h-1.5 rounded-sm bg-terracotta-deep"></span>
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-sm bg-canvas-cream shadow-[1px_1px_0px_#18181B] border border-ink-black/20 text-label-md font-label-md">
+                    <span className="w-3 h-1.5 rounded-xs bg-terracotta-deep"></span>
                     <span className="text-ink-muted font-semibold">Punjab Silo ({latestRound ? `${(latestRound.punjab_accuracy * 100).toFixed(1)}%` : 'N/A'})</span>
                   </div>
                 </div>
@@ -510,7 +510,7 @@ export const FederatedPage: React.FC = () => {
                     <span className="font-title-sm text-body-sm font-bold text-ink-black">
                       01. Rényi Differential Privacy
                     </span>
-                    <span className="px-2 py-0.5 rounded bg-forest-jade/20 text-forest-jade text-xs font-bold">
+                    <span className="px-2 py-0.5 rounded-sm bg-forest-jade/20 text-forest-jade text-xs font-bold">
                       {dp?.enabled ? `ε=${dp.epsilon_spent ?? dp.target_epsilon} (δ=${dp.delta})` : 'Awaiting run'}
                     </span>
                   </div>
@@ -524,7 +524,7 @@ export const FederatedPage: React.FC = () => {
                     <span className="font-title-sm text-body-sm font-bold text-ink-black">
                       02. Paillier Homomorphic Encryption
                     </span>
-                    <span className="px-2 py-0.5 rounded bg-cobalt-deep/10 text-cobalt-deep text-xs font-bold">
+                    <span className="px-2 py-0.5 rounded-sm bg-cobalt-deep/10 text-cobalt-deep text-xs font-bold">
                       {secureAggregation?.enabled ? `${secureAggregation.key_bits}-bit Keys` : 'Awaiting run'}
                     </span>
                   </div>
@@ -538,7 +538,7 @@ export const FederatedPage: React.FC = () => {
                     <span className="font-title-sm text-body-sm font-bold text-ink-black">
                       03. Non-IID Dirichlet Partitioning
                     </span>
-                    <span className="px-2 py-0.5 rounded bg-terracotta-deep/10 text-terracotta-deep text-xs font-bold">
+                    <span className="px-2 py-0.5 rounded-sm bg-terracotta-deep/10 text-terracotta-deep text-xs font-bold">
                       {formatFederatedDataset(flStatus?.dataset)}
                     </span>
                   </div>
@@ -552,7 +552,7 @@ export const FederatedPage: React.FC = () => {
                     <span className="font-title-sm text-body-sm font-bold text-ink-black">
                       04. Zero Client Metric Leakage (SEC-006)
                     </span>
-                    <span className="px-2 py-0.5 rounded bg-forest-jade/20 text-forest-jade text-xs font-bold font-mono">
+                    <span className="px-2 py-0.5 rounded-sm bg-forest-jade/20 text-forest-jade text-xs font-bold font-mono">
                       {flStatus ? 'Client metrics withheld' : 'Awaiting run'}
                     </span>
                   </div>

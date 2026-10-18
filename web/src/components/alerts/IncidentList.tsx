@@ -115,7 +115,7 @@ export const IncidentList: React.FC<IncidentListProps> = ({
                 >
                   <div className="flex items-center gap-2">
                     <span
-                      className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                      className={`w-2 h-2 rounded-full shrink-0 ${
                         item.severity === 'emergency'
                           ? 'bg-coral-watermelon-vivid'
                           : item.severity === 'warning'
@@ -130,7 +130,7 @@ export const IncidentList: React.FC<IncidentListProps> = ({
                       {item.location_text || 'NCR Airshed Node'}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     {item.measured_pm25 != null && (
                       <span className="font-label-md text-label-md text-white/90 font-bold">
                         {item.measured_pm25.toFixed(0)} µg/m³
@@ -174,7 +174,7 @@ export const IncidentList: React.FC<IncidentListProps> = ({
                 type="button"
                 disabled={currentPage <= 1}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 disabled:opacity-30 cursor-pointer font-bold"
+                className="px-2 py-1 rounded-sm bg-white/10 hover:bg-white/20 disabled:opacity-30 cursor-pointer font-bold"
               >
                 Prev
               </button>
@@ -194,7 +194,7 @@ export const IncidentList: React.FC<IncidentListProps> = ({
                 type="button"
                 disabled={currentPage >= totalPages}
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 disabled:opacity-30 cursor-pointer font-bold"
+                className="px-2 py-1 rounded-sm bg-white/10 hover:bg-white/20 disabled:opacity-30 cursor-pointer font-bold"
               >
                 Next
               </button>
@@ -250,17 +250,17 @@ export const IncidentList: React.FC<IncidentListProps> = ({
                   <span className="material-symbols-outlined text-[14px] text-terracotta-deep">satellite_alt</span>
                   {primaryHotspot?.properties.sensor ?? 'Thermal Feed'}
                 </span>
-                <span className="px-1.5 py-0.5 rounded bg-surface-vanilla text-ink-black font-bold">
+                <span className="px-1.5 py-0.5 rounded-sm bg-surface-vanilla text-ink-black font-bold">
                   {formatDataSource(hotspotsData?.source, 'Thermal feed unavailable')}
                 </span>
               </div>
 
               <div className="w-full h-32 rounded-xl bg-ink-black relative overflow-hidden flex items-center justify-center">
-                <div className="absolute inset-0 bg-gradient-to-tr from-terracotta-deep/80 via-coral-watermelon-vivid/40 to-transparent"></div>
+                <div className="absolute inset-0 bg-linear-to-tr from-terracotta-deep/80 via-coral-watermelon-vivid/40 to-transparent"></div>
                 <div className="absolute w-24 h-24 rounded-full bg-aqi-unhealthy/70 blur-xl top-4 left-6"></div>
                 <div className="absolute w-12 h-12 rounded-full bg-coral-watermelon-vivid blur-md top-8 left-10 animate-pulse"></div>
                 <div className="relative z-10 flex flex-col items-center justify-center p-2 text-center text-canvas-cream font-mono text-[11px] leading-tight">
-                  <span className="bg-ink-black/80 px-2 py-0.5 rounded border border-canvas-cream/20 mb-1 font-sans font-bold text-coral-watermelon-vivid">
+                  <span className="bg-ink-black/80 px-2 py-0.5 rounded-sm border border-canvas-cream/20 mb-1 font-sans font-bold text-coral-watermelon-vivid">
                     {primaryHotspot ? `${primaryHotspot.properties.sensor} hotspot` : 'No current hotspot'}
                   </span>
                   <span>
@@ -321,7 +321,7 @@ export const IncidentList: React.FC<IncidentListProps> = ({
                 </div>
                 <div className="w-full h-3 bg-surface-vanilla rounded-full border border-ink-black overflow-hidden relative">
                   <div
-                    className="h-full bg-gradient-to-r from-aqi-moderate via-aqi-unhealthy to-coral-watermelon-vivid rounded-full"
+                    className="h-full bg-linear-to-r from-aqi-moderate via-aqi-unhealthy to-coral-watermelon-vivid rounded-full"
                     style={{ width: `${Math.min(100, (primaryAlert.measured_pm25 ?? 0) / 5)}%` }}
                   ></div>
                 </div>

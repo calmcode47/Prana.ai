@@ -95,7 +95,7 @@ export function DataTable<T>({
             <button
               onClick={() => setCurrentPage(1)}
               disabled={currentPage === 1}
-              className="p-1 rounded hover:bg-ink-black/10 disabled:opacity-40 disabled:pointer-events-none"
+              className="p-1 rounded-sm hover:bg-ink-black/10 disabled:opacity-40 disabled:pointer-events-none"
               aria-label="First page"
             >
               <ChevronsLeft className="w-4 h-4" />
@@ -103,7 +103,7 @@ export function DataTable<T>({
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
-              className="p-1 rounded hover:bg-ink-black/10 disabled:opacity-40 disabled:pointer-events-none"
+              className="p-1 rounded-sm hover:bg-ink-black/10 disabled:opacity-40 disabled:pointer-events-none"
               aria-label="Previous page"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -114,7 +114,7 @@ export function DataTable<T>({
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
-              className="p-1 rounded hover:bg-ink-black/10 disabled:opacity-40 disabled:pointer-events-none"
+              className="p-1 rounded-sm hover:bg-ink-black/10 disabled:opacity-40 disabled:pointer-events-none"
               aria-label="Next page"
             >
               <ChevronRight className="w-4 h-4" />
@@ -122,7 +122,7 @@ export function DataTable<T>({
             <button
               onClick={() => setCurrentPage(totalPages)}
               disabled={currentPage === totalPages}
-              className="p-1 rounded hover:bg-ink-black/10 disabled:opacity-40 disabled:pointer-events-none"
+              className="p-1 rounded-sm hover:bg-ink-black/10 disabled:opacity-40 disabled:pointer-events-none"
               aria-label="Last page"
             >
               <ChevronsRight className="w-4 h-4" />

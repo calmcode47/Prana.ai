@@ -338,7 +338,7 @@ export const ForecastPage: React.FC = () => {
                 showStations={false}
                 showHotspots={false}
               />
-              <div className="absolute bottom-3 left-3 z-[400] bg-surface-vanilla/90 backdrop-blur-md p-2 rounded border border-ink-black text-xs font-bold">
+              <div className="absolute bottom-3 left-3 z-400 bg-surface-vanilla/90 backdrop-blur-md p-2 rounded-sm border border-ink-black text-xs font-bold">
                 Plume Polygons: 24h (Orange), 48h (Pink), 72h (Hazardous Deep Red)
               </div>
             </div>
@@ -456,7 +456,7 @@ export const ForecastPage: React.FC = () => {
                     opacity="0.35"
                   />
                   <circle
-                    className="shadow-sm"
+                    className="shadow-xs"
                     fill="#1D4ED8"
                     id="particle-head"
                     r="7"
@@ -735,7 +735,7 @@ export const ForecastPage: React.FC = () => {
                 Source: {formatDataSource(plumeData?.source, 'Forecast unavailable')} &bull; Computed: {plumeData ? new Date(plumeData.computed_at).toLocaleString() : 'N/A'}
               </p>
             </div>
-            <div className="bg-ink-black text-canvas-cream px-4 py-2 rounded-xl rotate-2 shadow-[3px_3px_0px_#1D4ED8] flex items-center gap-2 flex-shrink-0">
+            <div className="bg-ink-black text-canvas-cream px-4 py-2 rounded-xl rotate-2 shadow-[3px_3px_0px_#1D4ED8] flex items-center gap-2 shrink-0">
               <span className="material-symbols-outlined text-cobalt-deep text-[18px]">track_changes</span>
               <span className="font-label-md text-label-md uppercase font-bold">72h Model Outlook</span>
             </div>

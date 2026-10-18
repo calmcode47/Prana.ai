@@ -1,6 +1,177 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --color-coral-watermelon-vivid: #ff5376;
+  --color-primary-fixed-dim: #b4c5ff;
+  --color-secondary: #ad2c4f;
+  --color-surface: #fbf8fc;
+  --color-aqi-unhealthy: #f97316;
+  --color-primary-container: #2563eb;
+  --color-secondary-container: #fd6989;
+  --color-aqi-severe: #ff5376;
+  --color-error: #ba1a1a;
+  --color-on-secondary: #ffffff;
+  --color-surface-container-low: #f6f2f7;
+  --color-tertiary-fixed: #ffdbca;
+  --color-secondary-fixed-dim: #ffb2bd;
+  --color-inverse-surface: #303033;
+  --color-surface-container-lowest: #ffffff;
+  --color-canvas-cream: #faf6ee;
+  --color-ink-muted: #52525b;
+  --color-surface-tint: #0053db;
+  --color-inverse-primary: #b4c5ff;
+  --color-forest-jade: #10b981;
+  --color-tertiary-container: #b54e00;
+  --color-on-tertiary: #ffffff;
+  --color-ink-black: #18181b;
+  --color-aqi-moderate: #f59e0b;
+  --color-on-error-container: #93000a;
+  --color-on-primary-fixed-variant: #003ea8;
+  --color-error-container: #ffdad6;
+  --color-outline: #737686;
+  --color-aqi-hazardous: #7c2d12;
+  --color-terracotta-deep: #ea580c;
+  --color-on-tertiary-fixed: #341100;
+  --color-surface-container-high: #eae7eb;
+  --color-surface-dim: #dcd9dd;
+  --color-aqi-good: #10b981;
+  --color-on-primary-container: #eeefff;
+  --color-outline-variant: #c3c6d7;
+  --color-on-primary: #ffffff;
+  --color-surface-variant: #e4e1e6;
+  --color-on-background: #1b1b1e;
+  --color-on-tertiary-container: #ffece5;
+  --color-primary-fixed: #dbe1ff;
+  --color-inverse-on-surface: #f3f0f4;
+  --color-on-surface-variant: #434655;
+  --color-on-secondary-fixed: #400014;
+  --color-primary: #004ac6;
+  --color-surface-bright: #fbf8fc;
+  --color-surface-vanilla: #f7f3e9;
+  --color-secondary-fixed: #ffd9dd;
+  --color-surface-container: #f0edf1;
+  --color-on-tertiary-fixed-variant: #783200;
+  --color-background: #fbf8fc;
+  --color-surface-container-highest: #e4e1e6;
+  --color-on-secondary-fixed-variant: #8c1038;
+  --color-tertiary-fixed-dim: #ffb690;
+  --color-on-surface: #1b1b1e;
+  --color-cobalt-deep: #1d4ed8;
+  --color-on-error: #ffffff;
+  --color-on-primary-fixed: #00174b;
+  --color-surface-vanilla-strong: #efe9da;
+  --color-on-secondary-container: #6b0027;
+  --color-tertiary: #8e3c00;
+
+  --radius: 0.25rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-full: 9999px;
+
+  --spacing-space-2xs: 0.25rem;
+  --spacing-space-3xl: 4rem;
+  --spacing-space-md: 1rem;
+  --spacing-space-lg: 1.5rem;
+  --spacing-container-max: 1280px;
+  --spacing-gutter-desktop: 1.5rem;
+  --spacing-space-2xl: 3rem;
+  --spacing-space-xs: 0.5rem;
+  --spacing-space-sm: 0.75rem;
+  --spacing-gutter-mobile: 1rem;
+  --spacing-space-xl: 2rem;
+
+  --font-headline-sm: Newsreader, serif;
+  --font-body-sm: Plus Jakarta Sans, sans-serif;
+  --font-label-md: Plus Jakarta Sans, sans-serif;
+  --font-title-md: Plus Jakarta Sans, sans-serif;
+  --font-display-lg: Newsreader, serif;
+  --font-display-lg-mobile: Newsreader, serif;
+  --font-telemetry-unit: Plus Jakarta Sans, sans-serif;
+  --font-headline-lg: Newsreader, serif;
+  --font-label-lg: Plus Jakarta Sans, sans-serif;
+  --font-title-sm: Plus Jakarta Sans, sans-serif;
+  --font-body-lg: Plus Jakarta Sans, sans-serif;
+  --font-body-md: Plus Jakarta Sans, sans-serif;
+  --font-headline-md: Newsreader, serif;
+  --font-headline-lg-mobile: Newsreader, serif;
+  --font-telemetry-val: Plus Jakarta Sans, sans-serif;
+
+  --text-headline-sm: 20px;
+  --text-headline-sm--line-height: 26px;
+  --text-headline-sm--font-weight: 500;
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 18px;
+  --text-body-sm--font-weight: 400;
+  --text-label-md: 11px;
+  --text-label-md--line-height: 14px;
+  --text-label-md--letter-spacing: 0.04em;
+  --text-label-md--font-weight: 700;
+  --text-title-md: 18px;
+  --text-title-md--line-height: 24px;
+  --text-title-md--letter-spacing: -0.01em;
+  --text-title-md--font-weight: 700;
+  --text-display-lg: 48px;
+  --text-display-lg--line-height: 54px;
+  --text-display-lg--letter-spacing: -0.02em;
+  --text-display-lg--font-weight: 600;
+  --text-display-lg-mobile: 36px;
+  --text-display-lg-mobile--line-height: 42px;
+  --text-display-lg-mobile--letter-spacing: -0.01em;
+  --text-display-lg-mobile--font-weight: 600;
+  --text-telemetry-unit: 11px;
+  --text-telemetry-unit--line-height: 14px;
+  --text-telemetry-unit--letter-spacing: 0.02em;
+  --text-telemetry-unit--font-weight: 600;
+  --text-headline-lg: 32px;
+  --text-headline-lg--line-height: 38px;
+  --text-headline-lg--letter-spacing: -0.015em;
+  --text-headline-lg--font-weight: 600;
+  --text-label-lg: 13px;
+  --text-label-lg--line-height: 16px;
+  --text-label-lg--letter-spacing: 0.02em;
+  --text-label-lg--font-weight: 700;
+  --text-title-sm: 16px;
+  --text-title-sm--line-height: 22px;
+  --text-title-sm--font-weight: 600;
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 24px;
+  --text-body-lg--font-weight: 400;
+  --text-body-md: 14px;
+  --text-body-md--line-height: 20px;
+  --text-body-md--font-weight: 400;
+  --text-headline-md: 24px;
+  --text-headline-md--line-height: 30px;
+  --text-headline-md--letter-spacing: -0.01em;
+  --text-headline-md--font-weight: 500;
+  --text-headline-lg-mobile: 26px;
+  --text-headline-lg-mobile--line-height: 32px;
+  --text-headline-lg-mobile--letter-spacing: -0.01em;
+  --text-headline-lg-mobile--font-weight: 600;
+  --text-telemetry-val: 22px;
+  --text-telemetry-val--line-height: 24px;
+  --text-telemetry-val--letter-spacing: -0.02em;
+  --text-telemetry-val--font-weight: 800;
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
 
 @layer base {
   html, body {

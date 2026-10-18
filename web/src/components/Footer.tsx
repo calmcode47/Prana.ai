@@ -22,7 +22,7 @@ export const Footer: React.FC = () => {
           <Link className="hover:text-ink-black transition-colors" to="/citizen-scanner">
             Citizen Sky Scanner
           </Link>
-          <span className="text-label-md font-bold text-ink-black px-2 py-1 rounded bg-canvas-cream shadow-[1px_1px_0px_#18181B]">
+          <span className="text-label-md font-bold text-ink-black px-2 py-1 rounded-sm bg-canvas-cream shadow-[1px_1px_0px_#18181B]">
             LOCAL BACKEND
           </span>
         </div>

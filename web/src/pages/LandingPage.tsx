@@ -268,7 +268,7 @@ export const LandingPage: React.FC = () => {
                   <span className="w-1 bg-coral-watermelon-vivid rounded-full animate-audio-bar-4"></span>
                 </div>
               )}
-              <span className="px-2 py-1 rounded bg-surface-vanilla-strong font-label-md text-label-md text-ink-black font-semibold">
+              <span className="px-2 py-1 rounded-sm bg-surface-vanilla-strong font-label-md text-label-md text-ink-black font-semibold">
                 1.5x
               </span>
             </div>
@@ -715,7 +715,7 @@ export const LandingPage: React.FC = () => {
 
       {/* Mobile App Download Modal */}
       {mobileAlertModal && (
-        <div className="fixed inset-0 z-50 bg-ink-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-ink-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-surface-vanilla rounded-3xl p-6 max-w-md w-full border-2 border-ink-black shadow-[6px_6px_0px_#18181B] relative">
             <button
               onClick={() => setMobileAlertModal(false)}
@@ -734,7 +734,7 @@ export const LandingPage: React.FC = () => {
             </p>
             <div className="p-3 bg-canvas-cream rounded-xl border border-ink-black/20 font-mono text-xs text-ink-black mb-4 flex items-center justify-between">
               <span>{mobileRelease ? 'Signed mobile release' : 'Android APK / iOS TestFlight'}</span>
-              <span className="px-2 py-0.5 rounded bg-forest-jade/20 text-forest-jade font-bold">{mobileRelease ? `Build ${mobileRelease.version}` : 'Not configured'}</span>
+              <span className="px-2 py-0.5 rounded-sm bg-forest-jade/20 text-forest-jade font-bold">{mobileRelease ? `Build ${mobileRelease.version}` : 'Not configured'}</span>
             </div>
             <button
               onClick={() => {

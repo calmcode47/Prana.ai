@@ -42,7 +42,7 @@ export const Modal: React.FC<ModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink-black/60 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink-black/60 backdrop-blur-xs animate-fadeIn">
       <div
         className={`w-full ${maxWidthStyles[maxWidth]} bg-surface-vanilla border-2 border-ink-black rounded-xl shadow-[6px_6px_0px_#18181B] overflow-hidden flex flex-col max-h-[90vh]`}
         onClick={(e) => e.stopPropagation()}
@@ -53,7 +53,7 @@ export const Modal: React.FC<ModalProps> = ({
           <h3 className="font-title-sm text-ink-black font-bold text-base">{title}</h3>
           <button
             onClick={onClose}
-            className="p-1 rounded-md text-ink-black hover:bg-ink-black/10 focus:outline-none"
+            className="p-1 rounded-md text-ink-black hover:bg-ink-black/10 focus:outline-hidden"
             aria-label="Close modal"
           >
             <X className="w-5 h-5" />

@@ -334,7 +334,7 @@ export const DashboardPage: React.FC = () => {
                 <button
                   onClick={loadAllData}
                   disabled={isLoading}
-                  className="p-1 rounded hover:bg-ink-black/10 transition-colors"
+                  className="p-1 rounded-sm hover:bg-ink-black/10 transition-colors"
                   title="Refresh data now"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 text-ink-black ${isLoading ? 'animate-spin' : ''}`} />
@@ -409,19 +409,19 @@ export const DashboardPage: React.FC = () => {
                 Cross-Platform Intelligence Navigation:
               </span>
               <div className="flex flex-wrap items-center gap-2">
-                <Link to="/72h-plume-forecast" className="px-2.5 py-1 rounded bg-surface-vanilla-strong font-bold hover:bg-primary hover:text-white transition-colors border border-ink-black">
+                <Link to="/72h-plume-forecast" className="px-2.5 py-1 rounded-sm bg-surface-vanilla-strong font-bold hover:bg-primary hover:text-white transition-colors border border-ink-black">
                   72h Plume Forecast →
                 </Link>
-                <Link to="/air-corridor-map" className="px-2.5 py-1 rounded bg-surface-vanilla-strong font-bold hover:bg-primary hover:text-white transition-colors border border-ink-black">
+                <Link to="/air-corridor-map" className="px-2.5 py-1 rounded-sm bg-surface-vanilla-strong font-bold hover:bg-primary hover:text-white transition-colors border border-ink-black">
                   Air Corridor Map →
                 </Link>
-                <Link to="/federated-mesh" className="px-2.5 py-1 rounded bg-surface-vanilla-strong font-bold hover:bg-primary hover:text-white transition-colors border border-ink-black">
+                <Link to="/federated-mesh" className="px-2.5 py-1 rounded-sm bg-surface-vanilla-strong font-bold hover:bg-primary hover:text-white transition-colors border border-ink-black">
                   Federated Mesh →
                 </Link>
-                <Link to="/spcb-incident-command" className="px-2.5 py-1 rounded bg-surface-vanilla-strong font-bold hover:bg-primary hover:text-white transition-colors border border-ink-black">
+                <Link to="/spcb-incident-command" className="px-2.5 py-1 rounded-sm bg-surface-vanilla-strong font-bold hover:bg-primary hover:text-white transition-colors border border-ink-black">
                   SPCB Incident Command →
                 </Link>
-                <Link to="/citizen-scanner" className="px-2.5 py-1 rounded bg-surface-vanilla-strong font-bold hover:bg-primary hover:text-white transition-colors border border-ink-black">
+                <Link to="/citizen-scanner" className="px-2.5 py-1 rounded-sm bg-surface-vanilla-strong font-bold hover:bg-primary hover:text-white transition-colors border border-ink-black">
                   Citizen Sky Scanner →
                 </Link>
               </div>

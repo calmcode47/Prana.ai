@@ -50,7 +50,7 @@ export class ErrorBoundary extends Component<Props, State> {
               An unexpected rendering error occurred in this view. The system caught the fault safely.
             </p>
             {this.state.error && (
-              <div className="p-3 bg-surface-vanilla-strong/80 rounded border border-outline-variant/60 text-left font-mono text-xs text-ink-muted overflow-x-auto max-h-32">
+              <div className="p-3 bg-surface-vanilla-strong/80 rounded-sm border border-outline-variant/60 text-left font-mono text-xs text-ink-muted overflow-x-auto max-h-32">
                 {this.state.error.message}
               </div>
             )}

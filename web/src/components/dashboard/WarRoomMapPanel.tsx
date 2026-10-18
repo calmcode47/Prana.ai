@@ -102,7 +102,7 @@ export const WarRoomMapPanel: React.FC<WarRoomMapPanelProps> = ({
           <h3 className="font-title-sm text-base font-bold text-ink-black">
             Indo-Gangetic Airshed Trajectory Map
           </h3>
-          <span className="text-xs px-2 py-0.5 rounded bg-surface-vanilla-strong font-mono font-bold text-ink-muted">
+          <span className="text-xs px-2 py-0.5 rounded-sm bg-surface-vanilla-strong font-mono font-bold text-ink-muted">
             + {trajectoryHours}h Dispersion
           </span>
         </div>
@@ -191,7 +191,7 @@ export const WarRoomMapPanel: React.FC<WarRoomMapPanelProps> = ({
           />
 
           {/* Floating Atmospheric Quick Stats */}
-          <div className="absolute top-3 right-3 z-[400] bg-surface-vanilla/95 backdrop-blur-sm border border-ink-black p-2.5 rounded-lg shadow-[2px_2px_0px_#18181B] text-xs space-y-1.5 max-w-[200px]">
+          <div className="absolute top-3 right-3 z-400 bg-surface-vanilla/95 backdrop-blur-xs border border-ink-black p-2.5 rounded-lg shadow-[2px_2px_0px_#18181B] text-xs space-y-1.5 max-w-[200px]">
             <div className="font-bold text-ink-black border-b border-outline-variant/40 pb-1">
               Corridor Telemetry
             </div>
@@ -217,13 +217,13 @@ export const WarRoomMapPanel: React.FC<WarRoomMapPanelProps> = ({
         /* Schematic Corridor View */
         <div className="relative w-full h-[460px] bg-canvas-cream border-2 border-ink-black rounded-xl overflow-hidden shadow-[3px_3px_0px_#18181B] p-4 flex flex-col justify-between">
           <div className="flex justify-between items-center text-xs font-bold">
-            <span className="px-2 py-1 bg-terracotta-deep text-white rounded">
+            <span className="px-2 py-1 bg-terracotta-deep text-white rounded-sm">
               01. Punjab Source Basin
             </span>
-            <span className="px-2 py-1 bg-cobalt-deep text-white rounded">
+            <span className="px-2 py-1 bg-cobalt-deep text-white rounded-sm">
               02. Haryana NH-44 Transit Belt
             </span>
-            <span className="px-2 py-1 bg-coral-watermelon-vivid text-white rounded">
+            <span className="px-2 py-1 bg-coral-watermelon-vivid text-white rounded-sm">
               03. Delhi NCR Receptor Basin
             </span>
           </div>
